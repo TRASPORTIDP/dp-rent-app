@@ -1,7 +1,7 @@
 {
   "name": "dp-rent-app",
-  "version": "1.0.0",
-  "description": "DP RENT APP",
+  "version": "2.0.0",
+  "description": "DP RENT APP gestionale noleggio",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -15,6 +15,7 @@
     "body-parser": "^1.20.2",
     "multer": "1.4.5-lts.1",
     "pdfkit": "^0.13.0",
-    "moment": "^2.29.4"
+    "moment": "^2.29.4",
+    "xlsx": "^0.18.5"
   }
 }
