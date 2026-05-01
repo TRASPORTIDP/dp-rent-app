@@ -415,8 +415,10 @@ async function sendEmail(to, subject, text, attachments = []) {
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port: Number(process.env.SMTP_PORT || 587),
-    secure: Number(process.env.SMTP_PORT || 587) === 465,
-    auth: {
+    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
+connectionTimeout: 30000,
+greetingTimeout: 30000,
+socketTimeout: 30000,    auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASS
     }
