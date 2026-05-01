@@ -443,14 +443,7 @@ async function sendEmail(to, subject, text, attachments = []) {
     text,
     attachments
   });
-}  return transporter.sendMail({
-    from: process.env.SMTP_FROM || AZIENDA.email,
-    to,
-    subject,
-    text,
-    attachments
-  });
-}
+
 
 async function sendAlert(subject, text) {
   try {
