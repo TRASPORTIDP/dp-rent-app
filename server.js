@@ -443,8 +443,7 @@ async function sendEmail(to, subject, text, attachments = []) {
     text,
     attachments
   });
-
-
+}
 async function sendAlert(subject, text) {
   try {
     const to = process.env.ALERT_EMAIL || process.env.SMTP_USER;
