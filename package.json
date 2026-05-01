@@ -1,7 +1,7 @@
 {
   "name": "dp-rent-app",
-  "version": "5.0.0",
-  "description": "DP RENT APP gestionale noleggio",
+  "version": "8.0.0",
+  "description": "DP RENT APP V8 completa mezzi manutenzioni alert planning logo",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
