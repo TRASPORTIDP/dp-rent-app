@@ -414,17 +414,14 @@ async function sendEmail(to, subject, text, attachments = []) {
   if (!process.env.SMTP_HOST) throw new Error('SMTP non configurato');
 
   const transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: String(process.env.SMTP_SECURE || '').toLowerCase() === 'true',
-connectionTimeout: 30000,
-greetingTimeout: 30000,
-socketTimeout: 30000,    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
-
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: true, // 🔥 FORZATO
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
   return transporter.sendMail({
     from: process.env.SMTP_FROM || AZIENDA.email,
     to,
