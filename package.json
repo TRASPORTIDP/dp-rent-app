@@ -1,7 +1,6 @@
 {
   "name": "dp-rent-app",
   "version": "11.0.0",
-  "description": "DP RENT APP",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
