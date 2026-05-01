@@ -413,16 +413,37 @@ async function driveUpload(localPath, filename, mimetype, folderName) {
 async function sendEmail(to, subject, text, attachments = []) {
   if (!process.env.SMTP_HOST) throw new Error('SMTP non configurato');
 
+  const port = Number(process.env.SMTP_PORT || 465);
+  const secure = port === 465;
+
   const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 465),
-  secure: true, // 🔥 FORZATO
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
-});
+    host: process.env.SMTP_HOST,
+    port: port,
+    secure: secure,
+    requireTLS: !secure,
+    connectionTimeout: 60000,
+    greetingTimeout: 60000,
+    socketTimeout: 60000,
+    tls: {
+      servername: process.env.SMTP_HOST,
+      rejectUnauthorized: false
+    },
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS
+    }
+  });
+
+  await transporter.verify();
+
   return transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to,
+    subject,
+    text,
+    attachments
+  });
+}  return transporter.sendMail({
     from: process.env.SMTP_FROM || AZIENDA.email,
     to,
     subject,
