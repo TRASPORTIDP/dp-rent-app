@@ -1472,7 +1472,7 @@ app.get('/foto/:id', (req, res) => {
       <h2>Foto / documenti ${esc(p.codice)}</h2>
 
       <form method="POST" enctype="multipart/form-data">
-        <select name="tipo">
+        <select name="tipo" required>
           <option>Patente conducente 1</option>
           <option>Documento conducente 1</option>
           <option>Patente conducente 2</option>
@@ -1491,10 +1491,10 @@ app.get('/foto/:id', (req, res) => {
           <option>File generico</option>
         </select>
 
-        <label>Scatta foto da telefono/tablet oppure scegli file</label>
+        <label><b>Scatta foto o carica file dal dispositivo</b></label>
         <input type="file" name="file" accept="image/*,.pdf" capture="environment" required>
 
-        <button>Carica</button>
+        <button>Carica foto / documento</button>
       </form>
 
       <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
@@ -1504,7 +1504,7 @@ app.get('/foto/:id', (req, res) => {
         ${files.map(f => `
           <li>
             ${esc(f.tipo)} -
-            <a href="/uploads/${esc(f.filename)}">${esc(f.originalname)}</a>
+            <a href="/uploads/${esc(f.filename)}" target="_blank">${esc(f.originalname)}</a>
             ${f.drive_link ? ` - <a target="_blank" href="${esc(f.drive_link)}">Drive</a>` : ''}
           </li>
         `).join('')}
@@ -1512,7 +1512,6 @@ app.get('/foto/:id', (req, res) => {
     </div>
   `));
 });
-
 app.post('/foto/:id', upload.single('file'), async (req, res) => {
   const db = loadDb();
   const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
