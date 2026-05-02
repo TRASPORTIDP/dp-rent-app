@@ -1202,12 +1202,12 @@ function generaPdf(p, m) {
   row2('Totale IVA inclusa', `€ ${euro(p.totale)}`, 'Deposito cauzionale', `€ ${euro(p.cauzione)}`);
 
   section('CONDIZIONI E PRIVACY');
-  doc.fontSize(6.8).fillColor('#111').text(
-    `Condizioni generali: ${TERMS_URL}`,
-    34,
-    y,
-    { width: 520 }
-  );
+  doc.fontSize(7).text(
+  'Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio DP RENT / Trasporti DP S.R.L. e l’informativa privacy. Il mezzo viene consegnato nello stato indicato al check-out e deve essere riconsegnato nelle stesse condizioni, con livello carburante equivalente. Eventuali danni, multe, pedaggi, franchigie, smarrimento chiavi/documenti, ritardi di riconsegna, pulizia straordinaria e costi accessori sono a carico del cliente. La cauzione resta vincolata fino al controllo finale del mezzo.',
+  34,
+  y,
+  { width: 520 }
+);
   y += 9;
   doc.text(`Privacy: ${PRIVACY_URL}`, 34, y, { width: 520 });
   y += 11;
