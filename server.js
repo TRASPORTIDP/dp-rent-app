@@ -701,6 +701,8 @@ app.get('/prenotazione/:id', (req, res) => {
       <a class="btn" href="/pdf/${p.id}">Scarica PDF</a>
       <a class="btn btn2" href="/email/${p.id}">Invia email</a>
       <a class="btn btn2" href="/foto/${p.id}">Foto/documenti</a>
+      <a class="btn btn2" href="/firma/${p.id}">Firma contratto</a>
+      <a class="btn btn2" href="/firma-link/${p.id}">Link firma cliente</a>
       <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
       <a class="btn btn3" href="/checkin/${p.id}">Check-in</a>
       <a class="btn btn2" href="/nexi/${p.id}">Nexi</a>
@@ -826,23 +828,62 @@ app.get('/email/:id', async (req, res) => {
 app.get('/foto/:id', (req, res) => {
   const db = loadDb();
   const files = db.allegati.filter(a => String(a.prenotazione_id) === String(req.params.id));
+
   res.send(layout('Foto', `
     <div class="card">
       <h2>Foto / documenti</h2>
+
       <form method="POST" enctype="multipart/form-data">
         <select name="tipo">
-          <option>Patente conducente 1</option><option>Documento conducente 1</option>
-          <option>Patente conducente 2</option><option>Documento conducente 2</option>
-          <option>Foto uscita</option><option>Foto rientro</option><option>Danno</option>
+          <option>Patente conducente 1</option>
+          <option>Documento conducente 1</option>
+          <option>Patente conducente 2</option>
+          <option>Documento conducente 2</option>
+          <option>Foto uscita fronte</option>
+          <option>Foto uscita retro</option>
+          <option>Foto uscita lato destro</option>
+          <option>Foto uscita lato sinistro</option>
+          <option>Foto uscita interno</option>
+          <option>Foto rientro fronte</option>
+          <option>Foto rientro retro</option>
+          <option>Foto rientro lato destro</option>
+          <option>Foto rientro lato sinistro</option>
+          <option>Foto rientro interno</option>
+          <option>Danno</option>
         </select>
-        <input type="file" name="file" accept="image/*,.pdf" capture="environment" required>
-        <button>Carica</button>
+
+        <label>Scatta foto da telefono/tablet</label>
+        <input type="file" name="file" accept="image/*" capture="environment">
+
+        <button>Carica foto</button>
       </form>
-      <ul>${files.map(f => `<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}">${esc(f.originalname)}</a> ${f.drive_link ? `- <a target="_blank" href="${esc(f.drive_link)}">Drive</a>` : ''}</li>`).join('')}</ul>
+
+      <hr>
+
+      <form method="POST" enctype="multipart/form-data">
+        <select name="tipo">
+          <option>Patente conducente 1</option>
+          <option>Documento conducente 1</option>
+          <option>Patente conducente 2</option>
+          <option>Documento conducente 2</option>
+          <option>File generico</option>
+        </select>
+
+        <label>Oppure carica immagine/PDF già salvato</label>
+        <input type="file" name="file" accept="image/*,.pdf">
+
+        <button>Carica file</button>
+      </form>
+
+      <a class="btn btn2" href="/prenotazione/${req.params.id}">Torna al contratto</a>
+
+      <h3>File caricati</h3>
+      <ul>
+        ${files.map(f => `<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}">${esc(f.originalname)}</a> ${f.drive_link ? `- <a target="_blank" href="${esc(f.drive_link)}">Drive</a>` : ''}</li>`).join('')}
+      </ul>
     </div>
   `));
 });
-
 app.post('/foto/:id', upload.single('file'), async (req, res) => {
   const db = loadDb();
   const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
@@ -1056,7 +1097,104 @@ app.get('/scadenze', (req, res) => {
 app.get('/nexi/:id', (req, res) => {
   res.send(layout('Nexi', `<div class="card"><h2>Nexi predisposto</h2><p>Qui colleghiamo PayMail reale con NEXI_ALIAS e NEXI_MAC_KEY.</p><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
 });
+app.get('/firma/:id', (req, res) => {
+  res.send(layout('Firma contratto', `
+    <div class="card">
+      <h2>Firma contratto</h2>
+      <canvas id="firma"></canvas>
+      <br>
+      <button onclick="pulisci()">Cancella</button>
+      <button onclick="salva()">Salva firma</button>
+      <a class="btn btn2" href="/prenotazione/${req.params.id}">Torna al contratto</a>
+    </div>
 
-app.listen(PORT, '0.0.0.0', () => {
+    <script>
+      const canvas = document.getElementById('firma');
+      const ctx = canvas.getContext('2d');
+      canvas.width = canvas.offsetWidth;
+      canvas.height = 240;
+      ctx.lineWidth = 3;
+      let drawing = false;
+
+      function pos(e) {
+        const r = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: t.clientX - r.left, y: t.clientY - r.top };
+      }
+
+      function start(e) {
+        drawing = true;
+        const p = pos(e);
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        e.preventDefault();
+      }
+
+      function move(e) {
+        if (!drawing) return;
+        const p = pos(e);
+        ctx.lineTo(p.x, p.y);
+        ctx.stroke();
+        e.preventDefault();
+      }
+
+      function stop(e) {
+        drawing = false;
+        e.preventDefault();
+      }
+
+      canvas.addEventListener('mousedown', start);
+      canvas.addEventListener('mousemove', move);
+      canvas.addEventListener('mouseup', stop);
+      canvas.addEventListener('touchstart', start);
+      canvas.addEventListener('touchmove', move);
+      canvas.addEventListener('touchend', stop);
+
+      function pulisci() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      function salva() {
+        fetch('/firma/${req.params.id}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firma: canvas.toDataURL('image/png') })
+        }).then(() => location.href = '/prenotazione/${req.params.id}');
+      }
+    </script>
+  `));
+});
+
+app.post('/firma/:id', (req, res) => {
+  const db = loadDb();
+  const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
+  if (!p) return res.status(404).send('Contratto non trovato');
+
+  const data = req.body.firma;
+  if (!data) return res.status(400).send('Firma mancante');
+
+  const base64 = data.split(',')[1];
+  const file = path.join(UPLOAD_DIR, `firma_${p.id}.png`);
+  fs.writeFileSync(file, base64, 'base64');
+
+  p.firma_path = file;
+  p.stato = 'firmato';
+  saveDb(db);
+
+  res.send('OK');
+});
+
+app.get('/firma-link/:id', (req, res) => {
+  const link = `${req.protocol}://${req.get('host')}/firma/${req.params.id}`;
+  res.send(layout('Link firma cliente', `
+    <div class="card">
+      <h2>Link firma cliente</h2>
+      <input value="${link}" readonly onclick="this.select()">
+      <p>Invia questo link al cliente su WhatsApp.</p>
+      <a class="btn" href="https://wa.me/?text=${encodeURIComponent('Firma contratto DP RENT: ' + link)}">Invia su WhatsApp</a>
+      <a class="btn btn2" href="/prenotazione/${req.params.id}">Torna al contratto</a>
+    </div>
+  `));
+});app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP avviata su porta ' + PORT);
 });
