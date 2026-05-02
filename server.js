@@ -47,9 +47,8 @@ const EXTRA_FUORI_ORARIO = 30;
 const EXTRA_KM = 0.15;
 const CAUZIONE = 500;
 
-const TERMS_URL = 'https://carrentalsoftware.myappy.it/data/public/user/65996976/terms_file.pdf';
-const PRIVACY_URL = 'https://carrentalsoftware.myappy.it/data/public/user/65996976/privacy_file.pdf';
-
+const TERMS_URL = '';
+const PRIVACY_URL = '';
 function defaultDb() {
   return {
     counters: {
