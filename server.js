@@ -1199,8 +1199,6 @@ app.get('/firma/:id', (req, res) => {
   `));
 });
 
-const path = require('path');
-const fs = require('fs');
 
 app.post('/firma/:id', express.json({ limit: '10mb' }), (req, res) => {
 
