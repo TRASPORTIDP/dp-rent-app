@@ -713,6 +713,7 @@ app.get('/prenotazione/:id', (req, res) => {
 function generaPdf(p, m) {
   const file = path.join(CONTRACT_DIR, `contratto_${p.codice}.pdf`);
   const doc = new PDFDocument({ size: 'A4', margin: 40 });
+  console.log('DEBUG FIRMA:', p.firma_path);
   doc.pipe(fs.createWriteStream(file));
 
   doc.rect(0, 0, 595, 105).fill('#111');
@@ -1198,25 +1199,39 @@ app.get('/firma/:id', (req, res) => {
   `));
 });
 
-app.post('/firma/:id', (req, res) => {
+const path = require('path');
+const fs = require('fs');
+
+app.post('/firma/:id', express.json({ limit: '10mb' }), (req, res) => {
+
   const db = loadDb();
   const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
-  if (!p) return res.status(404).send('Contratto non trovato');
 
-  const data = req.body.firma;
-  if (!data) return res.status(400).send('Firma mancante');
+  if (!p) return res.send('Errore contratto');
 
-  const base64 = data.split(',')[1];
-  const file = path.join(UPLOAD_DIR, `firma_${p.id}.png`);
-  fs.writeFileSync(file, base64, 'base64');
+  if (!req.body.firma) {
+    return res.send('Firma mancante');
+  }
 
-  p.firma_path = file;
-  p.stato = 'firmato';
+  const base64 = req.body.firma.replace(/^data:image\/png;base64,/, '');
+
+  const filePath = `uploads/firma_${p.id}.png`;
+  
+  // CREA CARTELLA SE NON ESISTE
+  if (!fs.existsSync('uploads')) {
+  fs.mkdirSync('uploads');
+}
+  fs.writeFileSync(filePath, base64, 'base64');
+
+  // 🔥 QUESTA È LA CHIAVE
+  p.firma_path = filePath;
+
   saveDb(db);
 
-  res.send('OK');
-});
+  console.log('✔ Firma salvata in:', filePath);
 
+  res.redirect('/prenotazione/' + p.id);
+});
 app.get('/firma-link/:id', (req, res) => {
   const link = `${req.protocol}://${req.get('host')}/firma/${req.params.id}`;
   res.send(layout('Link firma cliente', `
