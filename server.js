@@ -859,10 +859,9 @@ function formPrenotazione(action, mezzoId = '', data = '') {
       <div class="grid">
         <input name="cliente" placeholder="Cliente" required>
         <input name="telefono" placeholder="Telefono" required>
-        <input name="email" placeholder="Email">
-        <input name="codice_fiscale" placeholder="Codice fiscale">
-        <input name="indirizzo" placeholder="Indirizzo">
-
+        <input name="email" type="email" placeholder="Email" required>
+        <input name="codice_fiscale" placeholder="Codice fiscale" required>
+        <input name="indirizzo" placeholder="Indirizzo" required>
         <select name="fatturazione">
           <option>Privato</option>
           <option>Azienda</option>
@@ -873,10 +872,9 @@ function formPrenotazione(action, mezzoId = '', data = '') {
         <input name="pec" placeholder="PEC">
         <input name="sdi" placeholder="SDI">
 
-        <input name="conducente1" placeholder="Conducente 1">
-        <input name="patente1" placeholder="Patente 1">
-        <input type="date" name="patente1_scadenza">
-
+        <input name="conducente1" placeholder="Conducente 1" required>
+        <input name="patente1" placeholder="Patente 1" required>
+        <input type="date" name="patente1_scadenza" required>
         <input name="conducente2" placeholder="Conducente 2">
         <input name="patente2" placeholder="Patente 2">
         <input type="date" name="patente2_scadenza">
