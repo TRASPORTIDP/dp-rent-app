@@ -1467,34 +1467,45 @@ app.get('/foto/:id', (req, res) => {
 
   const files = db.allegati.filter(a => String(a.prenotazione_id) === String(p.id));
 
+  const selectTipo = `
+    <select name="tipo" required>
+      <option>Patente conducente 1</option>
+      <option>Documento conducente 1</option>
+      <option>Patente conducente 2</option>
+      <option>Documento conducente 2</option>
+      <option>Foto uscita fronte</option>
+      <option>Foto uscita retro</option>
+      <option>Foto uscita lato destro</option>
+      <option>Foto uscita lato sinistro</option>
+      <option>Foto uscita interno</option>
+      <option>Foto rientro fronte</option>
+      <option>Foto rientro retro</option>
+      <option>Foto rientro lato destro</option>
+      <option>Foto rientro lato sinistro</option>
+      <option>Foto rientro interno</option>
+      <option>Danno</option>
+      <option>File generico</option>
+    </select>
+  `;
+
   res.send(layout('Foto / documenti', `
     <div class="card">
       <h2>Foto / documenti ${esc(p.codice)}</h2>
 
+      <h3>Scatta foto</h3>
       <form method="POST" enctype="multipart/form-data">
-        <select name="tipo" required>
-          <option>Patente conducente 1</option>
-          <option>Documento conducente 1</option>
-          <option>Patente conducente 2</option>
-          <option>Documento conducente 2</option>
-          <option>Foto uscita fronte</option>
-          <option>Foto uscita retro</option>
-          <option>Foto uscita lato destro</option>
-          <option>Foto uscita lato sinistro</option>
-          <option>Foto uscita interno</option>
-          <option>Foto rientro fronte</option>
-          <option>Foto rientro retro</option>
-          <option>Foto rientro lato destro</option>
-          <option>Foto rientro lato sinistro</option>
-          <option>Foto rientro interno</option>
-          <option>Danno</option>
-          <option>File generico</option>
-        </select>
+        ${selectTipo}
+        <input type="file" name="file" accept="image/*" capture="environment" required>
+        <button>📸 Scatta e carica foto</button>
+      </form>
 
-        <label><b>Scatta foto o carica file dal dispositivo</b></label>
-        <input type="file" name="file" accept="image/*,.pdf" capture="environment" required>
+      <hr>
 
-        <button>Carica foto / documento</button>
+      <h3>Carica da dispositivo</h3>
+      <form method="POST" enctype="multipart/form-data">
+        ${selectTipo}
+        <input type="file" name="file" accept="image/*,.pdf" required>
+        <button>📁 Carica file / foto salvata</button>
       </form>
 
       <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
