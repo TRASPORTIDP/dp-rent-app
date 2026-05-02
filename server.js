@@ -780,8 +780,20 @@ function generaPdf(p, m) {
   doc.text('Il cliente dichiara di aver preso visione e accettare condizioni generali e privacy. Veicolo da riconsegnare con carburante come consegnato. Danni, multe, pedaggi, franchigie e costi accessori a carico del cliente.', 50, y, { width: 500 });
   y += 60;
 
-  doc.fontSize(10).text('Firma cliente: __________________________', 50, y);
-  doc.text('Firma DP RENT: __________________________', 310, y);
+  doc.fontSize(10).text('Firma cliente:', 50, y);
+doc.text('Firma DP RENT:', 310, y);
+
+if (p.firma_path && fs.existsSync(p.firma_path)) {
+  try {
+    doc.image(p.firma_path, 50, y + 15, { fit: [210, 55] });
+  } catch (e) {
+    doc.text('__________________________', 50, y + 28);
+  }
+} else {
+  doc.text('__________________________', 50, y + 28);
+}
+
+doc.text('__________________________', 310, y + 28);
   doc.end();
 
   return file;
@@ -887,10 +899,31 @@ app.get('/foto/:id', (req, res) => {
 app.post('/foto/:id', upload.single('file'), async (req, res) => {
   const db = loadDb();
   const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
-  if (!p || !req.file) return res.send('Errore upload');
+
+  if (!p) return res.send('Contratto non trovato');
+
+  if (!req.file) {
+    return res.send(layout('Errore upload', `
+      <div class="card">
+        <h2 class="bad">Nessun file selezionato</h2>
+        <p>Da Mac devi scegliere una foto già salvata. Da telefono/tablet puoi scattarla direttamente.</p>
+        <a class="btn" href="/foto/${p.id}">Torna a foto/documenti</a>
+        <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
+      </div>
+    `));
+  }
 
   let drive = null;
-  try { drive = await driveUpload(req.file.path, `${Date.now()}_${req.body.tipo}_${req.file.originalname}`, req.file.mimetype, `${p.codice} - ${p.cliente}`); } catch (e) {}
+  try {
+    drive = await driveUpload(
+      req.file.path,
+      `${Date.now()}_${req.body.tipo}_${req.file.originalname}`,
+      req.file.mimetype,
+      `${p.codice} - ${p.cliente}`
+    );
+  } catch (e) {
+    console.log('Errore Drive upload foto:', e.message);
+  }
 
   db.counters.allegati++;
   db.allegati.push({
@@ -902,10 +935,10 @@ app.post('/foto/:id', upload.single('file'), async (req, res) => {
     drive_link: drive ? drive.link : '',
     created_at: nowIt()
   });
+
   saveDb(db);
   res.redirect('/foto/' + p.id);
 });
-
 app.get('/checkout/:id', (req, res) => {
   const db = loadDb();
   const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
