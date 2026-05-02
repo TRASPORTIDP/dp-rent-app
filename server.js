@@ -80,6 +80,6 @@ app.get('/test-email', async (req, res) => {
 app.get('/', (req, res) => {
   res.send('DP RENT APP ATTIVA');
 });
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log('Server avviato sulla porta ' + PORT);
 });
