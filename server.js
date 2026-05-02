@@ -971,8 +971,7 @@ app.post('/checkout/:id', (req, res) => {
   if (m && p.km_uscita) m.km = p.km_uscita;
 
   saveDb(db);
-  res.redirect('/prenotazione/' + p.id);
-});
+  res.send('OK');});
 
 app.get('/checkin/:id', (req, res) => {
   const db = loadDb();
