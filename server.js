@@ -1309,71 +1309,62 @@ app.get('/firma/:id', (req, res) => {
   res.send(layout('Firma contratto', `
     <div class="card">
       <h2>Firma contratto ${esc(p.codice)}</h2>
-      <p>Firma temporaneamente disattivata. Server ripristinato.</p>
+      <p>Firma con dito, penna o mouse.</p>
+
+      <canvas id="firma" style="width:100%;height:260px;border:2px solid #111;background:white;border-radius:12px;touch-action:none;"></canvas>
+
+      <button type="button" onclick="pulisci()">Cancella</button>
+      <button type="button" onclick="salva()">Salva firma</button>
+
+      <br><br>
       <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
     </div>
-  `));
-});
 
-    
+    <script>
       const canvas = document.getElementById('firma');
       const ctx = canvas.getContext('2d');
-
-      function resizeCanvas() {
-        const rect = canvas.getBoundingClientRect();
-        const data = canvas.toDataURL();
-        canvas.width = rect.width;
-        canvas.height = 260;
-        const img = new Image();
-        img.onload = () => ctx.drawImage(img, 0, 0);
-        img.src = data;
-        ctx.lineWidth = 3;
-        ctx.lineCap = 'round';
-      }
-
-      resizeCanvas();
-      window.addEventListener('resize', resizeCanvas);
+      canvas.width = canvas.offsetWidth;
+      canvas.height = 260;
+      ctx.lineWidth = 3;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#000';
 
       let drawing = false;
 
-      function getPos(e) {
-        const rect = canvas.getBoundingClientRect();
+      function pos(e) {
+        const r = canvas.getBoundingClientRect();
         const t = e.touches ? e.touches[0] : e;
-        return {
-          x: t.clientX - rect.left,
-          y: t.clientY - rect.top
-        };
+        return { x: t.clientX - r.left, y: t.clientY - r.top };
       }
 
       function start(e) {
+        e.preventDefault();
         drawing = true;
-        const p = getPos(e);
+        const p = pos(e);
         ctx.beginPath();
         ctx.moveTo(p.x, p.y);
-        e.preventDefault();
       }
 
       function move(e) {
         if (!drawing) return;
-        const p = getPos(e);
+        e.preventDefault();
+        const p = pos(e);
         ctx.lineTo(p.x, p.y);
         ctx.stroke();
-        e.preventDefault();
       }
 
       function stop(e) {
-        drawing = false;
         e.preventDefault();
+        drawing = false;
       }
 
       canvas.addEventListener('mousedown', start);
       canvas.addEventListener('mousemove', move);
       canvas.addEventListener('mouseup', stop);
       canvas.addEventListener('mouseleave', stop);
-
-      canvas.addEventListener('touchstart', start);
-      canvas.addEventListener('touchmove', move);
-      canvas.addEventListener('touchend', stop);
+      canvas.addEventListener('touchstart', start, { passive:false });
+      canvas.addEventListener('touchmove', move, { passive:false });
+      canvas.addEventListener('touchend', stop, { passive:false });
 
       function pulisci() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -1382,31 +1373,19 @@ app.get('/firma/:id', (req, res) => {
       async function salva() {
         const firma = canvas.toDataURL('image/png');
 
-        const body = {
-  alias: alias,
-  codTrans: codTrans,
-  importo: importoCents,
-  divisa: divisa,
-  mail: p.email || '',
-  url: `${baseUrl}/nexi-ok/${p.id}`,
-  url_back: `${baseUrl}/nexi-ko/${p.id}`,
-  mac: mac
-};
-
-const r = await fetch(endpoint, {
-  method: 'POST',
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify(body)
-});
+        const r = await fetch('/firma/${p.id}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firma })
+        });
 
         if (r.ok) {
-          location.href = '/prenotazione/${p.id}';
+          window.location.href = '/prenotazione/${p.id}';
         } else {
-          alert('Errore salvataggio firma');
+          alert(await r.text());
         }
       }
+    </script>
   `));
 });
 
@@ -1418,7 +1397,7 @@ app.post('/firma/:id', (req, res) => {
     if (!p) return res.status(404).send('Contratto non trovato');
     if (!req.body.firma) return res.status(400).send('Firma mancante');
 
-    const base64 = req.body.firma.replace(/^data:image\/png;base64,/, '');
+    const base64 = req.body.firma.replace(/^data:image\\/png;base64,/, '');
     const filePath = path.join(UPLOAD_DIR, `firma_${p.id}.png`);
 
     fs.writeFileSync(filePath, base64, 'base64');
@@ -1427,7 +1406,6 @@ app.post('/firma/:id', (req, res) => {
     p.stato = 'firmato';
 
     saveDb(db);
-
     res.send('OK');
   } catch (err) {
     res.status(500).send(err.message);
