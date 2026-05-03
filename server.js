@@ -321,18 +321,7 @@ async function driveUpload(localPath, filename, mimetype, folderName) {
     link: data.link || ''
   };
 }
-  const uploaded = await drive.files.create({
-    requestBody: {
-      name: filename,
-      parents: [folderId]
-    },
-    media: {
-      mimeType: mimetype || 'application/octet-stream',
-      body: fs.createReadStream(localPath)
-    },
-    fields: 'id,webViewLink'
-  });
-
+  
   return {
     id: uploaded.data.id,
     link: uploaded.data.webViewLink
