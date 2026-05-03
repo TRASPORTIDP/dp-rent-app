@@ -1851,17 +1851,15 @@ async function creaLinkNexi(p) {
   const importoCents = String(importo);
   const divisa = 'EUR';
 
-  const mac = sha1(
-    `apiKey=${alias}` +
-    `codiceTransazione=${codTrans}` +
-    `importo=${importoCents}` +
-    `divisa=${divisa}` +
-    macKey
-  );
-
+const mac = sha1(
+  `alias=${alias}` +
+  `codTrans=${codTrans}` +
+  `importo=${importoCents}` +
+  macKey
+);
   const params = new URLSearchParams();
-  params.append('apiKey', alias);
-  params.append('codiceTransazione', codTrans);
+  params.append('alias', alias);
+  params.append('codTrans', codTrans);
   params.append('importo', importoCents);
   params.append('divisa', divisa);
   params.append('mail', p.email || '');
