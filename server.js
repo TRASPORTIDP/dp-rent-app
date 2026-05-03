@@ -1459,52 +1459,50 @@ app.get('/firma-link/:id', (req, res) => {
 app.get('/foto/:id', (req, res) => {
   const db = loadDb();
   const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
-
   if (!p) return res.send('Contratto non trovato');
 
   const files = db.allegati.filter(a => String(a.prenotazione_id) === String(p.id));
 
-  const selectTipo = `
-    <select name="tipo" required>
-      <option>Patente conducente 1</option>
-      <option>Documento conducente 1</option>
-      <option>Patente conducente 2</option>
-      <option>Documento conducente 2</option>
-      <option>Foto uscita fronte</option>
-      <option>Foto uscita retro</option>
-      <option>Foto uscita lato destro</option>
-      <option>Foto uscita lato sinistro</option>
-      <option>Foto uscita interno</option>
-      <option>Foto rientro fronte</option>
-      <option>Foto rientro retro</option>
-      <option>Foto rientro lato destro</option>
-      <option>Foto rientro lato sinistro</option>
-      <option>Foto rientro interno</option>
-      <option>Danno</option>
-      <option>File generico</option>
-    </select>
+  const options = `
+    <option>Patente conducente 1</option>
+    <option>Documento conducente 1</option>
+    <option>Patente conducente 2</option>
+    <option>Documento conducente 2</option>
+    <option>Foto uscita fronte</option>
+    <option>Foto uscita retro</option>
+    <option>Foto uscita lato destro</option>
+    <option>Foto uscita lato sinistro</option>
+    <option>Foto uscita interno</option>
+    <option>Foto rientro fronte</option>
+    <option>Foto rientro retro</option>
+    <option>Foto rientro lato destro</option>
+    <option>Foto rientro lato sinistro</option>
+    <option>Foto rientro interno</option>
+    <option>Danno</option>
+    <option>File generico</option>
   `;
 
   res.send(layout('Foto / documenti', `
     <div class="card">
       <h2>Foto / documenti ${esc(p.codice)}</h2>
 
-      <h3>Scatta foto</h3>
-      <form method="POST" enctype="multipart/form-data">
-        ${selectTipo}
-        <input type="file" name="file" accept="image/*" capture="environment" required>
-        <button>📸 Scatta e carica foto</button>
+      <label><b>Tipo documento / foto</b></label>
+      <select id="tipoScelto">${options}</select>
+
+      <form id="formFoto" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoFoto">
+        <input id="cameraInput" type="file" name="file" accept="image/*" capture="environment" style="display:none" required>
       </form>
 
-      <hr>
-
-      <h3>Carica da dispositivo</h3>
-      <form method="POST" enctype="multipart/form-data">
-        ${selectTipo}
-        <input type="file" name="file" accept="image/*,.pdf" required>
-        <button>📁 Carica file / foto salvata</button>
+      <form id="formFile" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoFile">
+        <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
       </form>
 
+      <button type="button" onclick="scattaFoto()">📸 Scatta foto</button>
+      <button type="button" onclick="caricaFile()">📁 Carica da dispositivo</button>
+
+      <br><br>
       <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
 
       <h3>File caricati</h3>
@@ -1518,6 +1516,30 @@ app.get('/foto/:id', (req, res) => {
         `).join('')}
       </ul>
     </div>
+
+    <script>
+      function tipo() {
+        return document.getElementById('tipoScelto').value;
+      }
+
+      function scattaFoto() {
+        document.getElementById('tipoFoto').value = tipo();
+        document.getElementById('cameraInput').click();
+      }
+
+      function caricaFile() {
+        document.getElementById('tipoFile').value = tipo();
+        document.getElementById('fileInput').click();
+      }
+
+      document.getElementById('cameraInput').addEventListener('change', function () {
+        if (this.files.length) document.getElementById('formFoto').submit();
+      });
+
+      document.getElementById('fileInput').addEventListener('change', function () {
+        if (this.files.length) document.getElementById('formFile').submit();
+      });
+    </script>
   `));
 });
 app.post('/foto/:id', upload.single('file'), async (req, res) => {
