@@ -1407,7 +1407,6 @@ const r = await fetch(endpoint, {
           alert('Errore salvataggio firma');
         }
       }
-    </script>
   `));
 });
 
