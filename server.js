@@ -1310,18 +1310,112 @@ app.get('/firma/:id', (req, res) => {
   res.send(layout('Firma contratto', `
     <div class="card">
       <h2>Firma contratto ${esc(p.codice)}</h2>
-      <p>Firma con dito, penna tablet o mouse.</p>
+      <p>Firma con dito, penna o mouse.</p>
 
-      <canvas id="firma"></canvas>
+      <canvas id="firma" style="width:100%;height:260px;border:2px solid #111;background:white;border-radius:12px;"></canvas>
 
-      <button type="button" onclick="pulisci()">Cancella</button>
-      <button type="button" onclick="salva()">Salva firma</button>
+      <br><br>
 
-              <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
-      </div>
-    `));
+      <button type="button" onclick="pulisciFirma()">Cancella firma</button>
+      <button type="button" onclick="salvaFirma()">Salva firma</button>
+
+      <br><br>
+
+      <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
+    </div>
 
     <script>
+      const canvas = document.getElementById('firma');
+      const ctx = canvas.getContext('2d');
+
+      function resizeCanvas() {
+        const rect = canvas.getBoundingClientRect();
+        const data = canvas.toDataURL();
+        canvas.width = rect.width;
+        canvas.height = 260;
+
+        const img = new Image();
+        img.onload = function () {
+          ctx.drawImage(img, 0, 0);
+        };
+        img.src = data;
+      }
+
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+
+      let drawing = false;
+
+      function getPos(e) {
+        const rect = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return {
+          x: t.clientX - rect.left,
+          y: t.clientY - rect.top
+        };
+      }
+
+      function start(e) {
+        e.preventDefault();
+        drawing = true;
+        const pos = getPos(e);
+        ctx.beginPath();
+        ctx.moveTo(pos.x, pos.y);
+      }
+
+      function move(e) {
+        if (!drawing) return;
+        e.preventDefault();
+        const pos = getPos(e);
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.strokeStyle = '#000';
+        ctx.lineTo(pos.x, pos.y);
+        ctx.stroke();
+      }
+
+      function stop(e) {
+        e.preventDefault();
+        drawing = false;
+      }
+
+      canvas.addEventListener('mousedown', start);
+      canvas.addEventListener('mousemove', move);
+      canvas.addEventListener('mouseup', stop);
+      canvas.addEventListener('mouseleave', stop);
+
+      canvas.addEventListener('touchstart', start, { passive: false });
+      canvas.addEventListener('touchmove', move, { passive: false });
+      canvas.addEventListener('touchend', stop, { passive: false });
+
+      function pulisciFirma() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+
+      async function salvaFirma() {
+        const firma = canvas.toDataURL('image/png');
+
+        const r = await fetch('/firma/${p.id}', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ firma })
+        });
+
+        const text = await r.text();
+
+        if (r.ok) {
+          window.location.href = '/prenotazione/${p.id}';
+        } else {
+          alert(text || 'Errore salvataggio firma');
+        }
+      }
+    </script>
+  `));
+});
+
+    
       const canvas = document.getElementById('firma');
       const ctx = canvas.getContext('2d');
 
