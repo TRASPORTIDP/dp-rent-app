@@ -322,11 +322,6 @@ async function driveUpload(localPath, filename, mimetype, folderName) {
   };
 }
   
-  return {
-    id: uploaded.data.id,
-    link: uploaded.data.webViewLink
-  };
-}
 
 async function sendEmail(to, subject, text, attachments = []) {
   if (!process.env.SMTP_HOST) {
