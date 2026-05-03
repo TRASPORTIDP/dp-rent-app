@@ -1,4 +1,4 @@
-require('dotenv').config();
+// encoding: utf-8require('dotenv').config();
 require('dns').setDefaultResultOrder('ipv4first');
 
 const express = require('express');
