@@ -285,42 +285,42 @@ function getDrive() {
 }
 
 async function driveUpload(localPath, filename, mimetype, folderName) {
-  if (!googleDriveConfigured()) return null;
+  if (!process.env.DRIVE_WEBAPP_URL) return null;
+  if (!process.env.GOOGLE_DRIVE_FOLDER_ID) return null;
   if (!fs.existsSync(localPath)) return null;
 
-  const drive = getDrive();
-  const rootFolder = process.env.GOOGLE_DRIVE_FOLDER_ID;
-  let folderId = rootFolder;
+  const base64 = fs.readFileSync(localPath).toString('base64');
 
-  if (folderName) {
-    const safeFolder = String(folderName)
-      .replace(/[\/\\:*?"<>|]/g, '-')
-      .slice(0, 120);
+  const response = await fetch(process.env.DRIVE_WEBAPP_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: JSON.stringify({
+      folderId: process.env.GOOGLE_DRIVE_FOLDER_ID,
+      subfolder: folderName || 'DP RENT',
+      filename: filename,
+      mimeType: mimetype || 'application/octet-stream',
+      base64: base64
+    })
+  });
 
-    const q = `'${rootFolder}' in parents and name='${safeFolder}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const text = await response.text();
 
-    const found = await drive.files.list({
-      q,
-      fields: 'files(id,name)',
-      pageSize: 1
-    });
-
-    if (found.data.files && found.data.files.length) {
-      folderId = found.data.files[0].id;
-    } else {
-      const created = await drive.files.create({
-        requestBody: {
-          name: safeFolder,
-          mimeType: 'application/vnd.google-apps.folder',
-          parents: [rootFolder]
-        },
-        fields: 'id'
-      });
-
-      folderId = created.data.id;
-    }
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error('Errore risposta Apps Script: ' + text);
   }
 
+  if (!data.ok) {
+    throw new Error(data.error || 'Errore upload Drive');
+  }
+
+  return {
+    id: data.id || '',
+    link: data.link || ''
+  };
+}
   const uploaded = await drive.files.create({
     requestBody: {
       name: filename,
