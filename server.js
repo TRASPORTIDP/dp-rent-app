@@ -1317,8 +1317,9 @@ app.get('/firma/:id', (req, res) => {
       <button type="button" onclick="pulisci()">Cancella</button>
       <button type="button" onclick="salva()">Salva firma</button>
 
-      <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
-    </div>
+              <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
+      </div>
+    `));
 
     <script>
       const canvas = document.getElementById('firma');
