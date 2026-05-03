@@ -1374,11 +1374,24 @@ app.get('/firma/:id', (req, res) => {
       async function salva() {
         const firma = canvas.toDataURL('image/png');
 
-        const r = await fetch('/firma/${p.id}', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ firma })
-        });
+        const body = {
+  alias,
+  codTrans,
+  importo: importoCents,
+  divisa,
+  mail: p.email || '',
+  url: `${baseUrl}/nexi-ok/${p.id}`,
+  url_back: `${baseUrl}/nexi-ko/${p.id}`,
+  mac
+};
+
+const r = await fetch(endpoint, {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify(body)
+});
 
         if (r.ok) {
           window.location.href = '/prenotazione/${p.id}';
