@@ -1829,31 +1829,146 @@ app.get('/scadenze', (req, res) => {
   `));
 });
 
-app.get('/nexi/:id', (req, res) => {
+function sha1(s) {
+  return crypto.createHash('sha1').update(s).digest('hex');
+}
+
+async function creaLinkNexi(p) {
+  const alias = process.env.NEXI_ALIAS;
+  const macKey = process.env.NEXI_MAC_KEY;
+  const baseUrl = process.env.APP_BASE_URL;
+
+  if (!alias || !macKey || !baseUrl) {
+    throw new Error('Nexi non configurato');
+  }
+
+  const importo = Number(p.totale || 0);
+  if (!importo || importo <= 0) {
+    throw new Error('Totale contratto non valido');
+  }
+
+  const codTrans = p.codice.replace(/[^A-Za-z0-9]/g, '');
+  const importoCents = String(importo);
+  const divisa = 'EUR';
+
+  const mac = sha1(
+    `apiKey=${alias}` +
+    `codiceTransazione=${codTrans}` +
+    `importo=${importoCents}` +
+    `divisa=${divisa}` +
+    macKey
+  );
+
+  const params = new URLSearchParams();
+  params.append('apiKey', alias);
+  params.append('codiceTransazione', codTrans);
+  params.append('importo', importoCents);
+  params.append('divisa', divisa);
+  params.append('mail', p.email || '');
+  params.append('url', `${baseUrl}/nexi-ok/${p.id}`);
+  params.append('url_back', `${baseUrl}/nexi-ko/${p.id}`);
+  params.append('mac', mac);
+
+  const endpoint = 'https://ecommerce.nexi.it/ecomm/api/bo/richiestaPayMail';
+
+  const r = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: params.toString()
+  });
+
+  const text = await r.text();
+
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    data = Object.fromEntries(new URLSearchParams(text));
+  }
+
+  const link =
+    data.url ||
+    data.urlPagamento ||
+    data.payMailUrl ||
+    data.paymailUrl ||
+    data.redirectUrl ||
+    data.link;
+
+  if (!link) {
+    throw new Error('Nexi non ha restituito link: ' + text);
+  }
+
+  return {
+    codTrans,
+    importoCents,
+    link,
+    raw: text
+  };
+}
+
+app.get('/nexi/:id', async (req, res) => {
+  try {
+    const db = loadDb();
+    const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
+
+    if (!p) return res.send('Contratto non trovato');
+
+    const pagamento = await creaLinkNexi(p);
+
+    p.nexi_codTrans = pagamento.codTrans;
+    p.nexi_link = pagamento.link;
+    p.nexi_stato = 'link_generato';
+    p.nexi_raw = pagamento.raw;
+
+    saveDb(db);
+
+    res.send(layout('Pagamento Nexi', `
+      <div class="card">
+        <h2>Pagamento Nexi</h2>
+        <p><b>Contratto:</b> ${esc(p.codice)}</p>
+        <p><b>Cliente:</b> ${esc(p.cliente)}</p>
+        <p><b>Totale da pagare:</b> € ${euro(p.totale)}</p>
+
+        <a class="btn" target="_blank" href="${esc(p.nexi_link)}">Apri link pagamento</a>
+        <a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a>
+      </div>
+    `));
+  } catch (err) {
+    res.send(layout('Errore Nexi', `
+      <div class="card">
+        <h2 class="bad">Errore Nexi</h2>
+        <pre>${esc(err.message)}</pre>
+        <a class="btn" href="/storico">Torna allo storico</a>
+      </div>
+    `));
+  }
+});
+
+app.get('/nexi-ok/:id', (req, res) => {
   const db = loadDb();
   const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
 
-  if (!p) return res.send('Contratto non trovato');
+  if (p) {
+    p.nexi_stato = 'pagato';
+    p.stato = 'pagato';
+    saveDb(db);
+  }
 
-  const info = nexiPlaceholderUrl(p);
+  res.send('Pagamento registrato correttamente. Grazie da DP RENT.');
+});
 
-  res.send(layout('Nexi', `
-    <div class="card">
-      <h2>Nexi predisposto</h2>
+app.get('/nexi-ko/:id', (req, res) => {
+  const db = loadDb();
+  const p = db.prenotazioni.find(x => String(x.id) === String(req.params.id));
 
-      <p><b>Configurazione:</b> ${info.ready ? 'Pronta' : 'Mancano NEXI_ALIAS / NEXI_MAC_KEY'}</p>
-      <p><b>Contratto:</b> ${esc(p.codice)}</p>
-      <p><b>Importo:</b> € ${euro(p.totale)}</p>
-      <p><b>Codice transazione:</b> ${esc(info.transId)}</p>
-      <p><b>MAC calcolato:</b> ${esc(info.mac)}</p>
+  if (p) {
+    p.nexi_stato = 'non_pagato';
+    saveDb(db);
+  }
 
-      <p class="notice">
-        Qui è predisposta la parte tecnica Nexi. Per pagamento reale va collegata la chiamata PayMail/API Nexi con alias e MAC key definitivi.
-      </p>
-
-      <a class="btn" href="/prenotazione/${p.id}">Torna contratto</a>
-    </div>
-  `));
+  res.send('Pagamento non completato.');
 });
 
 app.get('/nexi-callback', (req, res) => {
