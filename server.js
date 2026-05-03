@@ -265,7 +265,8 @@ function checkAlerts(m) {
 }
 
 function googleDriveConfigured() {
-  return !!(
+  return !!(process.env.DRIVE_WEBAPP_URL && process.env.GOOGLE_DRIVE_FOLDER_ID);
+}
     process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL &&
     process.env.GOOGLE_PRIVATE_KEY &&
     process.env.GOOGLE_DRIVE_FOLDER_ID
