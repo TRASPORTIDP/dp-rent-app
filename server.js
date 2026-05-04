@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').setDefaultResultOrder('ipv4first');
 
@@ -276,7 +277,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V25 COMPLETO - OCR PRIMA CONTRATTO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V26 RIFATTO CORRETTO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -889,6 +890,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
+app.get('/versione', (req, res) => res.send('DP RENT APP V26 RIFATTO CORRETTO'));
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -910,7 +912,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V25 COMPLETO - OCR PRIMA CONTRATTO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V26 RIFATTO CORRETTO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1098,16 +1100,21 @@ app.get('/scadenze-mezzi', async (req, res) => {
   res.send(page('Scadenze mezzi', `<h2>Scadenze e manutenzioni mezzi</h2><div class="box">${alerts || '<p class="ok">Nessun alert attivo.</p>'}</div><table><tr><th>Targa</th><th>Descrizione</th><th>Km</th><th>Tagliando km</th><th>Tagliando data</th><th>Revisione</th><th>Bollo</th><th>Assicurazione</th><th>Alert</th></tr>${trs}</table>`));
 });
 
-function formPrenotazione(mezzi, selectedMezzo, selectedData, action) {
+
+function prefill(query, name, fallback = '') {
+  return esc((query && query[name]) || fallback || '');
+}
+
+function formPrenotazione(mezzi, selectedMezzo, selectedData, action, query = {}) {
   const opt = mezzi.map(m => `<option value="${m.id}" ${String(m.id)===String(selectedMezzo)?'selected':''}>${esc(m.targa)} - ${esc(descrizionePubblica(m))}</option>`).join('');
   return `<form method="POST" action="${action}">
     <div class="grid">
-      <div><label>Nome</label><input name="nome" value="${esc(req.query.nome || '')}" required></div>
-      <div><label>Cognome</label><input name="cognome" value="${esc(req.query.cognome || '')}" required></div>
-      <div><label>Telefono</label><input name="telefono" value="${esc(req.query.telefono || '')}" required></div>
+      <div><label>Nome</label><input name="nome" value="${esc(query.nome || '')}" required></div>
+      <div><label>Cognome</label><input name="cognome" value="${esc(query.cognome || '')}" required></div>
+      <div><label>Telefono</label><input name="telefono" value="${esc(query.telefono || '')}" required></div>
       <div><label>Email</label><input name="email" type="email"></div>
-      <div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(req.query.codice_fiscale || '')}"></div>
-      <div><label>Indirizzo</label><input name="indirizzo" value="${esc(req.query.indirizzo || '')}"></div>
+      <div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(query.codice_fiscale || '')}"></div>
+      <div><label>Indirizzo</label><input name="indirizzo" value="${esc(query.indirizzo || '')}"></div>
       <div><label>CittÃ </label><input name="citta"></div>
       <div><label>CAP</label><input name="cap"></div>
       <div><label>Tipo cliente</label><select name="tipo_cliente"><option>privato</option><option>azienda</option></select></div>
@@ -1226,7 +1233,7 @@ app.get('/prenota', (req, res) => {
     <form method="POST" action="/prenota-cliente">
       <div class="grid">
         <div><label>Tipo mezzo</label><select name="categoria" required><option value="FURGONE">Furgone cargo/merci</option><option value="9_POSTI">Pulmino 9 posti</option><option value="AUTO_DACIA">Auto economica</option><option value="AUTO_GOLF">Auto categoria Golf</option><option value="ESCAVATORE">Escavatore</option><option value="SEMOVENTE">Piattaforma / semovente</option></select></div>
-        <div><label>Nome</label><input name="nome" value="${esc(req.query.nome || '')}" required></div><div><label>Cognome</label><input name="cognome" value="${esc(req.query.cognome || '')}" required></div><div><label>Telefono</label><input name="telefono" value="${esc(req.query.telefono || '')}" required></div><div><label>Email</label><input name="email" value="${esc(req.query.email || '')}"></div><div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(req.query.codice_fiscale || '')}"></div><div><label>Indirizzo</label><input name="indirizzo" value="${esc(req.query.indirizzo || '')}"></div><div><label>Data inizio</label><input type="date" name="data_inizio" required></div><div><label>Ora inizio</label><input type="time" name="ora_inizio" value="08:30"></div><div><label>Data fine</label><input type="date" name="data_fine" required></div><div><label>Ora fine</label><input type="time" name="ora_fine" value="18:00"></div><div><label>Km previsti</label><input type="number" name="km_previsti" value="150"></div>
+        <div><label>Nome</label><input name="nome" value="${esc((req.query && req.query.nome) || '')}" required></div><div><label>Cognome</label><input name="cognome" value="${esc((req.query && req.query.cognome) || '')}" required></div><div><label>Telefono</label><input name="telefono" value="${esc((req.query && req.query.telefono) || '')}" required></div><div><label>Email</label><input name="email" value="${esc((req.query && req.query.email) || '')}"></div><div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc((req.query && req.query.codice_fiscale) || '')}"></div><div><label>Indirizzo</label><input name="indirizzo" value="${esc((req.query && req.query.indirizzo) || '')}"></div><div><label>Data inizio</label><input type="date" name="data_inizio" required></div><div><label>Ora inizio</label><input type="time" name="ora_inizio" value="08:30"></div><div><label>Data fine</label><input type="date" name="data_fine" required></div><div><label>Ora fine</label><input type="time" name="ora_fine" value="18:00"></div><div><label>Km previsti</label><input type="number" name="km_previsti" value="150"></div>
       </div>${privacyCheckboxHtml()}<button>Invia richiesta</button></form>`));
 });
 app.post('/prenota-cliente', async (req, res) => {
