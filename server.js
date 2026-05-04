@@ -229,7 +229,7 @@ main{padding:18px}
 .box{background:white;padding:20px;margin-bottom:20px;border-radius:14px;box-shadow:0 2px 14px #cfcfcf}
 .hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;margin-bottom:20px}
 .tile{background:#101010;color:#fff;text-decoration:none;border-radius:20px;padding:25px 16px;min-height:118px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:22px;font-weight:900;box-shadow:0 7px 0 var(--red),0 2px 12px #bbb}
-.tile span{font-size:34px;line-height:1;margin-bottom:10px}
+.tile span{font-size:18px;line-height:1;margin-bottom:10px;border:2px solid #fff;border-radius:12px;padding:8px 12px;min-width:46px;display:inline-block}
 .tile:hover{transform:translateY(-2px);filter:brightness(1.12)}
 table{width:100%;border-collapse:collapse;background:white}
 th,td{padding:9px;border:1px solid #ddd;font-size:13px;vertical-align:top}
@@ -499,16 +499,43 @@ async function creaLinkNexi(p) {
       ? 'https://xpay.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink'
       : 'https://xpaysandbox.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink';
 
-    const orderId = String(p.codice || `DPR${p.id}${Date.now()}`).replace(/[^A-Za-z0-9_-]/g, '');
+    const orderId = String(p.codice || `DPR${p.id}${Date.now()}`)
+      .replace(/[^A-Za-z0-9]/g, '')
+      .slice(0, 18);
+
+    const amountString = String(amount);
+    const expirationDate = moment().add(7, 'days').format('YYYY-MM-DD');
 
     const body = {
-      order: { orderId, amount, currency: 'EUR' },
-      payment: { paymentType: 'PAY_BY_LINK' },
-      customer: { email: p.email || '' },
-      url: {
-        success: `${baseUrl}/nexi-ok/${p.id}`,
-        cancel: `${baseUrl}/nexi-ko/${p.id}`,
-        back: `${baseUrl}/prenotazione/${p.id}`
+      order: {
+        orderId,
+        amount: amountString,
+        currency: 'EUR',
+        description: `DP RENT ${orderId}`,
+        customerInfo: {
+          cardHolderName: `${p.nome || ''} ${p.cognome || ''}`.trim(),
+          cardHolderEmail: p.email || undefined,
+          billingAddress: {
+            name: `${p.nome || ''} ${p.cognome || ''}`.trim(),
+            street: String(p.indirizzo || '').slice(0, 50) || 'Via Tuderte 466',
+            city: String(p.citta || 'Narni').slice(0, 40),
+            postCode: String(p.cap || '05035').slice(0, 16),
+            province: 'TR',
+            country: 'ITA',
+            mobilePhoneCountryCode: '+39',
+            mobilePhone: String(p.telefono || '').replace(/[^0-9]/g, '').slice(-15)
+          }
+        }
+      },
+      paymentSession: {
+        actionType: 'PAY',
+        amount: amountString,
+        recurrence: { action: 'NO_RECURRING' },
+        language: 'ita',
+        resultUrl: `${baseUrl}/nexi-ok/${p.id}`,
+        cancelUrl: `${baseUrl}/nexi-ko/${p.id}`,
+        notificationUrl: `${baseUrl}/nexi-notification/${p.id}`,
+        expirationDate
       }
     };
 
@@ -516,9 +543,8 @@ async function creaLinkNexi(p) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': apiKey,
         'X-Api-Key': apiKey,
-        'Api-Key': apiKey
+        'Correlation-Id': crypto.randomUUID()
       },
       body: JSON.stringify(body)
     });
@@ -528,36 +554,31 @@ async function creaLinkNexi(p) {
     try { data = JSON.parse(text); }
     catch { data = { raw: text }; }
 
-    const link = data.paymentLink || data.link || data.url || data.redirectUrl || data?.payment?.paymentLink || data?.payByLink?.url;
+    const link =
+      data?.paymentLink?.link ||
+      data?.paymentLink?.url ||
+      data?.link ||
+      data?.url ||
+      data?.redirectUrl ||
+      data?.payment?.paymentLink;
 
-    if (!link) throw new Error('Nexi non ha restituito link: ' + JSON.stringify(data));
+    if (!link) {
+      const err = new Error('Nexi API non ha restituito link: ' + JSON.stringify(data));
+      err.raw = text;
+      err.apiBody = body;
+      throw err;
+    }
 
     return { link, raw: text, orderId, mode: 'api' };
   }
 
-  // ModalitÃ  vecchia Alias/MAC: proviamo endpoint PayMail, se non va mostriamo parametri/form
+  // ModalitÃ  vecchia Alias/MAC: prepara i dati ma NON chiama l'endpoint vecchio di Nexi
+  // perchÃ© su molti contratti restituisce "Cannot consume content type".
+  // Per generare automaticamente il link serve la API KEY Pay-by-Link.
   const legacy = nexiLegacyPrepared(p);
-  const r = await fetch(legacy.endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: legacy.params.toString()
-  });
-
-  const text = await r.text();
-  let data;
-  try { data = JSON.parse(text); }
-  catch { data = Object.fromEntries(new URLSearchParams(text)); }
-
-  const link = data.url || data.urlPagamento || data.payMailUrl || data.paymailUrl || data.redirectUrl || data.link;
-
-  if (!link) {
-    const err = new Error('Nexi non ha restituito link: ' + text);
-    err.legacy = legacy;
-    err.raw = text;
-    throw err;
-  }
-
-  return { link, raw: text, orderId: legacy.codTrans, mode: 'legacy' };
+  const err = new Error('Per generare il Pay By Link automatico serve NEXI_API_KEY. Con NEXI_ALIAS/NEXI_MAC_KEY posso solo preparare i parametri, ma il servizio PayMail non Ã¨ attivo su questo alias.');
+  err.legacy = legacy;
+  throw err;
 }
 
 function whatsappText(text) {
@@ -734,14 +755,14 @@ app.get('/', async (req, res) => {
 
     res.send(page('Dashboard', `
       <div class="hero">
-        <a class="tile" href="/nuova-prenotazione"><span>&#10133;</span>Nuova prenotazione</a>
-        <a class="tile" href="/planning"><span>&#128197;</span>Planning</a>
-        <a class="tile" href="/mezzi-web"><span>&#128656;</span>Mezzi</a>
-        <a class="tile" href="/prenotazioni"><span>&#128193;</span>Storico</a>
-        <a class="tile" href="/scadenze-mezzi"><span>&#9888;&#65039;</span>Scadenze</a>
-        <a class="tile" href="/prenota"><span>&#128242;</span>Pagina cliente</a>
-        <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
-        <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
+        <a class="tile" href="/nuova-prenotazione"><span>+</span>Nuova prenotazione</a>
+        <a class="tile" href="/planning"><span>PL</span>Planning</a>
+        <a class="tile" href="/mezzi-web"><span>MZ</span>Mezzi</a>
+        <a class="tile" href="/prenotazioni"><span>ST</span>Storico</a>
+        <a class="tile" href="/scadenze-mezzi"><span>!</span>Scadenze</a>
+        <a class="tile" href="/prenota"><span>CL</span>Pagina cliente</a>
+        <a class="tile" href="/import-mezzi"><span>XL</span>Import Excel</a>
+        <a class="tile" href="/cargos"><span>CG</span>Ca.R.G.O.S.</a>
       </div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
@@ -1131,8 +1152,8 @@ app.get('/documenti/:id', async (req, res) => {
         <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
       </form>
 
-      <button type="button" onclick="scattaFoto()">ð¸ Scatta foto</button>
-      <button type="button" class="btn2" onclick="caricaDaDispositivo()">ð Carica da dispositivo</button>
+      <button type="button" onclick="scattaFoto()">[FOTO] Scatta foto</button>
+      <button type="button" class="btn2" onclick="caricaDaDispositivo()">[FILE] Carica da dispositivo</button>
 
       <h3>Allegati caricati</h3>
       <ul>${lista}</ul>
@@ -1348,17 +1369,13 @@ app.get('/nexi/:id', async (req, res) => {
       const legacy = e.legacy;
       extra = `
         <div class="notice">
-          <b>Nexi Alias/MAC configurato, ma Nexi non ha restituito il link.</b><br>
-          Questo di solito significa che quel servizio PayMail/Pay by Link non Ã¨ abilitato sull'alias, oppure endpoint/alias non corrispondono.
+          <b>Nexi Alias/MAC presente, ma non basta per il Pay By Link automatico.</b><br>
+          La risposta "Cannot consume content type" arriva dal vecchio endpoint PayMail.
+          Per creare il link in automatico serve la chiave <b>NEXI_API_KEY</b> del servizio Pay-by-Link XPay.
         </div>
-        <h3>Parametri inviati a Nexi</h3>
+        <h3>Parametri legacy pronti</h3>
         <pre>${esc(legacy.params.toString())}</pre>
-        <form method="POST" action="${esc(legacy.endpoint)}" target="_blank">
-          ${Array.from(legacy.params.entries()).map(([k,v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join('')}
-          <button type="submit" class="btnWarn">Prova apertura su Nexi</button>
-        </form>
-        <p>Risposta Nexi:</p>
-        <pre>${esc(e.raw || e.message)}</pre>
+        <p>Questi parametri servono solo se Nexi abilita PayMail su quell'alias. Per la funzione automatica usa NEXI_API_KEY.</p>
       `;
     }
 
@@ -1378,6 +1395,11 @@ app.get('/nexi-ok/:id', async (req, res) => {
   await run(`UPDATE prenotazioni SET nexi_stato='pagato', stato='pagato' WHERE id=?`, [req.params.id]);
   res.send(page('Pagamento OK', `<div class="box"><h2 class="ok">Pagamento registrato</h2><p>Grazie da DP RENT.</p><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
 });
+app.post('/nexi-notification/:id', async (req, res) => {
+  await run(`UPDATE prenotazioni SET nexi_raw=? WHERE id=?`, [JSON.stringify(req.body || {}), req.params.id]);
+  res.send('OK');
+});
+
 app.get('/nexi-ko/:id', async (req, res) => {
   await run(`UPDATE prenotazioni SET nexi_stato='non_pagato' WHERE id=?`, [req.params.id]);
   res.send(page('Pagamento KO', `<div class="box"><h2 class="bad">Pagamento non completato</h2><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
