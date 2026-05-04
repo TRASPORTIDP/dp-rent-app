@@ -276,7 +276,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V27 FIX REQ QUERY</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V28 OCR CAMERA FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -889,7 +889,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V27 FIX REQ QUERY'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V28 OCR CAMERA FIX'));
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -911,7 +911,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V27 FIX REQ QUERY</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V28 OCR CAMERA FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1144,19 +1144,60 @@ app.get('/ocr-precontratto', (req, res) => {
   res.send(page('OCR prima del contratto', `
     <div class="box">
       <h2>OCR patente/documento prima del contratto</h2>
-      <p class="notice">Scatta o carica documento/patente. Il sistema legge i dati e poi ti riporta alla nuova prenotazione con i campi precompilati.</p>
-      <form method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
-        <select name="tipo">
-          <option>Patente</option>
-          <option>Carta identitÃ </option>
-          <option>Codice fiscale</option>
-          <option>Altro documento</option>
-        </select>
-        <input type="file" name="file" accept="image/*" capture="environment" required>
-        <button>Leggi documento con AI</button>
+      <p class="notice">Da iPhone/iPad usa <b>Scatta foto</b>. Da Mac usa <b>Carica da dispositivo</b>.</p>
+
+      <label>Tipo documento</label>
+      <select id="tipoScelto">
+        <option>Patente</option>
+        <option>Carta identitÃ </option>
+        <option>Codice fiscale</option>
+        <option>Altro documento</option>
+      </select>
+
+      <form id="formCamera" method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoCamera">
+        <input id="cameraInput" type="file" name="file" accept="image/*" capture="environment" style="display:none" required>
       </form>
+
+      <form id="formFile" method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoFile">
+        <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+      </form>
+
+      <button type="button" class="btn" onclick="scattaFoto()">ð¸ Scatta foto</button>
+      <button type="button" class="btn btn2" onclick="caricaFile()">ð Carica da dispositivo</button>
       <a class="btn btn2" href="/nuova-prenotazione">Torna</a>
+
+      <p class="notice">Dopo la scelta del file la lettura parte automaticamente.</p>
     </div>
+
+    <script>
+      function tipo() {
+        return document.getElementById('tipoScelto').value;
+      }
+
+      function scattaFoto() {
+        document.getElementById('tipoCamera').value = tipo();
+        const input = document.getElementById('cameraInput');
+        input.value = '';
+        input.click();
+      }
+
+      function caricaFile() {
+        document.getElementById('tipoFile').value = tipo();
+        const input = document.getElementById('fileInput');
+        input.value = '';
+        input.click();
+      }
+
+      document.getElementById('cameraInput').addEventListener('change', function () {
+        if (this.files && this.files.length) document.getElementById('formCamera').submit();
+      });
+
+      document.getElementById('fileInput').addEventListener('change', function () {
+        if (this.files && this.files.length) document.getElementById('formFile').submit();
+      });
+    </script>
   `));
 });
 
