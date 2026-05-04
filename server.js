@@ -203,6 +203,26 @@ function esc(v) {
 function normalize(v) { return v === undefined || v === null ? '' : String(v).trim(); }
 function euro(v) { return Number(v || 0).toFixed(2); }
 
+
+const DP_PRIVACY_URL = process.env.DP_PRIVACY_URL || '/privacy';
+const DP_TERMS_URL = process.env.DP_TERMS_URL || '/termini-noleggio';
+
+function privacyCheckboxHtml() {
+  return `
+    <div class="notice">
+      <label style="display:flex;gap:8px;align-items:flex-start">
+        <input type="checkbox" name="accetta_privacy_termini" value="SI" required style="width:auto;margin-top:4px">
+        <span>
+          Dichiaro di aver letto e accettare
+          <a target="_blank" href="${DP_PRIVACY_URL}">Privacy</a>
+          e
+          <a target="_blank" href="${DP_TERMS_URL}">Condizioni generali di noleggio</a>.
+        </span>
+      </label>
+    </div>
+  `;
+}
+
 function page(title, content) {
   const logoPath = path.join(publicDir, 'logo.png');
   const logoHtml = fs.existsSync(logoPath)
@@ -256,7 +276,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V24 OCR + CARGOS</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V25 COMPLETO - OCR PRIMA CONTRATTO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -890,7 +910,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V24 OCR + CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V25 COMPLETO - OCR PRIMA CONTRATTO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1082,12 +1102,12 @@ function formPrenotazione(mezzi, selectedMezzo, selectedData, action) {
   const opt = mezzi.map(m => `<option value="${m.id}" ${String(m.id)===String(selectedMezzo)?'selected':''}>${esc(m.targa)} - ${esc(descrizionePubblica(m))}</option>`).join('');
   return `<form method="POST" action="${action}">
     <div class="grid">
-      <div><label>Nome</label><input name="nome" required></div>
-      <div><label>Cognome</label><input name="cognome" required></div>
-      <div><label>Telefono</label><input name="telefono" required></div>
+      <div><label>Nome</label><input name="nome" value="${esc(req.query.nome || '')}" required></div>
+      <div><label>Cognome</label><input name="cognome" value="${esc(req.query.cognome || '')}" required></div>
+      <div><label>Telefono</label><input name="telefono" value="${esc(req.query.telefono || '')}" required></div>
       <div><label>Email</label><input name="email" type="email"></div>
-      <div><label>Codice fiscale</label><input name="codice_fiscale"></div>
-      <div><label>Indirizzo</label><input name="indirizzo"></div>
+      <div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(req.query.codice_fiscale || '')}"></div>
+      <div><label>Indirizzo</label><input name="indirizzo" value="${esc(req.query.indirizzo || '')}"></div>
       <div><label>CittÃ </label><input name="citta"></div>
       <div><label>CAP</label><input name="cap"></div>
       <div><label>Tipo cliente</label><select name="tipo_cliente"><option>privato</option><option>azienda</option></select></div>
@@ -1110,12 +1130,71 @@ function formPrenotazione(mezzi, selectedMezzo, selectedData, action) {
       <div><label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions('4/4 pieno')}</select></div>
     </div>
     <label>Note</label><textarea name="note"></textarea>
-    <button>Crea contratto</button>
+    ${privacyCheckboxHtml()}<button>Crea contratto</button>
   </form>`;
 }
+
+app.get('/ocr-precontratto', (req, res) => {
+  res.send(page('OCR prima del contratto', `
+    <div class="box">
+      <h2>OCR patente/documento prima del contratto</h2>
+      <p class="notice">Scatta o carica documento/patente. Il sistema legge i dati e poi ti riporta alla nuova prenotazione con i campi precompilati.</p>
+      <form method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
+        <select name="tipo">
+          <option>Patente</option>
+          <option>Carta identitÃ </option>
+          <option>Codice fiscale</option>
+          <option>Altro documento</option>
+        </select>
+        <input type="file" name="file" accept="image/*" capture="environment" required>
+        <button>Leggi documento con AI</button>
+      </form>
+      <a class="btn btn2" href="/nuova-prenotazione">Torna</a>
+    </div>
+  `));
+});
+
+app.post('/ocr-precontratto', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.send('File mancante');
+    const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
+
+    const qs = new URLSearchParams();
+    if (dati.nome) qs.set('nome', dati.nome);
+    if (dati.cognome) qs.set('cognome', dati.cognome);
+    if (dati.codice_fiscale) qs.set('codice_fiscale', dati.codice_fiscale);
+    if (dati.indirizzo) qs.set('indirizzo', dati.indirizzo);
+    if (dati.numero_patente) qs.set('patente1', dati.numero_patente);
+    if (dati.data_scadenza) qs.set('patente1_scadenza', dati.data_scadenza);
+    if (dati.numero_documento) qs.set('documento_numero', dati.numero_documento);
+    if (dati.data_scadenza) qs.set('documento_scadenza', dati.data_scadenza);
+    if (dati.luogo_nascita) qs.set('luogo_nascita', dati.luogo_nascita);
+    if (dati.data_nascita) qs.set('data_nascita', dati.data_nascita);
+
+    res.send(page('Conferma OCR precontratto', `
+      <div class="box">
+        <h2>Dati letti dal documento</h2>
+        <p class="notice">Controlla: cliccando Continua torni alla nuova prenotazione con questi campi giÃ  precompilati.</p>
+        <pre>${esc(JSON.stringify(dati, null, 2))}</pre>
+        <a class="btn" href="/nuova-prenotazione?${esc(qs.toString())}">Continua con questi dati</a>
+        <a class="btn btn2" href="/ocr-precontratto">Riprova OCR</a>
+      </div>
+    `));
+  } catch (e) {
+    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><p>Serve OPENAI_API_KEY su Render.</p><a class="btn" href="/ocr-precontratto">Riprova</a></div>`));
+  }
+});
+
 app.get('/nuova-prenotazione', async (req, res) => {
   const mezzi = await all(`SELECT * FROM mezzi ORDER BY categoria,targa`);
-  res.send(page('Nuova prenotazione', `<h2>Nuova prenotazione / contratto</h2>${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin')}`));
+  res.send(page('Nuova prenotazione', `<h2>Nuova prenotazione / contratto</h2>
+      <div class="box" style="border:2px solid #0b6b2d">
+        <h3>1) Prima carica/scatta documento o patente</h3>
+        <p class="notice">Consigliato: fai OCR prima di creare il contratto, cosÃ¬ i dati cliente si compilano piÃ¹ velocemente.</p>
+        <a class="btn btn3" href="/ocr-precontratto">ð¸ OCR documento/patente prima del contratto</a>
+      </div>
+      <h3>2) Poi controlla i dati e crea contratto</h3>
+    ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin')}`));
 });
 app.post('/prenota-admin', async (req, res) => {
   try {
@@ -1147,8 +1226,8 @@ app.get('/prenota', (req, res) => {
     <form method="POST" action="/prenota-cliente">
       <div class="grid">
         <div><label>Tipo mezzo</label><select name="categoria" required><option value="FURGONE">Furgone cargo/merci</option><option value="9_POSTI">Pulmino 9 posti</option><option value="AUTO_DACIA">Auto economica</option><option value="AUTO_GOLF">Auto categoria Golf</option><option value="ESCAVATORE">Escavatore</option><option value="SEMOVENTE">Piattaforma / semovente</option></select></div>
-        <div><label>Nome</label><input name="nome" required></div><div><label>Cognome</label><input name="cognome" required></div><div><label>Telefono</label><input name="telefono" required></div><div><label>Email</label><input name="email"></div><div><label>Codice fiscale</label><input name="codice_fiscale"></div><div><label>Indirizzo</label><input name="indirizzo"></div><div><label>Data inizio</label><input type="date" name="data_inizio" required></div><div><label>Ora inizio</label><input type="time" name="ora_inizio" value="08:30"></div><div><label>Data fine</label><input type="date" name="data_fine" required></div><div><label>Ora fine</label><input type="time" name="ora_fine" value="18:00"></div><div><label>Km previsti</label><input type="number" name="km_previsti" value="150"></div>
-      </div><button>Invia richiesta</button></form>`));
+        <div><label>Nome</label><input name="nome" value="${esc(req.query.nome || '')}" required></div><div><label>Cognome</label><input name="cognome" value="${esc(req.query.cognome || '')}" required></div><div><label>Telefono</label><input name="telefono" value="${esc(req.query.telefono || '')}" required></div><div><label>Email</label><input name="email" value="${esc(req.query.email || '')}"></div><div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(req.query.codice_fiscale || '')}"></div><div><label>Indirizzo</label><input name="indirizzo" value="${esc(req.query.indirizzo || '')}"></div><div><label>Data inizio</label><input type="date" name="data_inizio" required></div><div><label>Ora inizio</label><input type="time" name="ora_inizio" value="08:30"></div><div><label>Data fine</label><input type="date" name="data_fine" required></div><div><label>Ora fine</label><input type="time" name="ora_fine" value="18:00"></div><div><label>Km previsti</label><input type="number" name="km_previsti" value="150"></div>
+      </div>${privacyCheckboxHtml()}<button>Invia richiesta</button></form>`));
 });
 app.post('/prenota-cliente', async (req, res) => {
   try {
@@ -1834,6 +1913,34 @@ app.get('/nexi-ko/:id', async (req, res) => {
 });
 
 
+
+
+app.get('/privacy', (req, res) => {
+  res.send(page('Privacy DP RENT', `
+    <div class="box">
+      <h2>Informativa Privacy DP RENT</h2>
+      <p>Trasporti DP S.R.L. tratta i dati personali per gestione richiesta, prenotazione, contratto di noleggio, fatturazione, pagamenti, sicurezza del mezzo, gestione danni, multe, sinistri e obblighi di legge.</p>
+      <p>I dati possono includere dati anagrafici, contatti, documento, patente, codice fiscale, immagini dei documenti, foto del mezzo, dati di pagamento e dati contrattuali.</p>
+      <p>I dati sono conservati per il tempo necessario alla gestione del rapporto e agli obblighi fiscali/legali.</p>
+      <p>Per richieste privacy: ${esc(AZIENDA.email)}</p>
+      <a class="btn" href="/">Torna</a>
+    </div>
+  `));
+});
+
+app.get('/termini-noleggio', (req, res) => {
+  res.send(page('Condizioni noleggio DP RENT', `
+    <div class="box">
+      <h2>Condizioni generali di noleggio DP RENT</h2>
+      <p>Il cliente prende in consegna il mezzo nello stato indicato al check-out e si impegna a riconsegnarlo nello stesso stato.</p>
+      <p>Carburante: politica pieno/pieno o livello indicato nel contratto. Differenze di carburante, pulizia straordinaria, danni, smarrimento chiavi/documenti, ritardi, multe, ZTL, pedaggi e franchigie sono a carico del cliente.</p>
+      <p>Km extra: se previsti, sono conteggiati alla tariffa indicata nel contratto.</p>
+      <p>Deposito cauzionale: resta gestito separatamente e puÃ² essere trattenuto in tutto o in parte per danni o costi accessori.</p>
+      <p>La firma del contratto conferma accettazione di privacy e condizioni.</p>
+      <a class="btn" href="/">Torna</a>
+    </div>
+  `));
+});
 
 app.get('/cargos-config', (req, res) => {
   res.send(page('Config Ca.R.G.O.S.', `
