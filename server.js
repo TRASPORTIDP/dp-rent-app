@@ -434,58 +434,139 @@ async function sendEmail(to, subject, text, attachments) {
   });
 }
 
-/* NEXI PAY BY LINK */
+/* NEXI PAY BY LINK
+   Supporta 2 modalitÃ :
+   1) NUOVA Nexi Pay By Link: NEXI_API_KEY + APP_BASE_URL
+   2) VECCHIA predisposizione Alias/MAC: NEXI_ALIAS + NEXI_MAC_KEY + APP_BASE_URL
+      Se Nexi non restituisce link, la pagina mostra una form pronta e i parametri da controllare.
+*/
 function nexiConfigured() {
-  return !!(process.env.NEXI_API_KEY && process.env.APP_BASE_URL);
+  return !!(
+    (process.env.NEXI_API_KEY && process.env.APP_BASE_URL) ||
+    (process.env.NEXI_ALIAS && process.env.NEXI_MAC_KEY && process.env.APP_BASE_URL)
+  );
 }
-async function creaLinkNexi(p) {
-  const apiKey = process.env.NEXI_API_KEY;
+
+function sha1(s) {
+  return crypto.createHash('sha1').update(s).digest('hex');
+}
+
+function nexiLegacyPrepared(p) {
+  const alias = process.env.NEXI_ALIAS;
+  const macKey = process.env.NEXI_MAC_KEY;
   const baseUrl = process.env.APP_BASE_URL;
-  const env = String(process.env.NEXI_ENV || 'TEST').toUpperCase();
+  if (!alias || !macKey || !baseUrl) {
+    throw new Error('Nexi non configurato: servono NEXI_API_KEY oppure NEXI_ALIAS + NEXI_MAC_KEY + APP_BASE_URL');
+  }
 
-  if (!apiKey || !baseUrl) throw new Error('Nexi Pay By Link non configurato: servono NEXI_API_KEY e APP_BASE_URL');
+  const amountCents = String(Math.round(Number(p.totale || 0) * 100));
+  if (!amountCents || Number(amountCents) <= 0) throw new Error('Totale contratto non valido');
 
-  const endpoint = env === 'PROD'
-    ? 'https://xpay.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink'
-    : 'https://xpaysandbox.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink';
+  const codTrans = String(p.codice || `DPR${p.id}${Date.now()}`).replace(/[^A-Za-z0-9]/g, '');
+  const divisa = 'EUR';
+
+  // Standard XPay vecchio: MAC = codTrans + divisa + importo + macKey
+  const mac = sha1(`codTrans=${codTrans}divisa=${divisa}importo=${amountCents}${macKey}`);
+
+  const params = new URLSearchParams();
+  params.append('alias', alias);
+  params.append('codTrans', codTrans);
+  params.append('importo', amountCents);
+  params.append('divisa', divisa);
+  params.append('mail', p.email || '');
+  params.append('url', `${baseUrl}/nexi-ok/${p.id}`);
+  params.append('url_back', `${baseUrl}/nexi-ko/${p.id}`);
+  params.append('mac', mac);
+
+  const endpoint = String(process.env.NEXI_PAYMAIL_ENDPOINT || 'https://ecommerce.nexi.it/ecomm/api/bo/richiestaPayMail');
+
+  return { mode: 'legacy', endpoint, codTrans, amountCents, params, mac };
+}
+
+async function creaLinkNexi(p) {
+  const baseUrl = process.env.APP_BASE_URL;
+  if (!baseUrl) throw new Error('APP_BASE_URL mancante su Render');
 
   const amount = Math.round(Number(p.totale || 0) * 100);
   if (!amount || amount <= 0) throw new Error('Totale contratto non valido');
 
-  const orderId = String(p.codice || `DPR${p.id}${Date.now()}`).replace(/[^A-Za-z0-9_-]/g, '');
+  // ModalitÃ  nuova Pay By Link con API KEY
+  if (process.env.NEXI_API_KEY) {
+    const apiKey = process.env.NEXI_API_KEY;
+    const env = String(process.env.NEXI_ENV || 'TEST').toUpperCase();
 
-  const body = {
-    order: { orderId, amount, currency: 'EUR' },
-    payment: { paymentType: 'PAY_BY_LINK' },
-    customer: { email: p.email || '' },
-    url: {
-      success: `${baseUrl}/nexi-ok/${p.id}`,
-      cancel: `${baseUrl}/nexi-ko/${p.id}`,
-      back: `${baseUrl}/prenotazione/${p.id}`
-    }
-  };
+    const endpoint = env === 'PROD'
+      ? 'https://xpay.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink'
+      : 'https://xpaysandbox.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink';
 
-  const r = await fetch(endpoint, {
+    const orderId = String(p.codice || `DPR${p.id}${Date.now()}`).replace(/[^A-Za-z0-9_-]/g, '');
+
+    const body = {
+      order: { orderId, amount, currency: 'EUR' },
+      payment: { paymentType: 'PAY_BY_LINK' },
+      customer: { email: p.email || '' },
+      url: {
+        success: `${baseUrl}/nexi-ok/${p.id}`,
+        cancel: `${baseUrl}/nexi-ko/${p.id}`,
+        back: `${baseUrl}/prenotazione/${p.id}`
+      }
+    };
+
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': apiKey,
+        'X-Api-Key': apiKey,
+        'Api-Key': apiKey
+      },
+      body: JSON.stringify(body)
+    });
+
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); }
+    catch { data = { raw: text }; }
+
+    const link = data.paymentLink || data.link || data.url || data.redirectUrl || data?.payment?.paymentLink || data?.payByLink?.url;
+
+    if (!link) throw new Error('Nexi non ha restituito link: ' + JSON.stringify(data));
+
+    return { link, raw: text, orderId, mode: 'api' };
+  }
+
+  // ModalitÃ  vecchia Alias/MAC: proviamo endpoint PayMail, se non va mostriamo parametri/form
+  const legacy = nexiLegacyPrepared(p);
+  const r = await fetch(legacy.endpoint, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': apiKey,
-      'X-Api-Key': apiKey,
-      'Api-Key': apiKey
-    },
-    body: JSON.stringify(body)
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: legacy.params.toString()
   });
 
   const text = await r.text();
   let data;
   try { data = JSON.parse(text); }
-  catch { data = { raw: text }; }
+  catch { data = Object.fromEntries(new URLSearchParams(text)); }
 
-  const link = data.paymentLink || data.link || data.url || data.redirectUrl || data?.payment?.paymentLink || data?.payByLink?.url;
+  const link = data.url || data.urlPagamento || data.payMailUrl || data.paymailUrl || data.redirectUrl || data.link;
 
-  if (!link) throw new Error('Nexi non ha restituito link: ' + JSON.stringify(data));
+  if (!link) {
+    const err = new Error('Nexi non ha restituito link: ' + text);
+    err.legacy = legacy;
+    err.raw = text;
+    throw err;
+  }
 
-  return { link, raw: text, orderId };
+  return { link, raw: text, orderId: legacy.codTrans, mode: 'legacy' };
+}
+
+function whatsappText(text) {
+  return `https://wa.me/?text=${encodeURIComponent(text)}`;
+}
+
+function absoluteUrl(req, pathPart) {
+  const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+  return `${base}${pathPart}`;
 }
 
 function actionScreen(id, titolo, messaggio) {
@@ -970,6 +1051,8 @@ app.get('/prenotazione/:id', async (req, res) => {
         <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
         <a class="btn btn3" href="/checkin/${p.id}">Check-in</a>
         <a class="btn btnWarn" href="/nexi/${p.id}">Nexi Pay Link</a>
+        <a class="btn btn3" href="/firma-link/${p.id}">Link firma WhatsApp</a>
+        <a class="btn btn3" href="/whatsapp-contratto/${p.id}">Invia contratto WhatsApp</a>
         <a class="btn btn2" href="/cargos/export/${p.id}">Export Ca.R.G.O.S.</a>
       </div>
     </div>`));
@@ -1018,7 +1101,67 @@ app.get('/planning', async (req, res) => {
 app.get('/documenti/:id', async (req, res) => {
   const files = await all(`SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id DESC`, [req.params.id]);
   const lista = files.map(f => `<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}" target="_blank">${esc(f.originalname)}</a> ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Google Drive</a>` : ''}</li>`).join('');
-  res.send(page('Documenti', `<h2>Documenti cliente / foto in-out</h2><form method="POST" action="/documenti/${req.params.id}" enctype="multipart/form-data"><label>Tipo documento/foto</label><select name="tipo"><option>Patente fronte</option><option>Patente retro</option><option>Documento fronte</option><option>Documento retro</option><option>Codice fiscale</option><option>Foto uscita fronte</option><option>Foto uscita retro</option><option>Foto uscita lato dx</option><option>Foto uscita lato sx</option><option>Foto uscita interno</option><option>Foto danni uscita</option><option>Foto rientro fronte</option><option>Foto rientro retro</option><option>Foto rientro lato dx</option><option>Foto rientro lato sx</option><option>Foto rientro interno</option><option>Foto danni rientro</option></select><input type="file" name="file" accept="image/*,.pdf" required><button>Carica</button></form><h3>Allegati caricati</h3><ul>${lista}</ul><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a>`));
+
+  const options = `
+    <option>Patente fronte</option><option>Patente retro</option>
+    <option>Documento fronte</option><option>Documento retro</option>
+    <option>Codice fiscale</option>
+    <option>Foto uscita fronte</option><option>Foto uscita retro</option>
+    <option>Foto uscita lato dx</option><option>Foto uscita lato sx</option><option>Foto uscita interno</option><option>Foto danni uscita</option>
+    <option>Foto rientro fronte</option><option>Foto rientro retro</option>
+    <option>Foto rientro lato dx</option><option>Foto rientro lato sx</option><option>Foto rientro interno</option><option>Foto danni rientro</option>
+    <option>Altro file</option>
+  `;
+
+  res.send(page('Documenti', `
+    <h2>Documenti cliente / foto in-out</h2>
+    <div class="box">
+      <p class="notice">Da telefono/iPad puoi scattare foto direttamente. Da Mac puoi scegliere il file dal dispositivo.</p>
+
+      <label>Tipo documento/foto</label>
+      <select id="tipoScelto">${options}</select>
+
+      <form id="formCamera" method="POST" action="/documenti/${req.params.id}" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoCamera">
+        <input id="cameraInput" type="file" name="file" accept="image/*" capture="environment" style="display:none" required>
+      </form>
+
+      <form id="formFile" method="POST" action="/documenti/${req.params.id}" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoFile">
+        <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+      </form>
+
+      <button type="button" onclick="scattaFoto()">ð¸ Scatta foto</button>
+      <button type="button" class="btn2" onclick="caricaDaDispositivo()">ð Carica da dispositivo</button>
+
+      <h3>Allegati caricati</h3>
+      <ul>${lista}</ul>
+
+      <a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a>
+    </div>
+
+    <script>
+      function tipo() { return document.getElementById('tipoScelto').value; }
+
+      function scattaFoto() {
+        document.getElementById('tipoCamera').value = tipo();
+        document.getElementById('cameraInput').click();
+      }
+
+      function caricaDaDispositivo() {
+        document.getElementById('tipoFile').value = tipo();
+        document.getElementById('fileInput').click();
+      }
+
+      document.getElementById('cameraInput').addEventListener('change', function () {
+        if (this.files.length) document.getElementById('formCamera').submit();
+      });
+
+      document.getElementById('fileInput').addEventListener('change', function () {
+        if (this.files.length) document.getElementById('formFile').submit();
+      });
+    </script>
+  `));
 });
 app.post('/documenti/:id', upload.single('file'), async (req, res) => {
   if (!req.file) return res.send('File mancante');
@@ -1132,6 +1275,50 @@ app.post('/firma/:id', async (req, res) => {
   }
 });
 
+app.get('/firma-link/:id', async (req, res) => {
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if (!p) return res.send('Contratto non trovato');
+  const link = absoluteUrl(req, `/firma/${p.id}`);
+  const msg = `DP RENT - Firma contratto ${p.codice}: ${link}`;
+  res.send(page('Link firma WhatsApp', `
+    <div class="box">
+      <h2>Link firma cliente</h2>
+      <p>Invia questo link al cliente su WhatsApp per far firmare il contratto.</p>
+      <input value="${esc(link)}" readonly onclick="this.select()">
+      <a class="btn btn3" target="_blank" href="${esc(whatsappText(msg))}">Invia link firma su WhatsApp</a>
+      <a class="btn btn2" href="/prenotazione/${p.id}">Torna contratto</a>
+    </div>
+  `));
+});
+
+app.get('/whatsapp-contratto/:id', async (req, res) => {
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if (!p) return res.send('Contratto non trovato');
+
+  let pdfLink = p.pdf_drive_web_link || '';
+  if (!pdfLink) {
+    try {
+      await generaPdfContratto(p.id);
+      const updated = await get(`SELECT pdf_drive_web_link FROM prenotazioni WHERE id=?`, [p.id]);
+      pdfLink = updated?.pdf_drive_web_link || '';
+    } catch (e) {
+      console.log('Errore generazione PDF per WhatsApp:', e.message);
+    }
+  }
+
+  const firmaLink = absoluteUrl(req, `/firma/${p.id}`);
+  const testo =
+    `DP RENT - Contratto ${p.codice}\n` +
+    `Cliente: ${p.nome || ''} ${p.cognome || ''}\n` +
+    `Totale: â¬ ${Number(p.totale || 0).toFixed(2)}\n\n` +
+    (pdfLink ? `PDF contratto: ${pdfLink}\n\n` : '') +
+    `Firma online: ${firmaLink}`;
+
+  res.redirect(whatsappText(testo));
+});
+
+
+
 app.get('/email/:id', async (req,res)=>{
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);
   if(!p)return res.send('Contratto non trovato');
@@ -1156,7 +1343,35 @@ app.get('/nexi/:id', async (req, res) => {
     await run(`UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', nexi_raw=? WHERE id=?`, [pagamento.link, pagamento.raw, p.id]);
     res.send(page('Pagamento Nexi', `<div class="box"><h2>Pagamento Nexi Pay By Link</h2><p><b>Contratto:</b> ${esc(p.codice)}</p><p><b>Totale contratto:</b> â¬ ${euro(p.totale)}</p><p class="notice">La cauzione la gestite voi manualmente, qui si paga solo il totale contratto.</p><a class="btn btnWarn" target="_blank" href="${esc(pagamento.link)}">Apri link pagamento</a><input value="${esc(pagamento.link)}" readonly onclick="this.select()"><a class="btn btn2" href="/prenotazione/${p.id}">Torna contratto</a></div>`));
   } catch (e) {
-    res.status(500).send(page('Errore Nexi', `<div class="box"><h2 class="bad">Errore Nexi</h2><pre>${esc(e.message)}</pre><p>Servono variabili Render: NEXI_API_KEY, NEXI_ENV, APP_BASE_URL.</p><a class="btn" href="/prenotazioni">Torna allo storico</a></div>`));
+    let extra = '';
+    if (e.legacy) {
+      const legacy = e.legacy;
+      extra = `
+        <div class="notice">
+          <b>Nexi Alias/MAC configurato, ma Nexi non ha restituito il link.</b><br>
+          Questo di solito significa che quel servizio PayMail/Pay by Link non Ã¨ abilitato sull'alias, oppure endpoint/alias non corrispondono.
+        </div>
+        <h3>Parametri inviati a Nexi</h3>
+        <pre>${esc(legacy.params.toString())}</pre>
+        <form method="POST" action="${esc(legacy.endpoint)}" target="_blank">
+          ${Array.from(legacy.params.entries()).map(([k,v]) => `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`).join('')}
+          <button type="submit" class="btnWarn">Prova apertura su Nexi</button>
+        </form>
+        <p>Risposta Nexi:</p>
+        <pre>${esc(e.raw || e.message)}</pre>
+      `;
+    }
+
+    res.status(500).send(page('Errore Nexi', `
+      <div class="box">
+        <h2 class="bad">Errore Nexi</h2>
+        <pre>${esc(e.message)}</pre>
+        <p>Per Pay By Link moderno servono variabili Render: <b>NEXI_API_KEY</b>, <b>NEXI_ENV</b>, <b>APP_BASE_URL</b>.</p>
+        <p>Per modalitÃ  vecchia servono: <b>NEXI_ALIAS</b>, <b>NEXI_MAC_KEY</b>, <b>APP_BASE_URL</b>.</p>
+        ${extra}
+        <a class="btn" href="/prenotazioni">Torna allo storico</a>
+      </div>
+    `));
   }
 });
 app.get('/nexi-ok/:id', async (req, res) => {
