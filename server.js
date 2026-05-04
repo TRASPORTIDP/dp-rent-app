@@ -229,7 +229,7 @@ main{padding:18px}
 .box{background:white;padding:20px;margin-bottom:20px;border-radius:14px;box-shadow:0 2px 14px #cfcfcf}
 .hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:16px;margin-bottom:20px}
 .tile{background:#101010;color:#fff;text-decoration:none;border-radius:20px;padding:25px 16px;min-height:118px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;font-size:22px;font-weight:900;box-shadow:0 7px 0 var(--red),0 2px 12px #bbb}
-.tile span{font-size:18px;line-height:1;margin-bottom:10px;border:2px solid #fff;border-radius:12px;padding:8px 12px;min-width:46px;display:inline-block}
+.tile span{font-size:34px;line-height:1;margin-bottom:10px;border:0;border-radius:0;padding:0;min-width:46px;display:inline-block}
 .tile:hover{transform:translateY(-2px);filter:brightness(1.12)}
 table{width:100%;border-collapse:collapse;background:white}
 th,td{padding:9px;border:1px solid #ddd;font-size:13px;vertical-align:top}
@@ -390,30 +390,43 @@ function googleDriveConfigured() {
   return !!(process.env.DRIVE_WEBAPP_URL && process.env.GOOGLE_DRIVE_FOLDER_ID);
 }
 async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
-  if (!googleDriveConfigured()) return null;
+  // DRIVE VIA APPS SCRIPT: evita errore "Service Accounts do not have storage quota"
+  // Variabili Render richieste:
+  // DRIVE_WEBAPP_URL=https://script.google.com/macros/s/.../exec
+  // GOOGLE_DRIVE_FOLDER_ID=cartella principale DP RENT
+  if (!process.env.DRIVE_WEBAPP_URL || !process.env.GOOGLE_DRIVE_FOLDER_ID) return null;
   if (!fs.existsSync(localPath)) return null;
 
   const base64 = fs.readFileSync(localPath).toString('base64');
-  const response = await fetch(process.env.DRIVE_WEBAPP_URL, {
+
+  const r = await fetch(process.env.DRIVE_WEBAPP_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
     body: JSON.stringify({
       folderId: process.env.GOOGLE_DRIVE_FOLDER_ID,
       subfolder: subFolderName || 'DP RENT',
-      filename,
+      filename: filename,
       mimeType: mimetype || 'application/octet-stream',
-      base64
+      base64: base64
     })
   });
 
-  const text = await response.text();
+  const text = await r.text();
   let data;
-  try { data = JSON.parse(text); }
-  catch { throw new Error('Errore risposta Apps Script: ' + text); }
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    throw new Error('Risposta Apps Script non valida: ' + text);
+  }
 
-  if (!data.ok) throw new Error(data.error || 'Errore upload Drive');
+  if (!data.ok) {
+    throw new Error(data.error || 'Upload Drive fallito');
+  }
 
-  return { id: data.id || '', webViewLink: data.link || '' };
+  return {
+    id: data.id || '',
+    webViewLink: data.link || data.webViewLink || ''
+  };
 }
 
 async function sendEmail(to, subject, text, attachments) {
@@ -434,151 +447,122 @@ async function sendEmail(to, subject, text, attachments) {
   });
 }
 
-/* NEXI PAY BY LINK
-   Supporta 2 modalitÃ :
-   1) NUOVA Nexi Pay By Link: NEXI_API_KEY + APP_BASE_URL
-   2) VECCHIA predisposizione Alias/MAC: NEXI_ALIAS + NEXI_MAC_KEY + APP_BASE_URL
-      Se Nexi non restituisce link, la pagina mostra una form pronta e i parametri da controllare.
+/* NEXI PAYMAIL - COPIATO DAL PROGETTO WHATSAPP FUNZIONANTE
+   Variabili Render:
+   NEXI_ALIAS=payment_...
+   NEXI_MAC_KEY=...
+   NEXI_ENV=prod oppure test
+   APP_BASE_URL=https://dp-rent-app.onrender.com
 */
+const NEXI_ENV_APP = String(process.env.NEXI_ENV || 'prod').toLowerCase();
+const NEXI_ALIAS_APP = process.env.NEXI_ALIAS || process.env.NEXI_API_KEY_ALIAS || '';
+const NEXI_MAC_KEY_APP = process.env.NEXI_MAC_KEY || '';
+const NEXI_TIMEOUT_HOURS_APP = Number(process.env.NEXI_TIMEOUT_HOURS || 4);
+const NEXI_BASE_URL_APP = NEXI_ENV_APP === 'test' ? 'https://int-ecommerce.nexi.it' : 'https://ecommerce.nexi.it';
+const NEXI_PAYMAIL_ENDPOINT_APP = `${NEXI_BASE_URL_APP}/ecomm/api/bo/richiestaPayMail`;
+
 function nexiConfigured() {
-  return !!(
-    (process.env.NEXI_API_KEY && process.env.APP_BASE_URL) ||
-    (process.env.NEXI_ALIAS && process.env.NEXI_MAC_KEY && process.env.APP_BASE_URL)
-  );
+  return Boolean(NEXI_ALIAS_APP && NEXI_MAC_KEY_APP && process.env.APP_BASE_URL);
 }
 
 function sha1(s) {
   return crypto.createHash('sha1').update(s).digest('hex');
 }
 
-function nexiLegacyPrepared(p) {
-  const alias = process.env.NEXI_ALIAS;
-  const macKey = process.env.NEXI_MAC_KEY;
-  const baseUrl = process.env.APP_BASE_URL;
-  if (!alias || !macKey || !baseUrl) {
-    throw new Error('Nexi non configurato: servono NEXI_API_KEY oppure NEXI_ALIAS + NEXI_MAC_KEY + APP_BASE_URL');
-  }
-
-  const amountCents = String(Math.round(Number(p.totale || 0) * 100));
-  if (!amountCents || Number(amountCents) <= 0) throw new Error('Totale contratto non valido');
-
-  const codTrans = String(p.codice || `DPR${p.id}${Date.now()}`).replace(/[^A-Za-z0-9]/g, '');
-  const divisa = 'EUR';
-
-  // Standard XPay vecchio: MAC = codTrans + divisa + importo + macKey
-  const mac = sha1(`codTrans=${codTrans}divisa=${divisa}importo=${amountCents}${macKey}`);
-
-  const params = new URLSearchParams();
-  params.append('alias', alias);
-  params.append('codTrans', codTrans);
-  params.append('importo', amountCents);
-  params.append('divisa', divisa);
-  params.append('mail', p.email || '');
-  params.append('url', `${baseUrl}/nexi-ok/${p.id}`);
-  params.append('url_back', `${baseUrl}/nexi-ko/${p.id}`);
-  params.append('mac', mac);
-
-  const endpoint = String(process.env.NEXI_PAYMAIL_ENDPOINT || 'https://ecommerce.nexi.it/ecomm/api/bo/richiestaPayMail');
-
-  return { mode: 'legacy', endpoint, codTrans, amountCents, params, mac };
+function buildNexiOrderId(prefix = 'DPR') {
+  return `${prefix}${Date.now().toString().slice(-10)}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`.slice(0, 18);
 }
 
-async function creaLinkNexi(p) {
-  const baseUrl = process.env.APP_BASE_URL;
-  if (!baseUrl) throw new Error('APP_BASE_URL mancante su Render');
+function nexiMacPayMail({ apiKey, codiceTransazione, importo, timeStamp }) {
+  const source =
+    `apiKey=${apiKey}` +
+    `codiceTransazione=${codiceTransazione}` +
+    `importo=${importo}` +
+    `timeStamp=${timeStamp}` +
+    NEXI_MAC_KEY_APP;
 
-  const amount = Math.round(Number(p.totale || 0) * 100);
-  if (!amount || amount <= 0) throw new Error('Totale contratto non valido');
+  return crypto.createHash('sha1').update(source).digest('hex');
+}
 
-  // ModalitÃ  nuova Pay By Link con API KEY
-  if (process.env.NEXI_API_KEY) {
-    const apiKey = process.env.NEXI_API_KEY;
-    const env = String(process.env.NEXI_ENV || 'TEST').toUpperCase();
-
-    const endpoint = env === 'PROD'
-      ? 'https://xpay.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink'
-      : 'https://xpaysandbox.nexigroup.com/api/phoenix-0.0/psp/api/v1/orders/paybylink';
-
-    const orderId = String(p.codice || `DPR${p.id}${Date.now()}`)
-      .replace(/[^A-Za-z0-9]/g, '')
-      .slice(0, 18);
-
-    const amountString = String(amount);
-    const expirationDate = moment().add(7, 'days').format('YYYY-MM-DD');
-
-    const body = {
-      order: {
-        orderId,
-        amount: amountString,
-        currency: 'EUR',
-        description: `DP RENT ${orderId}`,
-        customerInfo: {
-          cardHolderName: `${p.nome || ''} ${p.cognome || ''}`.trim(),
-          cardHolderEmail: p.email || undefined,
-          billingAddress: {
-            name: `${p.nome || ''} ${p.cognome || ''}`.trim(),
-            street: String(p.indirizzo || '').slice(0, 50) || 'Via Tuderte 466',
-            city: String(p.citta || 'Narni').slice(0, 40),
-            postCode: String(p.cap || '05035').slice(0, 16),
-            province: 'TR',
-            country: 'ITA',
-            mobilePhoneCountryCode: '+39',
-            mobilePhone: String(p.telefono || '').replace(/[^0-9]/g, '').slice(-15)
-          }
-        }
-      },
-      paymentSession: {
-        actionType: 'PAY',
-        amount: amountString,
-        recurrence: { action: 'NO_RECURRING' },
-        language: 'ita',
-        resultUrl: `${baseUrl}/nexi-ok/${p.id}`,
-        cancelUrl: `${baseUrl}/nexi-ko/${p.id}`,
-        notificationUrl: `${baseUrl}/nexi-notification/${p.id}`,
-        expirationDate
-      }
-    };
-
-    const r = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Api-Key': apiKey,
-        'Correlation-Id': crypto.randomUUID()
-      },
-      body: JSON.stringify(body)
-    });
-
-    const text = await r.text();
-    let data;
-    try { data = JSON.parse(text); }
-    catch { data = { raw: text }; }
-
-    const link =
-      data?.paymentLink?.link ||
-      data?.paymentLink?.url ||
-      data?.link ||
-      data?.url ||
-      data?.redirectUrl ||
-      data?.payment?.paymentLink;
-
-    if (!link) {
-      const err = new Error('Nexi API non ha restituito link: ' + JSON.stringify(data));
-      err.raw = text;
-      err.apiBody = body;
-      throw err;
-    }
-
-    return { link, raw: text, orderId, mode: 'api' };
+async function createNexiLink(amount, description, p) {
+  if (!nexiConfigured()) {
+    throw new Error('Nexi non configurato: servono NEXI_ALIAS, NEXI_MAC_KEY, APP_BASE_URL');
   }
 
-  // ModalitÃ  vecchia Alias/MAC: prepara i dati ma NON chiama l'endpoint vecchio di Nexi
-  // perchÃ© su molti contratti restituisce "Cannot consume content type".
-  // Per generare automaticamente il link serve la API KEY Pay-by-Link.
-  const legacy = nexiLegacyPrepared(p);
-  const err = new Error('Per generare il Pay By Link automatico serve NEXI_API_KEY. Con NEXI_ALIAS/NEXI_MAC_KEY posso solo preparare i parametri, ma il servizio PayMail non Ã¨ attivo su questo alias.');
-  err.legacy = legacy;
-  throw err;
+  const amountCents = String(Math.round(Number(amount || 0) * 100));
+  if (!amountCents || Number(amountCents) <= 0) throw new Error('Totale contratto non valido');
+
+  const codiceTransazione = buildNexiOrderId('DPR');
+  const timeStamp = Date.now().toString();
+  const baseUrl = String(process.env.APP_BASE_URL || '').replace(/\/+$/, '');
+
+  const payload = {
+    apiKey: NEXI_ALIAS_APP,
+    codiceTransazione,
+    importo: amountCents,
+    timeStamp,
+    mac: nexiMacPayMail({
+      apiKey: NEXI_ALIAS_APP,
+      codiceTransazione,
+      importo: amountCents,
+      timeStamp
+    }),
+    timeout: String(NEXI_TIMEOUT_HOURS_APP),
+    url: `${baseUrl}/nexi-ok/${p.id}`,
+    url_back: `${baseUrl}/nexi-ko/${p.id}`,
+    parametriAggiuntivi: {
+      source: 'dp_rent_app',
+      contratto: p.codice || '',
+      description: description || ''
+    }
+  };
+
+  if (p.email) payload.mail = p.email;
+
+  console.log('NEXI PAYMAIL REQUEST', {
+    endpoint: NEXI_PAYMAIL_ENDPOINT_APP,
+    codiceTransazione,
+    importo: amountCents,
+    env: NEXI_ENV_APP
+  });
+
+  const r = await fetch(NEXI_PAYMAIL_ENDPOINT_APP, {
+    method: 'POST',
+    headers: {
+      Accept: 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const text = await r.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch (e) {
+    data = { raw: text };
+  }
+
+  console.log('NEXI PAYMAIL RESPONSE', data);
+
+  if (!r.ok) throw new Error(`HTTP Nexi ${r.status}: ${text}`);
+
+  if (data.esito !== 'OK') {
+    throw new Error(data?.errore?.messaggio || data?.errore?.description || data?.errore?.codice || ('Errore Nexi: ' + text));
+  }
+
+  const payUrl = data.payMailUrl || data.paymailUrl || data.url || data.urlPayMail || data.link || data.paymentUrl;
+
+  if (!payUrl) {
+    throw new Error('Nexi non ha restituito il link pagamento: ' + JSON.stringify(data).slice(0, 700));
+  }
+
+  return {
+    codiceTransazione,
+    link: payUrl,
+    raw: text,
+    amountCents
+  };
 }
 
 function whatsappText(text) {
@@ -755,14 +739,14 @@ app.get('/', async (req, res) => {
 
     res.send(page('Dashboard', `
       <div class="hero">
-        <a class="tile" href="/nuova-prenotazione"><span>+</span>Nuova prenotazione</a>
-        <a class="tile" href="/planning"><span>PL</span>Planning</a>
-        <a class="tile" href="/mezzi-web"><span>MZ</span>Mezzi</a>
-        <a class="tile" href="/prenotazioni"><span>ST</span>Storico</a>
-        <a class="tile" href="/scadenze-mezzi"><span>!</span>Scadenze</a>
-        <a class="tile" href="/prenota"><span>CL</span>Pagina cliente</a>
-        <a class="tile" href="/import-mezzi"><span>XL</span>Import Excel</a>
-        <a class="tile" href="/cargos"><span>CG</span>Ca.R.G.O.S.</a>
+        <a class="tile" href="/nuova-prenotazione"><span>&#10133;</span>Nuova prenotazione</a>
+        <a class="tile" href="/planning"><span>&#128197;</span>Planning</a>
+        <a class="tile" href="/mezzi-web"><span>&#128667;</span>Mezzi</a>
+        <a class="tile" href="/prenotazioni"><span>&#128193;</span>Storico</a>
+        <a class="tile" href="/scadenze-mezzi"><span>&#9888;</span>Scadenze</a>
+        <a class="tile" href="/prenota"><span>&#128241;</span>Pagina cliente</a>
+        <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
+        <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
@@ -1152,8 +1136,8 @@ app.get('/documenti/:id', async (req, res) => {
         <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
       </form>
 
-      <button type="button" onclick="scattaFoto()">[FOTO] Scatta foto</button>
-      <button type="button" class="btn2" onclick="caricaDaDispositivo()">[FILE] Carica da dispositivo</button>
+      <button type="button" onclick="scattaFoto()">&#128247; Scatta foto</button>
+      <button type="button" class="btn2" onclick="caricaDaDispositivo()">&#128193; Carica da dispositivo</button>
 
       <h3>Allegati caricati</h3>
       <ul>${lista}</ul>
@@ -1186,13 +1170,35 @@ app.get('/documenti/:id', async (req, res) => {
 });
 app.post('/documenti/:id', upload.single('file'), async (req, res) => {
   if (!req.file) return res.send('File mancante');
-  const p = await get(`SELECT codice,nome,cognome FROM prenotazioni WHERE id=?`, [req.params.id]);
+
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   let driveRes = null;
+
   try {
-    driveRes = await uploadFileToDrive(req.file.path, `${Date.now()}_${req.body.tipo}_${req.file.originalname}`, req.file.mimetype, `${p?.codice || 'contratto'} - ${p?.nome || ''} ${p?.cognome || ''}`);
-  } catch (e) { console.log('Errore upload documento Drive:', e.message); }
-  await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
-    [req.params.id, req.body.tipo, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
+    driveRes = await uploadFileToDrive(
+      req.file.path,
+      `${Date.now()}_${req.body.tipo}_${req.file.originalname}`,
+      req.file.mimetype,
+      `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`
+    );
+  } catch (e) {
+    console.log('Errore upload documento Drive:', e.message);
+  }
+
+  await run(
+    `INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
+    [
+      req.params.id,
+      req.body.tipo,
+      req.file.filename,
+      req.file.originalname,
+      req.file.path,
+      req.file.mimetype,
+      driveRes?.id || null,
+      driveRes?.webViewLink || null
+    ]
+  );
+
   res.redirect(`/documenti/${req.params.id}`);
 });
 
@@ -1360,32 +1366,45 @@ app.get('/nexi/:id', async (req, res) => {
   try {
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
     if (!p) return res.send('Contratto non trovato');
-    const pagamento = await creaLinkNexi(p);
-    await run(`UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', nexi_raw=? WHERE id=?`, [pagamento.link, pagamento.raw, p.id]);
-    res.send(page('Pagamento Nexi', `<div class="box"><h2>Pagamento Nexi Pay By Link</h2><p><b>Contratto:</b> ${esc(p.codice)}</p><p><b>Totale contratto:</b> â¬ ${euro(p.totale)}</p><p class="notice">La cauzione la gestite voi manualmente, qui si paga solo il totale contratto.</p><a class="btn btnWarn" target="_blank" href="${esc(pagamento.link)}">Apri link pagamento</a><input value="${esc(pagamento.link)}" readonly onclick="this.select()"><a class="btn btn2" href="/prenotazione/${p.id}">Torna contratto</a></div>`));
-  } catch (e) {
-    let extra = '';
-    if (e.legacy) {
-      const legacy = e.legacy;
-      extra = `
-        <div class="notice">
-          <b>Nexi Alias/MAC presente, ma non basta per il Pay By Link automatico.</b><br>
-          La risposta "Cannot consume content type" arriva dal vecchio endpoint PayMail.
-          Per creare il link in automatico serve la chiave <b>NEXI_API_KEY</b> del servizio Pay-by-Link XPay.
-        </div>
-        <h3>Parametri legacy pronti</h3>
-        <pre>${esc(legacy.params.toString())}</pre>
-        <p>Questi parametri servono solo se Nexi abilita PayMail su quell'alias. Per la funzione automatica usa NEXI_API_KEY.</p>
-      `;
-    }
 
+    const pagamento = await createNexiLink(
+      Number(p.totale || 0),
+      `DP RENT ${p.codice || p.id}`,
+      p
+    );
+
+    await run(
+      `UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', nexi_raw=? WHERE id=?`,
+      [pagamento.link, pagamento.raw, p.id]
+    );
+
+    const testoWa =
+      `DP RENT - pagamento contratto ${p.codice}\n` +
+      `Totale: â¬ ${euro(p.totale)}\n` +
+      `${pagamento.link}`;
+
+    res.send(page('Pagamento Nexi', `
+      <div class="box">
+        <h2>Pagamento Nexi PayMail</h2>
+        <p><b>Contratto:</b> ${esc(p.codice)}</p>
+        <p><b>Totale contratto:</b> â¬ ${euro(p.totale)}</p>
+        <p class="notice">La cauzione resta gestita manualmente. Qui paghi solo il totale contratto.</p>
+
+        <a class="btn btnWarn" href="${esc(pagamento.link)}" target="_blank">Apri link pagamento Nexi</a>
+        <a class="btn btn3" target="_blank" href="${esc(whatsappText(testoWa))}">Invia pagamento WhatsApp</a>
+
+        <label>Link pagamento</label>
+        <input value="${esc(pagamento.link)}" readonly onclick="this.select()">
+
+        <a class="btn btn2" href="/prenotazione/${p.id}">Torna contratto</a>
+      </div>
+    `));
+  } catch (e) {
     res.status(500).send(page('Errore Nexi', `
       <div class="box">
         <h2 class="bad">Errore Nexi</h2>
         <pre>${esc(e.message)}</pre>
-        <p>Per Pay By Link moderno servono variabili Render: <b>NEXI_API_KEY</b>, <b>NEXI_ENV</b>, <b>APP_BASE_URL</b>.</p>
-        <p>Per modalitÃ  vecchia servono: <b>NEXI_ALIAS</b>, <b>NEXI_MAC_KEY</b>, <b>APP_BASE_URL</b>.</p>
-        ${extra}
+        <p>Servono su Render: <b>NEXI_ALIAS</b>, <b>NEXI_MAC_KEY</b>, <b>NEXI_ENV</b>, <b>APP_BASE_URL</b>.</p>
         <a class="btn" href="/prenotazioni">Torna allo storico</a>
       </div>
     `));
