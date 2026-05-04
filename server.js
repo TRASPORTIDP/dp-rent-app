@@ -516,8 +516,6 @@ async function createNexiLink(amount, description, p) {
     }
   };
 
-  if (p.email) payload.mail = p.email;
-
   console.log('NEXI PAYMAIL REQUEST', {
     endpoint: NEXI_PAYMAIL_ENDPOINT_APP,
     codiceTransazione,
@@ -1403,7 +1401,7 @@ app.get('/nexi/:id', async (req, res) => {
       <div class="box">
         <h2 class="bad">Errore Nexi</h2>
         <pre>${esc(e.message)}</pre>
-        <p>Servono su Render: <b>NEXI_ALIAS</b>, <b>NEXI_MAC_KEY</b>, <b>NEXI_ENV</b>, <b>APP_BASE_URL</b>.</p>
+        <p>Servono su Render: <b>NEXI_ALIAS</b>, <b>NEXI_MAC_KEY</b>, <b>NEXI_ENV</b>, <b>APP_BASE_URL</b>. Il PayMail attuale invia solo apiKey, codiceTransazione, importo, timeStamp, mac, url.</p>
         <a class="btn" href="/prenotazioni">Torna allo storico</a>
       </div>
     `));
