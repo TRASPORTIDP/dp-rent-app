@@ -509,7 +509,6 @@ async function createNexiLink(amount, description, p) {
     }),
     timeout: String(NEXI_TIMEOUT_HOURS_APP),
     url: `${baseUrl}/nexi-ok/${p.id}`,
-    url_back: `${baseUrl}/nexi-ko/${p.id}`,
     parametriAggiuntivi: {
       source: 'dp_rent_app',
       contratto: p.codice || '',
