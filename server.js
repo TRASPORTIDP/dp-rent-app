@@ -276,7 +276,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V28 OCR CAMERA FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V29 OCR EDITABILE</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -889,7 +889,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V28 OCR CAMERA FIX'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V29 OCR EDITABILE'));
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -911,7 +911,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V28 OCR CAMERA FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V29 OCR EDITABILE</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1144,58 +1144,36 @@ app.get('/ocr-precontratto', (req, res) => {
   res.send(page('OCR prima del contratto', `
     <div class="box">
       <h2>OCR patente/documento prima del contratto</h2>
-      <p class="notice">Da iPhone/iPad usa <b>Scatta foto</b>. Da Mac usa <b>Carica da dispositivo</b>.</p>
+      <p class="notice">Premi il pulsante sotto: da iPhone/iPad puoi scegliere <b>Scatta foto</b> oppure <b>Libreria foto</b>.</p>
 
-      <label>Tipo documento</label>
-      <select id="tipoScelto">
-        <option>Patente</option>
-        <option>Carta identitÃ </option>
-        <option>Codice fiscale</option>
-        <option>Altro documento</option>
-      </select>
+      <form method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
+        <label>Tipo documento</label>
+        <select name="tipo">
+          <option>Patente</option>
+          <option>Carta identitÃ </option>
+          <option>Codice fiscale</option>
+          <option>Altro documento</option>
+        </select>
 
-      <form id="formCamera" method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
-        <input type="hidden" name="tipo" id="tipoCamera">
-        <input id="cameraInput" type="file" name="file" accept="image/*" capture="environment" style="display:none" required>
+        <label class="btn" style="display:block;text-align:center;font-size:24px;padding:18px;margin-top:14px">
+          ð¸ Scatta / carica documento
+          <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+        </label>
+
+        <button id="submitBtn" style="display:none">Leggi documento</button>
       </form>
 
-      <form id="formFile" method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
-        <input type="hidden" name="tipo" id="tipoFile">
-        <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
-      </form>
-
-      <button type="button" class="btn" onclick="scattaFoto()">ð¸ Scatta foto</button>
-      <button type="button" class="btn btn2" onclick="caricaFile()">ð Carica da dispositivo</button>
       <a class="btn btn2" href="/nuova-prenotazione">Torna</a>
 
-      <p class="notice">Dopo la scelta del file la lettura parte automaticamente.</p>
+      <p class="notice">Dopo aver scelto la foto, la lettura parte automaticamente.</p>
     </div>
 
     <script>
-      function tipo() {
-        return document.getElementById('tipoScelto').value;
-      }
-
-      function scattaFoto() {
-        document.getElementById('tipoCamera').value = tipo();
-        const input = document.getElementById('cameraInput');
-        input.value = '';
-        input.click();
-      }
-
-      function caricaFile() {
-        document.getElementById('tipoFile').value = tipo();
-        const input = document.getElementById('fileInput');
-        input.value = '';
-        input.click();
-      }
-
-      document.getElementById('cameraInput').addEventListener('change', function () {
-        if (this.files && this.files.length) document.getElementById('formCamera').submit();
-      });
-
-      document.getElementById('fileInput').addEventListener('change', function () {
-        if (this.files && this.files.length) document.getElementById('formFile').submit();
+      const input = document.getElementById('fileInput');
+      input.addEventListener('change', function () {
+        if (this.files && this.files.length) {
+          document.getElementById('submitBtn').click();
+        }
       });
     </script>
   `));
@@ -1204,26 +1182,34 @@ app.get('/ocr-precontratto', (req, res) => {
 app.post('/ocr-precontratto', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.send('File mancante');
+
     const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
 
-    const qs = new URLSearchParams();
-    if (dati.nome) qs.set('nome', dati.nome);
-    if (dati.cognome) qs.set('cognome', dati.cognome);
-    if (dati.codice_fiscale) qs.set('codice_fiscale', dati.codice_fiscale);
-    if (dati.indirizzo) qs.set('indirizzo', dati.indirizzo);
-    if (dati.numero_patente) qs.set('patente1', dati.numero_patente);
-    if (dati.data_scadenza) qs.set('patente1_scadenza', dati.data_scadenza);
-    if (dati.numero_documento) qs.set('documento_numero', dati.numero_documento);
-    if (dati.data_scadenza) qs.set('documento_scadenza', dati.data_scadenza);
-    if (dati.luogo_nascita) qs.set('luogo_nascita', dati.luogo_nascita);
-    if (dati.data_nascita) qs.set('data_nascita', dati.data_nascita);
+    function v(x) { return esc(x || ''); }
 
-    res.send(page('Conferma OCR precontratto', `
+    res.send(page('Controlla dati OCR', `
       <div class="box">
-        <h2>Dati letti dal documento</h2>
-        <p class="notice">Controlla: cliccando Continua torni alla nuova prenotazione con questi campi giÃ  precompilati.</p>
-        <pre>${esc(JSON.stringify(dati, null, 2))}</pre>
-        <a class="btn" href="/nuova-prenotazione?${esc(qs.toString())}">Continua con questi dati</a>
+        <h2>Controlla e modifica i dati letti</h2>
+        <p class="notice">L'AI puÃ² sbagliare. Correggi i campi se serve, poi premi <b>Continua al contratto</b>.</p>
+
+        <form method="GET" action="/nuova-prenotazione">
+          <div class="grid">
+            <div><label>Nome</label><input name="nome" value="${v(dati.nome)}"></div>
+            <div><label>Cognome</label><input name="cognome" value="${v(dati.cognome)}"></div>
+            <div><label>Codice fiscale</label><input name="codice_fiscale" value="${v(dati.codice_fiscale)}"></div>
+            <div><label>Indirizzo</label><input name="indirizzo" value="${v(dati.indirizzo)}"></div>
+            <div><label>Data nascita</label><input type="date" name="data_nascita" value="${v(dati.data_nascita)}"></div>
+            <div><label>Luogo nascita</label><input name="luogo_nascita" value="${v(dati.luogo_nascita)}"></div>
+            <div><label>Numero documento</label><input name="documento_numero" value="${v(dati.numero_documento)}"></div>
+            <div><label>Scadenza documento</label><input type="date" name="documento_scadenza" value="${v(dati.data_scadenza)}"></div>
+            <div><label>Numero patente</label><input name="patente1" value="${v(dati.numero_patente || dati.numero_documento)}"></div>
+            <div><label>Scadenza patente</label><input type="date" name="patente1_scadenza" value="${v(dati.data_scadenza)}"></div>
+            <div><label>Categoria patente</label><input name="categoria_patente" value="${v(dati.categoria_patente)}"></div>
+          </div>
+
+          <button>Continua al contratto con questi dati</button>
+        </form>
+
         <a class="btn btn2" href="/ocr-precontratto">Riprova OCR</a>
       </div>
     `));
