@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 require('dns').setDefaultResultOrder('ipv4first');
 
@@ -281,7 +280,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V30 OCR IMPORT FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V31 OCR IMPORT VERIFICATO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -894,7 +893,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V30 OCR IMPORT FIX'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V31 OCR IMPORT VERIFICATO'));
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -916,7 +915,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V30 OCR IMPORT FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V31 OCR IMPORT VERIFICATO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1116,19 +1115,19 @@ function formPrenotazione(mezzi, selectedMezzo, selectedData, action, query = {}
       <div><label>Nome</label><input name="nome" value="${esc(query.nome || '')}" required></div>
       <div><label>Cognome</label><input name="cognome" value="${esc(query.cognome || '')}" required></div>
       <div><label>Telefono</label><input name="telefono" value="${esc(query.telefono || '')}" required></div>
-      <div><label>Email</label><input name="email" type="email"></div>
+      <div><label>Email</label><input name="email" type="email" value="${esc(query.email || '')}"></div>
       <div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(query.codice_fiscale || '')}"></div>
       <div><label>Indirizzo</label><input name="indirizzo" value="${esc(query.indirizzo || '')}"></div>
-      <div><label>CittÃ </label><input name="citta"></div>
-      <div><label>CAP</label><input name="cap"></div>
+      <div><label>Citta</label><input name="citta" value="${esc(query.citta || '')}"></div>
+      <div><label>CAP</label><input name="cap" value="${esc(query.cap || '')}"></div>
       <div><label>Tipo cliente</label><select name="tipo_cliente"><option>privato</option><option>azienda</option></select></div>
       <div><label>P.IVA</label><input name="piva"></div>
       <div><label>Ragione sociale</label><input name="ragione_sociale"></div>
       <div><label>PEC</label><input name="pec"></div>
       <div><label>SDI</label><input name="sdi"></div>
-      <div><label>Conducente 1</label><input name="conducente1"></div>
-      <div><label>Patente 1</label><input name="patente1"></div>
-      <div><label>Scadenza patente 1</label><input type="date" name="patente1_scadenza"></div>
+      <div><label>Conducente 1</label><input name="conducente1" value="${esc(((query.nome || '') + ' ' + (query.cognome || '')).trim())}"></div>
+      <div><label>Patente 1</label><input name="patente1" value="${esc(query.patente1 || '')}"></div>
+      <div><label>Scadenza patente 1</label><input type="date" name="patente1_scadenza" value="${esc(query.patente1_scadenza || '')}"></div>
       <div><label>Conducente 2</label><input name="conducente2"></div>
       <div><label>Patente 2</label><input name="patente2"></div>
       <div><label>Scadenza patente 2</label><input type="date" name="patente2_scadenza"></div>
@@ -1250,7 +1249,7 @@ app.get('/nuova-prenotazione', async (req, res) => {
         <a class="btn btn3" href="/ocr-precontratto"> OCR documento/patente prima del contratto</a>
       </div>
       <h3>2) Poi controlla i dati e crea contratto</h3>
-    ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin')}`));
+    ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin', req.query)}`));
 });
 app.post('/prenota-admin', async (req, res) => {
   try {
@@ -1306,7 +1305,7 @@ app.post('/prenota-cliente', async (req, res) => {
     `, [b.nome,b.cognome,b.telefono,b.email,b.codice_fiscale,b.indirizzo,'privato',mezzo.id,b.data_inizio,b.data_fine,b.ora_inizio || '08:30',b.ora_fine || '18:00',calc.giorni,Number(b.km_previsti || 0),calc.extra_fuori_orario,calc.extraKm,calc.imponibile,calc.iva,calc.totale,CAUZIONE,'richiesta_cliente']);
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
-    res.send(page('Richiesta inviata', `<div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice: <b>${cod}</b></p><p>Totale previsto: <b>â¬ ${euro(calc.totale)}</b></p><p>DP RENT confermerÃ  la prenotazione.</p></div>`));
+    res.send(page('Richiesta inviata', `<div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice: <b>${cod}</b></p><p>Totale previsto: <b>â¬ ${euro(calc.totale)}</b></p><p>DP RENT confermera la prenotazione.</p></div>`));
   } catch (e) {
     res.status(500).send(page('Errore', `<pre>${esc(e.message)}</pre>`));
   }
