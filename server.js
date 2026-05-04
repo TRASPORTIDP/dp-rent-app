@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').setDefaultResultOrder('ipv4first');
 
@@ -390,10 +391,6 @@ function googleDriveConfigured() {
   return !!(process.env.DRIVE_WEBAPP_URL && process.env.GOOGLE_DRIVE_FOLDER_ID);
 }
 async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
-  // DRIVE VIA APPS SCRIPT: evita errore "Service Accounts do not have storage quota"
-  // Variabili Render richieste:
-  // DRIVE_WEBAPP_URL=https://script.google.com/macros/s/.../exec
-  // GOOGLE_DRIVE_FOLDER_ID=cartella principale DP RENT
   if (!process.env.DRIVE_WEBAPP_URL || !process.env.GOOGLE_DRIVE_FOLDER_ID) return null;
   if (!fs.existsSync(localPath)) return null;
 
@@ -413,15 +410,10 @@ async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
 
   const text = await r.text();
   let data;
-  try {
-    data = JSON.parse(text);
-  } catch (e) {
-    throw new Error('Risposta Apps Script non valida: ' + text);
-  }
+  try { data = JSON.parse(text); }
+  catch { throw new Error('Risposta Apps Script non valida: ' + text); }
 
-  if (!data.ok) {
-    throw new Error(data.error || 'Upload Drive fallito');
-  }
+  if (!data.ok) throw new Error(data.error || 'Upload Drive fallito');
 
   return {
     id: data.id || '',
@@ -617,7 +609,21 @@ function row(doc, label, value, x, y, w) {
   doc.fillColor('#111').fontSize(9).text(String(value || ''), x+w*0.38, y, {width:w*0.6});
   doc.fillColor('black');
 }
-async function generaPdfContratto(id) {
+
+function pdfFileNameForContract(p) {
+  const safe = String(p.codice || p.id).replace(/[^a-zA-Z0-9_-]/g, '');
+  const signed = p.firma_path && fs.existsSync(p.firma_path) ? '_firmato' : '';
+  return `contratto_${safe}${signed}.pdf`;
+}
+
+function shouldUploadPdfToDrive(p, forceDrive) {
+  if (!googleDriveConfigured()) return false;
+  if (forceDrive) return true;
+  if (p.pdf_drive_web_link && p.stato !== 'firmato') return false;
+  return true;
+}
+
+async function generaPdfContratto(id, opts = {}) {
   const p = await get(`
     SELECT p.*, m.targa, m.marca, m.modello, m.categoria, m.km_inclusi, m.descrizione_pubblica
     FROM prenotazioni p
@@ -626,8 +632,7 @@ async function generaPdfContratto(id) {
   `, [id]);
   if (!p) throw new Error('Contratto non trovato');
 
-  const safe = String(p.codice || id).replace(/[^a-zA-Z0-9_-]/g, '');
-  const file = path.join(contractsDir, `contratto_${safe}.pdf`);
+  const file = path.join(contractsDir, pdfFileNameForContract(p));
   const doc = new PDFDocument({ margin: 40, size:'A4' });
   const stream = fs.createWriteStream(file);
   doc.pipe(stream);
@@ -702,15 +707,19 @@ async function generaPdfContratto(id) {
   });
 
   let driveRes = null;
-  try {
-    driveRes = await uploadFileToDrive(
-      file,
-      path.basename(file),
-      'application/pdf',
-      `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`
-    );
-  } catch (e) {
-    console.log('Errore upload PDF Google Drive:', e.message);
+  const forceDrive = !!opts.forceDrive;
+
+  if (shouldUploadPdfToDrive(p, forceDrive)) {
+    try {
+      driveRes = await uploadFileToDrive(
+        file,
+        path.basename(file),
+        'application/pdf',
+        `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`
+      );
+    } catch (e) {
+      console.log('Errore upload PDF Google Drive:', e.message);
+    }
   }
 
   if (driveRes) {
@@ -724,6 +733,142 @@ async function generaPdfContratto(id) {
 }
 
 /* ROUTES */
+
+
+function cargosConfigured() {
+  return !!(process.env.CARGOS_USERNAME && process.env.CARGOS_PASSWORD && process.env.CARGOS_APIKEY && process.env.CARGOS_AGENZIA_ID && process.env.CARGOS_OPERATORE_ID);
+}
+
+function cargosPad(value, len, type = 'string') {
+  let v = String(value === undefined || value === null ? '' : value).normalize('NFC').replace(/\s+/g,' ').trim();
+  if (type === 'number') v = v.replace(/\D/g, '');
+  if (v.length > len) v = v.slice(0, len);
+  return v.padEnd(len, ' ');
+}
+
+function cargosDateTime(value, timeValue) {
+  const d = value ? moment(value) : moment();
+  const t = String(timeValue || '08:30').slice(0,5);
+  if (!d.isValid()) return ''.padEnd(16, ' ');
+  return `${d.format('DD/MM/YYYY')} ${t}`.padEnd(16, ' ');
+}
+
+function cargosDate(value) {
+  const d = value ? moment(value) : null;
+  if (!d || !d.isValid()) return ''.padEnd(10, ' ');
+  return d.format('DD/MM/YYYY').padEnd(10, ' ');
+}
+
+function cargosTipoVeicolo(categoria) {
+  const c = String(categoria || '').toUpperCase();
+  if (c.includes('AUTO')) return process.env.CARGOS_TIPO_VEICOLO_AUTO || 'A';
+  return process.env.CARGOS_TIPO_VEICOLO_FURGONE || 'F';
+}
+
+async function buildCargosRecordForContract(id) {
+  const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [id]);
+  if (!p) throw new Error('Contratto non trovato');
+
+  const fields = [
+    cargosPad(p.codice,50), cargosDateTime(p.created_at || moment(), moment().format('HH:mm')),
+    cargosPad(process.env.CARGOS_TIPO_PAGAMENTO || '1',1,'number'),
+    cargosDateTime(p.data_inizio,p.ora_inizio || '08:30'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
+    cargosDateTime(p.data_fine,p.ora_fine || '18:00'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
+    cargosPad(process.env.CARGOS_OPERATORE_ID || '',50), cargosPad(process.env.CARGOS_AGENZIA_ID || '',30), cargosPad(process.env.CARGOS_AGENZIA_NOME || AZIENDA.nome,70),
+    cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150), cargosPad(AZIENDA.telefono,20,'number'),
+    cargosPad(cargosTipoVeicolo(p.categoria),1), cargosPad(p.marca || '',50), cargosPad(p.modello || '',100), cargosPad(p.targa || '',15),
+    cargosPad('',50), cargosPad('',1,'number'), cargosPad('',1,'number'),
+    cargosPad(p.cognome || '',50), cargosPad(p.nome || '',30), cargosDate(p.data_nascita || ''),
+    cargosPad(process.env.CARGOS_NASCITA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(process.env.CARGOS_CITTADINANZA_COD || '',9,'number'),
+    cargosPad(process.env.CARGOS_RESIDENZA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(p.indirizzo || '',150),
+    cargosPad(process.env.CARGOS_TIPO_DOCUMENTO || 'CI',5),
+    cargosPad(process.env.CARGOS_DOC_NUMERO_FALLBACK || '',20),
+    cargosPad(process.env.CARGOS_DOC_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(p.patente1 || '',20),
+    cargosPad(process.env.CARGOS_PATENTE_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(p.telefono || '',20),
+    cargosPad('',50), cargosPad('',30), cargosDate(''), cargosPad('',9,'number'), cargosPad('',9,'number'),
+    cargosPad('',5), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20)
+  ];
+
+  const record = fields.join('');
+  if (record.length !== 1505) throw new Error(`Record Ca.R.G.O.S. lunghezza errata: ${record.length}, attesa 1505`);
+  return record;
+}
+
+async function cargosGetToken() {
+  const base = (process.env.CARGOS_BASE_URL || 'https://cargos.poliziadistato.it/CARGOS_API').replace(/\/+$/, '');
+  const basic = Buffer.from(`${process.env.CARGOS_USERNAME}:${process.env.CARGOS_PASSWORD}`).toString('base64');
+  const r = await fetch(`${base}/api/Token`, { method:'GET', headers:{ Authorization:`Basic ${basic}` } });
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = { raw:text }; }
+  if (!r.ok || data.error) throw new Error('Errore token Ca.R.G.O.S.: ' + text);
+  return data.access_token || data.accessToken || data.token || data?.Esito?.access_token;
+}
+
+function cargosEncryptAes(token) {
+  const keySrc = String(process.env.CARGOS_APIKEY || '');
+  if (keySrc.length < 48) throw new Error('CARGOS_APIKEY deve avere almeno 48 caratteri per AES');
+  const key = Buffer.from(keySrc.substring(0,32),'utf8');
+  const iv = Buffer.from(keySrc.substring(32,48),'utf8');
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+  return Buffer.concat([cipher.update(String(token),'utf8'), cipher.final()]).toString('base64');
+}
+
+async function cargosSendRecords(records, method='Check') {
+  if (!cargosConfigured()) throw new Error('Ca.R.G.O.S. non configurato: servono username/password/apikey/agenzia/operatore/codici.');
+  const base = (process.env.CARGOS_BASE_URL || 'https://cargos.poliziadistato.it/CARGOS_API').replace(/\/+$/, '');
+  const encrypted = cargosEncryptAes(await cargosGetToken());
+  const r = await fetch(`${base}/api/${method}`, {
+    method:'POST',
+    headers:{ Authorization:`Bearer ${encrypted}`, Organization:process.env.CARGOS_USERNAME, 'Content-Type':'application/json', Accept:'application/json' },
+    body: JSON.stringify(records)
+  });
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = { raw:text }; }
+  if (!r.ok) throw new Error(`HTTP Ca.R.G.O.S. ${r.status}: ${text}`);
+  return data;
+}
+
+async function estraiDatiDocumentoConAI(localPath, mimetype) {
+  if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY mancante su Render.');
+  if (!fs.existsSync(localPath)) throw new Error('File OCR non trovato');
+
+  const base64 = fs.readFileSync(localPath).toString('base64');
+  const dataUrl = `data:${mimetype || 'image/jpeg'};base64,${base64}`;
+
+  const prompt = `Leggi documento italiano patente/carta identitÃ . Rispondi SOLO JSON valido:
+{
+"tipo_documento":"","nome":"","cognome":"","data_nascita":"YYYY-MM-DD","luogo_nascita":"",
+"codice_fiscale":"","numero_documento":"","ente_rilascio":"","data_rilascio":"YYYY-MM-DD",
+"data_scadenza":"YYYY-MM-DD","numero_patente":"","categoria_patente":"","indirizzo":"",
+"note":"","confidence":"alta|media|bassa"
+}
+Se un campo non Ã¨ visibile lascia vuoto.`;
+
+  const r = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: process.env.OPENAI_OCR_MODEL || 'gpt-4.1-mini',
+      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }, { type: 'input_image', image_url: dataUrl }] }],
+      temperature: 0
+    })
+  });
+
+  const text = await r.text();
+  if (!r.ok) throw new Error('Errore OpenAI OCR: ' + text);
+
+  const data = JSON.parse(text);
+  const outputText = data.output_text || (data.output || []).flatMap(o => o.content || []).map(c => c.text || '').join('\\n');
+  const clean = String(outputText || '').replace(/^```json/i,'').replace(/^```/i,'').replace(/```$/i,'').trim();
+  return JSON.parse(clean);
+}
+
+function ocrValue(v) { return esc(v || ''); }
+
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -1050,6 +1195,7 @@ app.get('/prenotazione/:id', async (req, res) => {
         <a class="btn btn2" href="/firma/${p.id}">Firma</a>
         <a class="btn btn2" href="/email/${p.id}">Email</a>
         <a class="btn btn3" href="/documenti/${p.id}">Foto/documenti</a>
+        <a class="btn btn3" href="/ocr-documenti/${p.id}">OCR patente/documento</a>
         <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
         <a class="btn btn3" href="/checkin/${p.id}">Check-in</a>
         <a class="btn btnWarn" href="/nexi/${p.id}">Nexi Pay Link</a>
@@ -1098,6 +1244,88 @@ app.get('/planning', async (req, res) => {
   });
   const prec = start.clone().subtract(1,'month').format('YYYY-MM'), succ = start.clone().add(1,'month').format('YYYY-MM');
   res.send(page('Planning', `<h2>Planning ${start.format('MM/YYYY')}</h2><p><a href="/planning?mese=${prec}">â Mese precedente</a> | <a href="/planning?mese=${succ}">Mese successivo â</a></p><p><span class="libero" style="padding:6px;">Libero: clic per prenotare</span> <span class="occupato" style="padding:6px;">Occupato: clic per aprire contratto</span></p><div class="sticky-table"><table><tr>${header}</tr>${rows}</table></div>`));
+});
+
+
+app.get('/ocr-documenti/:id', async (req, res) => {
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if (!p) return res.send('Contratto non trovato');
+
+  res.send(page('OCR documenti', `
+    <div class="box">
+      <h2>Lettura automatica patente/documento</h2>
+      <p class="notice">Scatta o carica foto. L'AI compila i dati, poi tu controlli e confermi.</p>
+      <form method="POST" action="/ocr-documenti/${p.id}" enctype="multipart/form-data">
+        <select name="tipo"><option>Patente</option><option>Carta identitÃ </option><option>Documento generico</option></select>
+        <input type="file" name="file" accept="image/*" capture="environment" required>
+        <button>Leggi dati con AI</button>
+      </form>
+      <a class="btn btn2" href="/prenotazione/${p.id}">Torna contratto</a>
+    </div>
+  `));
+});
+
+app.post('/ocr-documenti/:id', upload.single('file'), async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+    if (!req.file) return res.send('File mancante');
+
+    let driveRes = null;
+    try {
+      driveRes = await uploadFileToDrive(
+        req.file.path,
+        `${Date.now()}_OCR_${req.body.tipo}_${req.file.originalname}`,
+        req.file.mimetype,
+        `${p.codice || 'CONTRATTO'} - ${p.nome || ''} ${p.cognome || ''}`
+      );
+    } catch (e) { console.log('Errore upload OCR Drive:', e.message); }
+
+    await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
+      [p.id, `OCR ${req.body.tipo}`, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
+
+    const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
+
+    res.send(page('Conferma dati OCR', `
+      <div class="box">
+        <h2>Controlla dati letti</h2>
+        <p class="notice">Correggi eventuali errori prima di salvare.</p>
+        <form method="POST" action="/ocr-documenti/${p.id}/salva">
+          <div class="grid">
+            <div><label>Nome</label><input name="nome" value="${ocrValue(dati.nome)}"></div>
+            <div><label>Cognome</label><input name="cognome" value="${ocrValue(dati.cognome)}"></div>
+            <div><label>Data nascita</label><input type="date" name="data_nascita" value="${ocrValue(dati.data_nascita)}"></div>
+            <div><label>Luogo nascita</label><input name="luogo_nascita" value="${ocrValue(dati.luogo_nascita)}"></div>
+            <div><label>Codice fiscale</label><input name="codice_fiscale" value="${ocrValue(dati.codice_fiscale)}"></div>
+            <div><label>Numero documento</label><input name="numero_documento" value="${ocrValue(dati.numero_documento)}"></div>
+            <div><label>Ente rilascio</label><input name="ente_rilascio" value="${ocrValue(dati.ente_rilascio)}"></div>
+            <div><label>Data rilascio</label><input type="date" name="data_rilascio" value="${ocrValue(dati.data_rilascio)}"></div>
+            <div><label>Scadenza</label><input type="date" name="data_scadenza" value="${ocrValue(dati.data_scadenza)}"></div>
+            <div><label>Numero patente</label><input name="numero_patente" value="${ocrValue(dati.numero_patente)}"></div>
+            <div><label>Indirizzo</label><input name="indirizzo" value="${ocrValue(dati.indirizzo)}"></div>
+            <div><label>Confidenza</label><input value="${ocrValue(dati.confidence)}" readonly></div>
+          </div>
+          <button>Salva dati nel contratto</button>
+        </form>
+        <pre>${esc(JSON.stringify(dati, null, 2))}</pre>
+      </div>
+    `));
+  } catch (e) {
+    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-documenti/${req.params.id}">Riprova</a></div>`));
+  }
+});
+
+app.post('/ocr-documenti/:id/salva', async (req, res) => {
+  const b = req.body;
+  const current = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if (!current) return res.send('Contratto non trovato');
+
+  const noteExtra = `\\nOCR documento:\\nNumero documento: ${b.numero_documento || ''}\\nEnte rilascio: ${b.ente_rilascio || ''}\\nRilascio: ${b.data_rilascio || ''}\\nScadenza: ${b.data_scadenza || ''}\\nLuogo nascita: ${b.luogo_nascita || ''}`;
+
+  await run(`UPDATE prenotazioni SET nome=?, cognome=?, codice_fiscale=?, indirizzo=?, patente1=COALESCE(NULLIF(?,''), patente1), patente1_scadenza=COALESCE(NULLIF(?,''), patente1_scadenza), note=COALESCE(note,'') || ? WHERE id=?`,
+    [b.nome || current.nome, b.cognome || current.cognome, b.codice_fiscale || current.codice_fiscale, b.indirizzo || current.indirizzo, b.numero_patente || '', b.data_scadenza || '', noteExtra, req.params.id]);
+
+  res.redirect(`/prenotazione/${req.params.id}`);
 });
 
 app.get('/documenti/:id', async (req, res) => {
@@ -1224,7 +1452,7 @@ app.post('/checkin/:id', async (req, res) => {
 
 app.get('/contratto/:id', async (req, res) => {
   try {
-    const file = await generaPdfContratto(req.params.id);
+    const file = await generaPdfContratto(req.params.id, { forceDrive: true });
     res.download(file);
   } catch (e) {
     res.status(500).send(page('Errore PDF', `<div class="box"><h2 class="bad">Errore PDF</h2><pre>${esc(e.message)}</pre></div>`));
@@ -1292,7 +1520,7 @@ app.post('/firma/:id', async (req, res) => {
     const file = path.join(firmeDir, `firma_${req.params.id}.png`);
     fs.writeFileSync(file, base64, 'base64');
     await run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id]);
-    await generaPdfContratto(req.params.id);
+    await generaPdfContratto(req.params.id, { forceDrive: true });
     res.send('OK');
   } catch (e) {
     res.status(500).send(e.message);
@@ -1350,7 +1578,7 @@ app.get('/email/:id', async (req,res)=>{
 });
 app.post('/email/:id', async (req,res)=>{
   try {
-    const file = await generaPdfContratto(req.params.id);
+    const file = await generaPdfContratto(req.params.id, { forceDrive: true });
     await sendEmail(req.body.email, 'Contratto DP RENT', req.body.messaggio || 'In allegato contratto DP RENT.', [{filename:path.basename(file),path:file}]);
     await run(`UPDATE prenotazioni SET stato='inviato_email' WHERE id=?`,[req.params.id]);
     res.send(actionScreen(req.params.id,'Email inviata','Contratto inviato correttamente.'));
@@ -1421,22 +1649,46 @@ app.get('/nexi-ko/:id', async (req, res) => {
   res.send(page('Pagamento KO', `<div class="box"><h2 class="bad">Pagamento non completato</h2><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
 });
 
+
 app.get('/cargos', async (req, res) => {
   const rows = await all(`SELECT p.*, m.targa FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id ORDER BY p.id DESC LIMIT 50`);
-  const trs = rows.map(p => `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.cargos_stato || '')}</td><td><a class="btn" href="/cargos/export/${p.id}">Scarica CSV</a></td></tr>`).join('');
-  res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Export Ca.R.G.O.S.</h2><p>Pagina predisposta per generare il file da inviare/importare su Ca.R.G.O.S. Per ora esporta CSV singolo contratto.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>Azione</th></tr>${trs}</table>`));
+  const trs = rows.map(p => `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Check</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Send</a></td></tr>`).join('');
+  res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Ca.R.G.O.S.</h2><p>Modulo pronto. Quando hai username/password/APIKEY e codici tabelle, Check e Send diventano reali.</p><p><b>Configurato:</b> ${cargosConfigured() ? '<span class="ok">SI</span>' : '<span class="bad">NO</span>'}</p><p>Servono: CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_AGENZIA_ID, CARGOS_OPERATORE_ID, CARGOS_LUOGO_COD.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>Azione</th></tr>${trs}</table>`));
 });
+
+app.get('/cargos/record/:id', async (req, res) => {
+  try {
+    const record = await buildCargosRecordForContract(req.params.id);
+    res.send(page('Record Ca.R.G.O.S.', `<div class="box"><h2>Record Ca.R.G.O.S.</h2><p>Lunghezza: <b>${record.length}</b> caratteri</p><textarea style="height:220px;font-family:monospace">${esc(record)}</textarea><a class="btn" href="/cargos/export/${req.params.id}">Scarica TXT</a><a class="btn btn2" href="/cargos">Torna</a></div>`));
+  } catch(e) { res.status(500).send(page('Errore Ca.R.G.O.S.', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
 app.get('/cargos/export/:id', async (req, res) => {
-  const p = await get(`SELECT p.*, m.targa, m.marca, m.modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
-  if (!p) return res.send('Contratto non trovato');
-  const header = ['codice','nome','cognome','telefono','email','targa','marca','modello','data_inizio','data_fine','totale','stato'];
-  const values = header.map(k => `"${String(p[k] || '').replace(/"/g,'""')}"`);
-  const csv = header.join(';') + '\n' + values.join(';') + '\n';
-  await run(`UPDATE prenotazioni SET cargos_stato='csv_generato' WHERE id=?`, [req.params.id]);
-  res.setHeader('Content-Type','text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="cargos_${p.codice || p.id}.csv"`);
-  res.send(csv);
+  try {
+    const p = await get(`SELECT codice FROM prenotazioni WHERE id=?`, [req.params.id]);
+    const record = await buildCargosRecordForContract(req.params.id);
+    res.setHeader('Content-Type','text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="cargos_${p?.codice || req.params.id}.txt"`);
+    res.send(record + '\\n');
+  } catch(e) { res.status(500).send('Errore export CARGOS: ' + e.message); }
 });
+
+app.get('/cargos/check/:id', async (req, res) => {
+  try {
+    const result = await cargosSendRecords([await buildCargosRecordForContract(req.params.id)], 'Check');
+    await run(`UPDATE prenotazioni SET cargos_stato=? WHERE id=?`, ['check_ok', req.params.id]);
+    res.send(page('Check Ca.R.G.O.S.', `<div class="box"><h2>Esito Check</h2><pre>${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
+  } catch(e) { res.status(500).send(page('Errore Check Ca.R.G.O.S.', `<div class="box"><h2 class="bad">Errore Check</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos">Torna</a></div>`)); }
+});
+
+app.get('/cargos/send/:id', async (req, res) => {
+  try {
+    const result = await cargosSendRecords([await buildCargosRecordForContract(req.params.id)], 'Send');
+    await run(`UPDATE prenotazioni SET cargos_stato=? WHERE id=?`, ['send_ok', req.params.id]);
+    res.send(page('Send Ca.R.G.O.S.', `<div class="box"><h2>Esito Send</h2><pre>${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
+  } catch(e) { res.status(500).send(page('Errore Send Ca.R.G.O.S.', `<div class="box"><h2 class="bad">Errore Send</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos">Torna</a></div>`)); }
+});
+
 
 app.get('/test-email', async (req, res) => {
   try {
