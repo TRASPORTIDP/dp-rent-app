@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 require('dns').setDefaultResultOrder('ipv4first');
 
@@ -1195,6 +1194,7 @@ app.get('/prenotazione/:id', async (req, res) => {
         <a class="btn btn2" href="/firma/${p.id}">Firma</a>
         <a class="btn btn2" href="/email/${p.id}">Email</a>
         <a class="btn btn3" href="/documenti/${p.id}">Foto/documenti</a>
+        <a class="btn btn3" href="/cliente-documenti-link/${p.id}">Link documenti cliente</a>
         <a class="btn btn3" href="/ocr-documenti/${p.id}">OCR patente/documento</a>
         <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
         <a class="btn btn3" href="/checkin/${p.id}">Check-in</a>
@@ -1247,22 +1247,142 @@ app.get('/planning', async (req, res) => {
 });
 
 
+
+function clienteDocToken(id) {
+  return crypto.createHash('sha256')
+    .update(`${id}:${process.env.APP_BASE_URL || ''}:${process.env.NEXI_MAC_KEY || 'dp-rent'}`)
+    .digest('hex')
+    .slice(0, 24);
+}
+
+function clienteDocUrl(req, id) {
+  return absoluteUrl(req, `/cliente-documenti/${id}/${clienteDocToken(id)}`);
+}
+
+function renderOcrUploadForm(action, backUrl, title = 'Carica documenti') {
+  return `
+    <div class="box">
+      <h2>${esc(title)}</h2>
+      <p class="notice">Puoi scattare una foto oppure caricare un file. Dopo la lettura dei dati, controlla e conferma.</p>
+
+      <label>Tipo documento</label>
+      <select id="tipoScelto">
+        <option>Patente</option>
+        <option>Carta identitÃ </option>
+        <option>Codice fiscale</option>
+        <option>Altro documento</option>
+      </select>
+
+      <form id="formCamera" method="POST" action="${action}" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoCamera">
+        <input id="cameraInput" type="file" name="file" accept="image/*" capture="environment" style="display:none" required>
+      </form>
+
+      <form id="formFile" method="POST" action="${action}" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" id="tipoFile">
+        <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+      </form>
+
+      <button type="button" onclick="scattaFoto()">ð¸ Scatta foto</button>
+      <button type="button" class="btn2" onclick="caricaDaDispositivo()">ð Carica da dispositivo</button>
+      <a class="btn btn2" href="${backUrl}">Torna</a>
+    </div>
+
+    <script>
+      function tipo() { return document.getElementById('tipoScelto').value; }
+      function scattaFoto() {
+        document.getElementById('tipoCamera').value = tipo();
+        document.getElementById('cameraInput').click();
+      }
+      function caricaDaDispositivo() {
+        document.getElementById('tipoFile').value = tipo();
+        document.getElementById('fileInput').click();
+      }
+      document.getElementById('cameraInput').addEventListener('change', function () {
+        if (this.files.length) document.getElementById('formCamera').submit();
+      });
+      document.getElementById('fileInput').addEventListener('change', function () {
+        if (this.files.length) document.getElementById('formFile').submit();
+      });
+    </script>
+  `;
+}
+
+function renderOcrConfirmPage(p, dati, saveAction, cancelUrl) {
+  return page('Conferma dati OCR', `
+    <div class="box">
+      <h2>Controlla dati letti</h2>
+      <p class="notice">Controlla bene: se una data o un numero Ã¨ sbagliato, correggilo prima di salvare.</p>
+
+      <form method="POST" action="${saveAction}">
+        <div class="grid">
+          <div><label>Nome</label><input name="nome" value="${ocrValue(dati.nome)}"></div>
+          <div><label>Cognome</label><input name="cognome" value="${ocrValue(dati.cognome)}"></div>
+          <div><label>Data nascita</label><input type="date" name="data_nascita" value="${ocrValue(dati.data_nascita)}"></div>
+          <div><label>Luogo nascita</label><input name="luogo_nascita" value="${ocrValue(dati.luogo_nascita)}"></div>
+          <div><label>Codice fiscale</label><input name="codice_fiscale" value="${ocrValue(dati.codice_fiscale)}"></div>
+          <div><label>Numero documento</label><input name="numero_documento" value="${ocrValue(dati.numero_documento)}"></div>
+          <div><label>Ente rilascio documento</label><input name="ente_rilascio" value="${ocrValue(dati.ente_rilascio)}"></div>
+          <div><label>Data rilascio documento</label><input type="date" name="data_rilascio" value="${ocrValue(dati.data_rilascio)}"></div>
+          <div><label>Scadenza documento/patente</label><input type="date" name="data_scadenza" value="${ocrValue(dati.data_scadenza)}"></div>
+          <div><label>Numero patente</label><input name="numero_patente" value="${ocrValue(dati.numero_patente)}"></div>
+          <div><label>Categoria patente</label><input name="categoria_patente" value="${ocrValue(dati.categoria_patente)}"></div>
+          <div><label>Indirizzo</label><input name="indirizzo" value="${ocrValue(dati.indirizzo)}"></div>
+          <div><label>Confidenza AI</label><input value="${ocrValue(dati.confidence)}" readonly></div>
+        </div>
+        <button>Salva dati nel contratto</button>
+      </form>
+
+      <details>
+        <summary>Dati grezzi letti dall'AI</summary>
+        <pre>${esc(JSON.stringify(dati, null, 2))}</pre>
+      </details>
+
+      <a class="btn btn2" href="${cancelUrl}">Annulla</a>
+    </div>
+  `);
+}
+
+async function salvaDatiOcrSuContratto(id, b) {
+  const current = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
+  if (!current) throw new Error('Contratto non trovato');
+
+  const noteExtra =
+    `\nOCR documento:\n` +
+    `Numero documento: ${b.numero_documento || ''}\n` +
+    `Ente rilascio: ${b.ente_rilascio || ''}\n` +
+    `Rilascio: ${b.data_rilascio || ''}\n` +
+    `Scadenza: ${b.data_scadenza || ''}\n` +
+    `Luogo nascita: ${b.luogo_nascita || ''}\n` +
+    `Categoria patente: ${b.categoria_patente || ''}`;
+
+  await run(
+    `UPDATE prenotazioni
+     SET nome=?,
+         cognome=?,
+         codice_fiscale=?,
+         indirizzo=?,
+         patente1=COALESCE(NULLIF(?,''), patente1),
+         patente1_scadenza=COALESCE(NULLIF(?,''), patente1_scadenza),
+         note=COALESCE(note,'') || ?
+     WHERE id=?`,
+    [
+      b.nome || current.nome,
+      b.cognome || current.cognome,
+      b.codice_fiscale || current.codice_fiscale,
+      b.indirizzo || current.indirizzo,
+      b.numero_patente || '',
+      b.data_scadenza || '',
+      noteExtra,
+      id
+    ]
+  );
+}
+
 app.get('/ocr-documenti/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   if (!p) return res.send('Contratto non trovato');
-
-  res.send(page('OCR documenti', `
-    <div class="box">
-      <h2>Lettura automatica patente/documento</h2>
-      <p class="notice">Scatta o carica foto. L'AI compila i dati, poi tu controlli e confermi.</p>
-      <form method="POST" action="/ocr-documenti/${p.id}" enctype="multipart/form-data">
-        <select name="tipo"><option>Patente</option><option>Carta identitÃ </option><option>Documento generico</option></select>
-        <input type="file" name="file" accept="image/*" capture="environment" required>
-        <button>Leggi dati con AI</button>
-      </form>
-      <a class="btn btn2" href="/prenotazione/${p.id}">Torna contratto</a>
-    </div>
-  `));
+  res.send(page('OCR documenti', renderOcrUploadForm(`/ocr-documenti/${p.id}`, `/prenotazione/${p.id}`, 'OCR patente/documento - Operatore DP')));
 });
 
 app.post('/ocr-documenti/:id', upload.single('file'), async (req, res) => {
@@ -1285,47 +1405,107 @@ app.post('/ocr-documenti/:id', upload.single('file'), async (req, res) => {
       [p.id, `OCR ${req.body.tipo}`, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
 
     const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
-
-    res.send(page('Conferma dati OCR', `
-      <div class="box">
-        <h2>Controlla dati letti</h2>
-        <p class="notice">Correggi eventuali errori prima di salvare.</p>
-        <form method="POST" action="/ocr-documenti/${p.id}/salva">
-          <div class="grid">
-            <div><label>Nome</label><input name="nome" value="${ocrValue(dati.nome)}"></div>
-            <div><label>Cognome</label><input name="cognome" value="${ocrValue(dati.cognome)}"></div>
-            <div><label>Data nascita</label><input type="date" name="data_nascita" value="${ocrValue(dati.data_nascita)}"></div>
-            <div><label>Luogo nascita</label><input name="luogo_nascita" value="${ocrValue(dati.luogo_nascita)}"></div>
-            <div><label>Codice fiscale</label><input name="codice_fiscale" value="${ocrValue(dati.codice_fiscale)}"></div>
-            <div><label>Numero documento</label><input name="numero_documento" value="${ocrValue(dati.numero_documento)}"></div>
-            <div><label>Ente rilascio</label><input name="ente_rilascio" value="${ocrValue(dati.ente_rilascio)}"></div>
-            <div><label>Data rilascio</label><input type="date" name="data_rilascio" value="${ocrValue(dati.data_rilascio)}"></div>
-            <div><label>Scadenza</label><input type="date" name="data_scadenza" value="${ocrValue(dati.data_scadenza)}"></div>
-            <div><label>Numero patente</label><input name="numero_patente" value="${ocrValue(dati.numero_patente)}"></div>
-            <div><label>Indirizzo</label><input name="indirizzo" value="${ocrValue(dati.indirizzo)}"></div>
-            <div><label>Confidenza</label><input value="${ocrValue(dati.confidence)}" readonly></div>
-          </div>
-          <button>Salva dati nel contratto</button>
-        </form>
-        <pre>${esc(JSON.stringify(dati, null, 2))}</pre>
-      </div>
-    `));
+    res.send(renderOcrConfirmPage(p, dati, `/ocr-documenti/${p.id}/salva`, `/prenotazione/${p.id}`));
   } catch (e) {
-    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-documenti/${req.params.id}">Riprova</a></div>`));
+    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><p>Per usare OCR serve OPENAI_API_KEY su Render.</p><a class="btn" href="/ocr-documenti/${req.params.id}">Riprova</a><a class="btn btn2" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
   }
 });
 
 app.post('/ocr-documenti/:id/salva', async (req, res) => {
-  const b = req.body;
-  const current = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
-  if (!current) return res.send('Contratto non trovato');
+  try {
+    await salvaDatiOcrSuContratto(req.params.id, req.body);
+    res.redirect(`/prenotazione/${req.params.id}`);
+  } catch (e) {
+    res.status(500).send(page('Errore salvataggio OCR', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
+  }
+});
 
-  const noteExtra = `\\nOCR documento:\\nNumero documento: ${b.numero_documento || ''}\\nEnte rilascio: ${b.ente_rilascio || ''}\\nRilascio: ${b.data_rilascio || ''}\\nScadenza: ${b.data_scadenza || ''}\\nLuogo nascita: ${b.luogo_nascita || ''}`;
 
-  await run(`UPDATE prenotazioni SET nome=?, cognome=?, codice_fiscale=?, indirizzo=?, patente1=COALESCE(NULLIF(?,''), patente1), patente1_scadenza=COALESCE(NULLIF(?,''), patente1_scadenza), note=COALESCE(note,'') || ? WHERE id=?`,
-    [b.nome || current.nome, b.cognome || current.cognome, b.codice_fiscale || current.codice_fiscale, b.indirizzo || current.indirizzo, b.numero_patente || '', b.data_scadenza || '', noteExtra, req.params.id]);
+app.get('/cliente-documenti/:id/:token', async (req, res) => {
+  const expected = clienteDocToken(req.params.id);
+  if (req.params.token !== expected) return res.status(403).send('Link non valido');
 
-  res.redirect(`/prenotazione/${req.params.id}`);
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if (!p) return res.send('Contratto non trovato');
+
+  const files = await all(`SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id DESC`, [p.id]);
+  const lista = files.map(f => `<li>${esc(f.tipo)} - ${esc(f.originalname)} ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Drive</a>` : ''}</li>`).join('');
+
+  res.send(page('Carica documenti DP RENT', `
+    <div class="box">
+      <h2>DP RENT - Carica documenti</h2>
+      <p><b>Contratto:</b> ${esc(p.codice)}</p>
+      <p><b>Cliente:</b> ${esc(p.nome)} ${esc(p.cognome)}</p>
+      <p class="notice">Puoi caricare patente/documento. Dopo la lettura automatica controlli e confermi i dati.</p>
+    </div>
+    ${renderOcrUploadForm(`/cliente-documenti/${p.id}/${req.params.token}`, `/cliente-documenti/${p.id}/${req.params.token}`, 'Carica/scatta documento')}
+    <div class="box"><h3>File giÃ  caricati</h3><ul>${lista || '<li>Nessun file caricato</li>'}</ul></div>
+  `));
+});
+
+app.post('/cliente-documenti/:id/:token', upload.single('file'), async (req, res) => {
+  try {
+    const expected = clienteDocToken(req.params.id);
+    if (req.params.token !== expected) return res.status(403).send('Link non valido');
+
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+    if (!req.file) return res.send('File mancante');
+
+    let driveRes = null;
+    try {
+      driveRes = await uploadFileToDrive(
+        req.file.path,
+        `${Date.now()}_CLIENTE_${req.body.tipo}_${req.file.originalname}`,
+        req.file.mimetype,
+        `${p.codice || 'CONTRATTO'} - ${p.nome || ''} ${p.cognome || ''}`
+      );
+    } catch (e) { console.log('Errore upload documento cliente Drive:', e.message); }
+
+    await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
+      [p.id, `CLIENTE ${req.body.tipo}`, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
+
+    const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
+    res.send(renderOcrConfirmPage(p, dati, `/cliente-documenti/${p.id}/${req.params.token}/salva`, `/cliente-documenti/${p.id}/${req.params.token}`));
+  } catch (e) {
+    res.status(500).send(page('Errore OCR cliente', `<div class="box"><h2 class="bad">Errore lettura documento</h2><pre>${esc(e.message)}</pre><p>Puoi riprovare oppure contattare DP RENT.</p><a class="btn" href="/cliente-documenti/${req.params.id}/${req.params.token}">Riprova</a></div>`));
+  }
+});
+
+app.post('/cliente-documenti/:id/:token/salva', async (req, res) => {
+  try {
+    const expected = clienteDocToken(req.params.id);
+    if (req.params.token !== expected) return res.status(403).send('Link non valido');
+
+    await salvaDatiOcrSuContratto(req.params.id, req.body);
+
+    res.send(page('Documenti salvati', `
+      <div class="box">
+        <h2 class="ok">Dati salvati correttamente</h2>
+        <p>Grazie. DP RENT controllerÃ  i dati e completerÃ  il contratto.</p>
+      </div>
+    `));
+  } catch (e) {
+    res.status(500).send(page('Errore salvataggio cliente', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
+  }
+});
+
+app.get('/cliente-documenti-link/:id', async (req, res) => {
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if (!p) return res.send('Contratto non trovato');
+
+  const link = clienteDocUrl(req, p.id);
+  const msg = `DP RENT - carica patente/documento per contratto ${p.codice}: ${link}`;
+
+  res.send(page('Link documenti cliente', `
+    <div class="box">
+      <h2>Link documenti cliente</h2>
+      <p>Invia questo link al cliente per caricare/scattare patente e documento.</p>
+      <input value="${esc(link)}" readonly onclick="this.select()">
+      <a class="btn btn3" target="_blank" href="${esc(whatsappText(msg))}">Invia link documenti WhatsApp</a>
+      <a class="btn btn2" href="/prenotazione/${p.id}">Torna contratto</a>
+    </div>
+  `));
 });
 
 app.get('/documenti/:id', async (req, res) => {
