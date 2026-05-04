@@ -256,7 +256,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP</h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V24 OCR + CARGOS</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -266,7 +266,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 <a href="/prenotazioni">Storico</a>
 <a href="/planning">Planning</a>
 <a href="/prenota">Pagina cliente</a>
-<a href="/cargos">Ca.R.G.O.S.</a>
+<a href="/cargos">Ca.R.G.O.S.</a><a href="/cargos-config">Config CARGOS</a>
 <a href="/logo">Logo</a>
 <a href="/test-email">Test Email</a>
 <a href="/test-drive">Test Drive</a>
@@ -735,7 +735,7 @@ async function generaPdfContratto(id, opts = {}) {
 
 
 function cargosConfigured() {
-  return !!(process.env.CARGOS_USERNAME && process.env.CARGOS_PASSWORD && process.env.CARGOS_APIKEY && process.env.CARGOS_AGENZIA_ID && process.env.CARGOS_OPERATORE_ID);
+  return !!(((process.env.CARGOS_USERNAME || 'C00000100') || 'C00000100') && process.env.CARGOS_PASSWORD && process.env.CARGOS_APIKEY && process.env.CARGOS_AGENZIA_ID && process.env.CARGOS_OPERATORE_ID);
 }
 
 function cargosPad(value, len, type = 'string') {
@@ -799,7 +799,8 @@ async function buildCargosRecordForContract(id) {
 
 async function cargosGetToken() {
   const base = (process.env.CARGOS_BASE_URL || 'https://cargos.poliziadistato.it/CARGOS_API').replace(/\/+$/, '');
-  const basic = Buffer.from(`${process.env.CARGOS_USERNAME}:${process.env.CARGOS_PASSWORD}`).toString('base64');
+  const cargosUser = process.env.CARGOS_USERNAME || 'C00000100';
+  const basic = Buffer.from(`${cargosUser}:${process.env.CARGOS_PASSWORD}`).toString('base64');
   const r = await fetch(`${base}/api/Token`, { method:'GET', headers:{ Authorization:`Basic ${basic}` } });
   const text = await r.text();
   let data; try { data = JSON.parse(text); } catch { data = { raw:text }; }
@@ -822,7 +823,7 @@ async function cargosSendRecords(records, method='Check') {
   const encrypted = cargosEncryptAes(await cargosGetToken());
   const r = await fetch(`${base}/api/${method}`, {
     method:'POST',
-    headers:{ Authorization:`Bearer ${encrypted}`, Organization:process.env.CARGOS_USERNAME, 'Content-Type':'application/json', Accept:'application/json' },
+    headers:{ Authorization:`Bearer ${encrypted}`, Organization:(process.env.CARGOS_USERNAME || 'C00000100'), 'Content-Type':'application/json', Accept:'application/json' },
     body: JSON.stringify(records)
   });
   const text = await r.text();
@@ -889,6 +890,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V24 OCR + CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1194,6 +1196,8 @@ app.get('/prenotazione/:id', async (req, res) => {
         <a class="btn btn2" href="/firma/${p.id}">Firma</a>
         <a class="btn btn2" href="/email/${p.id}">Email</a>
         <a class="btn btn3" href="/documenti/${p.id}">Foto/documenti</a>
+        <a class="btn btn3" href="/cliente-documenti-link/${p.id}">Link documenti cliente</a>
+        <a class="btn btn3" href="/ocr-documenti/${p.id}">OCR iPad</a>
         <a class="btn btn3" href="/cliente-documenti-link/${p.id}">Link documenti cliente</a>
         <a class="btn btn3" href="/ocr-documenti/${p.id}">OCR patente/documento</a>
         <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
@@ -1829,6 +1833,31 @@ app.get('/nexi-ko/:id', async (req, res) => {
   res.send(page('Pagamento KO', `<div class="box"><h2 class="bad">Pagamento non completato</h2><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
 });
 
+
+
+app.get('/cargos-config', (req, res) => {
+  res.send(page('Config Ca.R.G.O.S.', `
+    <div class="box">
+      <h2>Configurazione Ca.R.G.O.S.</h2>
+      <p><b>Utente impostato:</b> ${esc(process.env.CARGOS_USERNAME || 'C00000100')}</p>
+      <p class="${process.env.CARGOS_PASSWORD ? 'ok' : 'bad'}">Password: ${process.env.CARGOS_PASSWORD ? 'presente' : 'mancante'}</p>
+      <p class="${process.env.CARGOS_APIKEY ? 'ok' : 'bad'}">APIKEY: ${process.env.CARGOS_APIKEY ? 'presente' : 'mancante'}</p>
+      <p class="${process.env.CARGOS_AGENZIA_ID ? 'ok' : 'bad'}">AGENZIA_ID: ${process.env.CARGOS_AGENZIA_ID ? 'presente' : 'mancante'}</p>
+      <p class="${process.env.CARGOS_OPERATORE_ID ? 'ok' : 'bad'}">OPERATORE_ID: ${process.env.CARGOS_OPERATORE_ID ? 'presente' : 'mancante'}</p>
+      <p class="${process.env.CARGOS_LUOGO_COD ? 'ok' : 'bad'}">LUOGO_COD: ${process.env.CARGOS_LUOGO_COD ? 'presente' : 'mancante'}</p>
+      <hr>
+      <p>Environment da mettere su Render:</p>
+      <pre>CARGOS_USERNAME=C00000100
+CARGOS_PASSWORD=la_password_che_hai
+CARGOS_APIKEY=da richiedere/recuperare
+CARGOS_AGENZIA_ID=da Ca.R.G.O.S.
+CARGOS_OPERATORE_ID=da Ca.R.G.O.S.
+CARGOS_LUOGO_COD=codice luogo polizia
+CARGOS_BASE_URL=https://cargos.poliziadistato.it/CARGOS_API</pre>
+      <a class="btn" href="/cargos">Vai a Ca.R.G.O.S.</a>
+    </div>
+  `));
+});
 
 app.get('/cargos', async (req, res) => {
   const rows = await all(`SELECT p.*, m.targa FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id ORDER BY p.id DESC LIMIT 50`);
