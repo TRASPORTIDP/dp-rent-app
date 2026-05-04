@@ -1,185 +1,1227 @@
 require('dotenv').config();
-require('dns').setDefaultResultOrder('ipv4first');
 
 const express = require('express');
 const bodyParser = require('body-parser');
-const nodemailer = require('nodemailer');
+const sqlite3 = require('sqlite3').verbose();
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
-const XLSX = require('xlsx');
-const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const moment = require('moment');
+const XLSX = require('xlsx');
+const nodemailer = require('nodemailer');
+const { google } = require('googleapis');
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+app.use(bodyParser.urlencoded({ extended: true, limit: '30mb' }));
+app.use(bodyParser.json({ limit: '30mb' }));
 
-app.use(bodyParser.json({ limit: '80mb' }));
-app.use(bodyParser.urlencoded({ extended: true, limit: '80mb' }));
+const PORT = process.env.PORT || 3000;
 
-const DATA_DIR = path.join(__dirname, 'data');
-const UPLOAD_DIR = path.join(__dirname, 'uploads');
-const CONTRACT_DIR = path.join(__dirname, 'contracts');
-const PUBLIC_DIR = path.join(__dirname, 'public');
-const DB_FILE = path.join(DATA_DIR, 'db.json');
-
-[DATA_DIR, UPLOAD_DIR, CONTRACT_DIR, PUBLIC_DIR].forEach((d) => {
-  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
-});
-
-app.use('/uploads', express.static(UPLOAD_DIR));
-app.use('/contracts', express.static(CONTRACT_DIR));
-app.use('/public', express.static(PUBLIC_DIR));
-
-const upload = multer({ dest: UPLOAD_DIR });
+const IVA = 0.22;
+const EXTRA_KM = 0.15;
+const CAUZIONE = 500;
+const EXTRA_FUORI_ORARIO = 30;
 
 const AZIENDA = {
   nome: 'Trasporti DP S.R.L. - DP RENT',
+  brand: 'DP RENT',
   indirizzo: 'Via Tuderte 466, Narni (TR)',
-  piva: '01385450554',
   telefono: '0744817108',
-  email: 'contabilita@trasportidp.com'
+  email: 'contabilita@trasportidp.com',
+  piva: '01385450554'
 };
 
-const IVA = 0.22;
-const EXTRA_FUORI_ORARIO = 30;
-const EXTRA_KM = 0.15;
-const CAUZIONE = 500;
 const TERMS_URL = 'https://carrentalsoftware.myappy.it/data/public/user/65996976/terms_file.pdf';
 const PRIVACY_URL = 'https://carrentalsoftware.myappy.it/data/public/user/65996976/privacy_file.pdf';
 
-function defaultDb() {
-  return { counters: { mezzi: 0, prenotazioni: 0, allegati: 0 }, mezzi: [], prenotazioni: [], allegati: [] };
+const db = new sqlite3.Database('./database.sqlite');
+
+const uploadDir = path.join(__dirname, 'uploads');
+const contractsDir = path.join(__dirname, 'contracts');
+const firmeDir = path.join(__dirname, 'firme');
+const publicDir = path.join(__dirname, 'public');
+
+[uploadDir, contractsDir, firmeDir, publicDir].forEach(dir => {
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+});
+
+app.use('/public', express.static(publicDir));
+
+const upload = multer({ dest: uploadDir });
+const logoUpload = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => cb(null, publicDir),
+    filename: (req, file, cb) => cb(null, 'logo.png')
+  })
+});
+
+function addColumn(table, column, type) {
+  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, () => {});
 }
 
-function loadDb() {
-  if (!fs.existsSync(DB_FILE)) {
-    const db = defaultDb();
-    fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
-    return db;
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mezzi (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT,
+      targa TEXT UNIQUE,
+      km INTEGER DEFAULT 0,
+      marca TEXT,
+      modello TEXT,
+      cilindrata TEXT,
+      alimentazione TEXT,
+      codice_tipo TEXT,
+      categoria TEXT,
+      descrizione TEXT,
+      descrizione_pubblica TEXT,
+      posti INTEGER,
+      stazione TEXT,
+      prezzo_giorno REAL,
+      km_inclusi INTEGER,
+      stato TEXT DEFAULT 'disponibile',
+      km_attuali INTEGER DEFAULT 0,
+      tagliando_km_scadenza INTEGER,
+      tagliando_data_scadenza TEXT,
+      revisione_scadenza TEXT,
+      bollo_scadenza TEXT,
+      assicurazione_scadenza TEXT,
+      gomme_scadenza TEXT,
+      manutenzione_note TEXT,
+      alert_giorni INTEGER DEFAULT 30,
+      alert_km INTEGER DEFAULT 1000
+    )
+  `);
+
+  [
+    ['descrizione_pubblica','TEXT'],['posti','INTEGER'],['km_attuali','INTEGER DEFAULT 0'],
+    ['tagliando_km_scadenza','INTEGER'],['tagliando_data_scadenza','TEXT'],['revisione_scadenza','TEXT'],
+    ['bollo_scadenza','TEXT'],['assicurazione_scadenza','TEXT'],['gomme_scadenza','TEXT'],
+    ['manutenzione_note','TEXT'],['alert_giorni','INTEGER DEFAULT 30'],['alert_km','INTEGER DEFAULT 1000']
+  ].forEach(c => addColumn('mezzi', c[0], c[1]));
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS prenotazioni (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      codice TEXT,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      codice_fiscale TEXT,
+      indirizzo TEXT,
+      citta TEXT,
+      cap TEXT,
+      tipo_cliente TEXT,
+      piva TEXT,
+      ragione_sociale TEXT,
+      mezzo_id INTEGER,
+      data_inizio TEXT,
+      data_fine TEXT,
+      ora_inizio TEXT,
+      ora_fine TEXT,
+      giorni INTEGER,
+      km_previsti INTEGER,
+      extra_fuori_orario REAL DEFAULT 0,
+      imponibile REAL,
+      iva REAL,
+      totale REAL,
+      cauzione REAL,
+      carburante_uscita TEXT DEFAULT '4/4 pieno',
+      carburante_rientro TEXT DEFAULT '4/4 pieno',
+      km_uscita INTEGER,
+      km_rientro INTEGER,
+      stato TEXT DEFAULT 'bozza',
+      firma_path TEXT,
+      pdf_path TEXT,
+      note TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  [
+    ['nome','TEXT'],['cognome','TEXT'],['email','TEXT'],['codice_fiscale','TEXT'],['indirizzo','TEXT'],
+    ['citta','TEXT'],['cap','TEXT'],['tipo_cliente','TEXT'],['piva','TEXT'],['ragione_sociale','TEXT'],
+    ['ora_inizio','TEXT'],['ora_fine','TEXT'],['firma_path','TEXT'],['pdf_path','TEXT'],['pdf_drive_file_id','TEXT'],['pdf_drive_web_link','TEXT'],['note','TEXT'],
+    ['extra_fuori_orario','REAL DEFAULT 0'],['carburante_uscita','TEXT DEFAULT "4/4 pieno"'],
+    ['carburante_rientro','TEXT DEFAULT "4/4 pieno"'],['km_uscita','INTEGER'],['km_rientro','INTEGER']
+  ].forEach(c => addColumn('prenotazioni', c[0], c[1]));
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS allegati (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prenotazione_id INTEGER,
+      mezzo_id INTEGER,
+      tipo TEXT,
+      filename TEXT,
+      originalname TEXT,
+      path TEXT,
+      mimetype TEXT,
+      drive_file_id TEXT,
+      drive_web_link TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  addColumn('allegati','mezzo_id','INTEGER');
+  addColumn('allegati','drive_file_id','TEXT');
+  addColumn('allegati','drive_web_link','TEXT');
+});
+
+function esc(v) {
+  return String(v === undefined || v === null ? '' : v)
+    .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
+}
+
+function normalize(v) {
+  return v === undefined || v === null ? '' : String(v).trim();
+}
+
+function page(title, content) {
+  const logoPath = path.join(publicDir, 'logo.png');
+  const logoHtml = fs.existsSync(logoPath)
+    ? `<img src="/public/logo.png" style="height:42px;max-width:150px;object-fit:contain;background:white;border-radius:6px;padding:4px;">`
+    : `<span style="font-size:28px;font-weight:900;color:white;">DP RENT</span>`;
+
+  return `
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>${title}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body{font-family:Arial;margin:0;background:#f4f4f4;color:#222;}
+header{background:#111;color:white;padding:14px 18px;display:flex;align-items:center;gap:14px;}
+header h1{margin:0;font-size:22px;letter-spacing:1px;}
+nav{background:#b30000;padding:12px;display:flex;gap:14px;flex-wrap:wrap;}
+nav a{color:white;text-decoration:none;font-weight:bold;}
+main{padding:20px;}
+.box{background:white;padding:20px;margin-bottom:20px;border-radius:10px;box-shadow:0 2px 8px #ccc;}
+table{width:100%;border-collapse:collapse;background:white;}
+th,td{padding:9px;border:1px solid #ddd;font-size:13px;}
+th{background:#222;color:white;}
+input,select,textarea,button{padding:10px;margin:5px 0;width:100%;box-sizing:border-box;}
+button,.btn{background:#b30000;color:white;border:0;padding:10px;border-radius:6px;text-decoration:none;display:inline-block;font-weight:bold;cursor:pointer;margin:4px 4px 4px 0;}
+.btn2{background:#333;}.btn3{background:#0b6b2d;}
+.ok{color:green;font-weight:bold;}.bad{color:red;font-weight:bold;}
+.warn{color:#b36b00;font-weight:bold;}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;}
+.libero{background:#1fae4b;color:white;text-align:center;font-weight:bold;cursor:pointer;}
+.occupato{background:#d90000;color:white;text-align:center;font-weight:bold;cursor:pointer;}
+.libero:hover{outline:3px solid #0b6b2d;filter:brightness(1.1);}
+.occupato:hover{outline:3px solid #900;filter:brightness(1.1);}
+.sticky-table{overflow:auto;max-height:75vh;border:1px solid #ccc;}
+.sticky-table th{position:sticky;top:0;z-index:3;}
+.sticky-col{position:sticky;left:0;background:#fff;z-index:2;min-width:150px;}
+th.sticky-col{background:#222;color:white;z-index:4;}
+canvas{border:2px solid #333;background:white;width:100%;height:220px;}
+.actions{display:flex;gap:8px;flex-wrap:wrap;}
+.notice{background:#fff3cd;border:1px solid #ffeeba;padding:10px;border-radius:8px;margin:10px 0;}
+.alert{background:#ffe0e0;border:1px solid #d90000;padding:10px;border-radius:8px;margin:6px 0;}
+.badge{display:inline-block;padding:4px 7px;border-radius:5px;font-size:12px;margin:2px;background:#eee;}
+.badge-red{background:#d90000;color:white}.badge-orange{background:#ffb000;color:#111}.badge-green{background:#1fae4b;color:white}
+@media(max-width:700px){.grid{grid-template-columns:1fr;}main{padding:10px;}table{font-size:11px;} th,td{padding:6px;}}
+</style>
+</head>
+<body>
+<header>${logoHtml}<h1>DP RENT APP</h1></header>
+<nav>
+<a href="/">Dashboard</a>
+<a href="/mezzi-web">Mezzi</a>
+<a href="/scadenze-mezzi">Scadenze</a>
+<a href="/import-mezzi">Import Excel</a>
+<a href="/nuova-prenotazione">Nuova prenotazione</a>
+<a href="/prenotazioni">Storico</a>
+<a href="/planning">Planning</a>
+<a href="/prenota">Pagina cliente</a>
+<a href="/logo">Logo</a>
+<a href="/test-email">Test Email</a>
+<a href="/test-drive">Test Drive</a>
+</nav>
+<main>${content}</main>
+</body>
+</html>`;
+}
+
+function categoriaFromRow(row) {
+  const codice = normalize(row['Codice Tip'] || row['Codice Tipo']).toUpperCase();
+  const marca = normalize(row['Marca']).toUpperCase();
+  const modello = normalize(row['Modello']).toUpperCase();
+  const desc = normalize(row['Descrizion'] || row['Descrizione'] || row['Immagini consegna']).toUpperCase();
+  if (marca.includes('DACIA') || modello.includes('DACIA') || desc.includes('DACIA')) return 'AUTO_DACIA';
+  if (modello.includes('GOLF') || desc.includes('GOLF')) return 'AUTO_GOLF';
+  if (codice.includes('X-ESC') || desc.includes('ESCAVATORE')) return 'ESCAVATORE';
+  if (desc.includes('PIATTAFORMA') || desc.includes('SEMOVENTE')) return 'SEMOVENTE';
+  if (codice.includes('P') || desc.includes('PERSONE') || desc.includes('9P')) return '9_POSTI';
+  return 'FURGONE';
+}
+
+function descrizionePubblica(m) {
+  if (m.descrizione_pubblica) return m.descrizione_pubblica;
+  const modello = `${m.marca || ''} ${m.modello || ''}`.trim();
+  if (m.categoria === '9_POSTI') return `${modello} - pulmino 9 posti`;
+  if (m.categoria === 'FURGONE') return `${modello} - furgone cargo/merci`;
+  if (m.categoria === 'AUTO_DACIA') return `${modello} - auto economica`;
+  if (m.categoria === 'AUTO_GOLF') return `${modello} - auto categoria Golf`;
+  if (m.categoria === 'ESCAVATORE') return `${modello} - escavatore`;
+  if (m.categoria === 'SEMOVENTE') return `${modello} - piattaforma/semovente`;
+  return modello;
+}
+
+function prezzoCategoria(cat) {
+  if (cat === 'AUTO_DACIA') return 50;
+  if (cat === 'AUTO_GOLF') return 60;
+  if (cat === 'ESCAVATORE') return 50;
+  if (cat === 'SEMOVENTE') return 50;
+  return 70;
+}
+
+function kmCategoria(cat) {
+  if (cat === 'ESCAVATORE' || cat === 'SEMOVENTE') return 0;
+  return 150;
+}
+
+function codicePratica(id) {
+  return `DPR-${moment().format('YYYYMMDD')}-${String(id).padStart(4, '0')}`;
+}
+
+function extraOrario(ora) {
+  if (!ora) return 0;
+  const parts = String(ora).split(':').map(Number);
+  const minuti = (parts[0] || 0) * 60 + (parts[1] || 0);
+  const inizio = 8 * 60 + 30;
+  const fine = 18 * 60 + 30;
+  return (minuti < inizio || minuti > fine) ? EXTRA_FUORI_ORARIO : 0;
+}
+
+function calcolaTotale(mezzo, data_inizio, data_fine, ora_inizio, ora_fine, km_previsti) {
+  const giorni = moment(data_fine).diff(moment(data_inizio), 'days') + 1;
+  let imponibile = giorni * Number(mezzo.prezzo_giorno || 0);
+  const kmInclusiTot = giorni * Number(mezzo.km_inclusi || 0);
+  const kmPrev = Number(km_previsti || 0);
+  if (mezzo.km_inclusi > 0 && kmPrev > kmInclusiTot) imponibile += (kmPrev - kmInclusiTot) * EXTRA_KM;
+  const extra = extraOrario(ora_inizio) + extraOrario(ora_fine);
+  imponibile += extra;
+  const iva = imponibile * IVA;
+  const totale = imponibile + iva;
+  return { giorni, imponibile, iva, totale, extra_fuori_orario: extra };
+}
+
+function queryDisponibilita(mezzo_id, data_inizio, data_fine, cb) {
+  db.get(`
+    SELECT * FROM prenotazioni
+    WHERE mezzo_id = ?
+    AND stato != 'annullato'
+    AND date(data_inizio) <= date(?)
+    AND date(data_fine) >= date(?)
+  `, [mezzo_id, data_fine, data_inizio], cb);
+}
+
+function fuelOptions(selected) {
+  const vals = ['4/4 pieno','3/4','1/2','1/4','Riserva','Vuoto'];
+  return vals.map(v => `<option value="${v}" ${selected===v?'selected':''}>${v}</option>`).join('');
+}
+
+function alertMezzo(m) {
+  const out = [];
+  const today = moment().startOf('day');
+  const alertGiorni = Number(m.alert_giorni || 30);
+  const alertKm = Number(m.alert_km || 1000);
+  const kmAtt = Number(m.km_attuali || m.km || 0);
+
+  function checkDate(label, val) {
+    if (!val) return;
+    const d = moment(val);
+    const diff = d.diff(today, 'days');
+    if (diff < 0) out.push(`<div class="alert">â ${label} scaduto il ${esc(val)}</div>`);
+    else if (diff <= alertGiorni) out.push(`<div class="alert">â ï¸ ${label} in scadenza: ${esc(val)} (${diff} giorni)</div>`);
   }
+
+  checkDate('Tagliando data', m.tagliando_data_scadenza);
+  checkDate('Revisione', m.revisione_scadenza);
+  checkDate('Bollo', m.bollo_scadenza);
+  checkDate('Assicurazione', m.assicurazione_scadenza);
+  checkDate('Gomme/manutenzione', m.gomme_scadenza);
+
+  if (m.tagliando_km_scadenza) {
+    const diffKm = Number(m.tagliando_km_scadenza) - kmAtt;
+    if (diffKm <= 0) out.push(`<div class="alert">â Tagliando km scaduto: km attuali ${kmAtt}, scadenza ${m.tagliando_km_scadenza}</div>`);
+    else if (diffKm <= alertKm) out.push(`<div class="alert">â ï¸ Tagliando vicino: mancano ${diffKm} km</div>`);
+  }
+
+  return out.join('');
+}
+
+function alertBadge(m) {
+  const has = alertMezzo(m);
+  return has ? `<span class="badge badge-red">ALERT</span>` : `<span class="badge badge-green">OK</span>`;
+}
+
+
+function googleDriveConfigured() {
+  return !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY && process.env.GOOGLE_DRIVE_FOLDER_ID);
+}
+
+function getDriveClient() {
+  if (!googleDriveConfigured()) return null;
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n');
+  const auth = new google.auth.JWT({
+    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    key: privateKey,
+    scopes: ['https://www.googleapis.com/auth/drive.file']
+  });
+  return google.drive({ version: 'v3', auth });
+}
+
+async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
+  if (!googleDriveConfigured()) return null;
+  if (!fs.existsSync(localPath)) return null;
+
+  const drive = getDriveClient();
+  const parentFolderId = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  let folderId = parentFolderId;
+
+  if (subFolderName) {
+    const safeFolderName = String(subFolderName).replace(/[\/\\:*?"<>|]/g, '-');
+    const q = `'${parentFolderId}' in parents and name='${safeFolderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+    const found = await drive.files.list({ q, fields: 'files(id,name)', pageSize: 1 });
+    if (found.data.files && found.data.files.length) {
+      folderId = found.data.files[0].id;
+    } else {
+      const created = await drive.files.create({
+        requestBody: {
+          name: safeFolderName,
+          mimeType: 'application/vnd.google-apps.folder',
+          parents: [parentFolderId]
+        },
+        fields: 'id'
+      });
+      folderId = created.data.id;
+    }
+  }
+
+  const uploaded = await drive.files.create({
+    requestBody: { name: filename, parents: [folderId] },
+    media: {
+      mimeType: mimetype || 'application/octet-stream',
+      body: fs.createReadStream(localPath)
+    },
+    fields: 'id, webViewLink'
+  });
+
+  return { id: uploaded.data.id, webViewLink: uploaded.data.webViewLink };
+}
+
+async function sendEmail(to, subject, text, attachments) {
+  if (!process.env.SMTP_HOST) throw new Error('SMTP non configurato');
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT || 587),
+    secure: Number(process.env.SMTP_PORT || 587) === 465,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS }
+  });
+  return transporter.sendMail({
+    from: process.env.SMTP_FROM || AZIENDA.email,
+    to,
+    subject,
+    text,
+    attachments: attachments || []
+  });
+}
+
+function actionScreen(id, titolo, messaggio) {
+  return page(titolo, `
+    <div class="box">
+      <h2 class="ok">${titolo}</h2>
+      <p>${messaggio || ''}</p>
+      <div class="actions">
+        <a class="btn" href="/contratto/${id}">Scarica / stampa PDF</a>
+        <a class="btn btn2" href="/firma/${id}">Firma su tablet</a>
+        <a class="btn btn2" href="/email/${id}">Invia via email</a>
+        <a class="btn btn3" href="/documenti/${id}">Carica documenti cliente</a>
+        <a class="btn btn3" href="/checkout/${id}">Check-out mezzo</a>
+        <a class="btn btn3" href="/checkin/${id}">Check-in mezzo</a>
+        <a class="btn btn2" href="/prenotazione/${id}">Dettaglio contratto</a>
+        <a class="btn btn2" href="/prenotazioni">Vai allo storico</a>
+      </div>
+    </div>
+  `);
+}
+
+function drawHeader(doc) {
+  doc.rect(0,0,612,115).fill('#111111');
+  const logoPath = path.join(publicDir, 'logo.png');
+  if (fs.existsSync(logoPath)) {
+    try { doc.image(logoPath, 35, 25, { fit: [145, 70] }); }
+    catch(e) { doc.fillColor('white').fontSize(28).text('DP RENT', 45, 35); }
+  } else {
+    doc.fillColor('white').fontSize(28).text('DP RENT', 45, 35);
+  }
+  doc.fillColor('white').fontSize(11).text(AZIENDA.nome, 350, 25, { align:'right', width:210 });
+  doc.text(AZIENDA.indirizzo, 350, 43, { align:'right', width:210 });
+  doc.text(`P.IVA / CF ${AZIENDA.piva}  |  Tel. ${AZIENDA.telefono}`, 350, 61, { align:'right', width:210 });
+  doc.text(AZIENDA.email, 350, 79, { align:'right', width:210 });
+  doc.rect(0,115,612,6).fill('#d90000');
+  doc.fillColor('black');
+}
+function section(doc, title, x, y, w) {
+  doc.rect(x,y,w,20).fill('#111111');
+  doc.fillColor('white').fontSize(10).text(title, x+8, y+6);
+  doc.fillColor('black');
+  return y + 26;
+}
+function row(doc, label, value, x, y, w) {
+  doc.fillColor('#777').fontSize(8).text(label, x, y, {width:w*0.38});
+  doc.fillColor('#111').fontSize(9).text(value || '', x+w*0.38, y, {width:w*0.6});
+  doc.fillColor('black');
+}
+function generaPdfContratto(id, callback) {
+  db.get(`
+    SELECT p.*, m.targa, m.marca, m.modello, m.categoria, m.km_inclusi, m.descrizione_pubblica
+    FROM prenotazioni p
+    LEFT JOIN mezzi m ON m.id = p.mezzo_id
+    WHERE p.id = ?
+  `, [id], (err, p) => {
+    if (err || !p) return callback(err || new Error('Contratto non trovato'));
+    const safe = String(p.codice || id).replace(/[^a-zA-Z0-9_-]/g, '');
+    const file = path.join(contractsDir, `contratto_${safe}.pdf`);
+    const doc = new PDFDocument({ margin: 40, size:'A4' });
+    const stream = fs.createWriteStream(file);
+    doc.pipe(stream);
+
+    drawHeader(doc);
+    doc.fontSize(20).fillColor('#111').text('CONTRATTO DI NOLEGGIO', 40, 150, {align:'center', width:515});
+    doc.moveTo(40,180).lineTo(555,180).strokeColor('#d90000').lineWidth(1).stroke();
+
+    let y = 205;
+    y = section(doc, 'DATI CONTRATTO', 45, y, 510);
+    row(doc, 'Numero contratto', p.codice, 55, y, 460); y += 18;
+    row(doc, 'Stato', p.stato || 'bozza', 55, y, 460); y += 18;
+    row(doc, 'Data creazione', p.created_at || '', 55, y, 460); y += 30;
+
+    let yLeft = y, yRight = y;
+    yLeft = section(doc, 'ANAGRAFICA CLIENTE', 45, yLeft, 245);
+    row(doc, 'Cliente', `${p.nome || ''} ${p.cognome || ''}`, 55, yLeft, 220); yLeft += 18;
+    row(doc, 'Telefono', p.telefono || '', 55, yLeft, 220); yLeft += 18;
+    row(doc, 'Email', p.email || '', 55, yLeft, 220); yLeft += 18;
+    row(doc, 'Codice fiscale', p.codice_fiscale || '', 55, yLeft, 220); yLeft += 18;
+    row(doc, 'Indirizzo', p.indirizzo || '', 55, yLeft, 220); yLeft += 18;
+    row(doc, 'Comune/CAP', `${p.citta || ''} ${p.cap || ''}`, 55, yLeft, 220); yLeft += 18;
+    row(doc, 'Tipo / P.IVA', `${p.tipo_cliente || ''} ${p.piva || ''}`, 55, yLeft, 220); yLeft += 18;
+
+    yRight = section(doc, 'DETTAGLI PRENOTAZIONE', 310, yRight, 245);
+    row(doc, 'Check-out', `${p.data_inizio} ore ${p.ora_inizio || '08:30'} - Narni`, 320, yRight, 220); yRight += 18;
+    row(doc, 'Check-in', `${p.data_fine} ore ${p.ora_fine || '18:00'} - Narni`, 320, yRight, 220); yRight += 18;
+    row(doc, 'Giorni tariffati', String(p.giorni || ''), 320, yRight, 220); yRight += 18;
+    row(doc, 'Extra fuori orario', Number(p.extra_fuori_orario || 0) > 0 ? `euro ${Number(p.extra_fuori_orario).toFixed(2)} + IVA` : 'NO', 320, yRight, 220); yRight += 18;
+    row(doc, 'Carburante', `${p.carburante_uscita || '4/4 pieno'} / ${p.carburante_rientro || '4/4 pieno'}`, 320, yRight, 220); yRight += 18;
+    row(doc, 'Km uscita/rientro', `${p.km_uscita || ''} / ${p.km_rientro || ''}`, 320, yRight, 220); yRight += 18;
+
+    y = Math.max(yLeft, yRight) + 10;
+    let yVeh = y, yCost = y;
+
+    yVeh = section(doc, 'VEICOLO', 45, yVeh, 245);
+    row(doc, 'Targa', p.targa || '', 55, yVeh, 220); yVeh += 18;
+    row(doc, 'Descrizione', p.descrizione_pubblica || `${p.marca || ''} ${p.modello || ''}`, 55, yVeh, 220); yVeh += 18;
+    row(doc, 'Categoria', p.categoria || '', 55, yVeh, 220); yVeh += 18;
+    row(doc, 'Km inclusi totali', String(Number(p.km_inclusi || 0) * Number(p.giorni || 0)), 55, yVeh, 220); yVeh += 18;
+    row(doc, 'Km previsti', String(p.km_previsti || 0), 55, yVeh, 220); yVeh += 18;
+
+    yCost = section(doc, 'RIEPILOGO ECONOMICO', 310, yCost, 245);
+    row(doc, 'Imponibile', `euro ${Number(p.imponibile || 0).toFixed(2)}`, 320, yCost, 220); yCost += 18;
+    row(doc, 'IVA 22%', `euro ${Number(p.iva || 0).toFixed(2)}`, 320, yCost, 220); yCost += 18;
+    row(doc, 'Totale IVA inclusa', `euro ${Number(p.totale || 0).toFixed(2)}`, 320, yCost, 220); yCost += 18;
+    row(doc, 'Deposito cauzionale', `euro ${Number(p.cauzione || CAUZIONE).toFixed(2)}`, 320, yCost, 220); yCost += 18;
+
+    y = Math.max(yVeh, yCost) + 10;
+    y = section(doc, 'CONDIZIONI GENERALI E PRIVACY', 45, y, 510);
+    doc.fontSize(8).fillColor('#111').text('Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio e lâinformativa privacy DP RENT / Trasporti DP S.R.L.', 55, y, {width:490});
+    y += 22;
+    doc.fontSize(7).fillColor('#333').text(`Condizioni generali: ${TERMS_URL}`, 55, y, {width:490}); y += 12;
+    doc.text(`Informativa privacy: ${PRIVACY_URL}`, 55, y, {width:490}); y += 18;
+    doc.fontSize(8).fillColor('#111').text('Condizioni principali: veicolo consegnato con il pieno e da riconsegnare con il pieno; extra km euro 0,15/km ove previsto; danni, multe, pedaggi, franchigie, smarrimenti e costi accessori a carico del cliente.', 55, y, {width:490});
+    y += 45;
+
+    doc.fontSize(10).fillColor('#111').text('Firma cliente:', 55, y);
+    if (p.firma_path && fs.existsSync(p.firma_path)) doc.image(p.firma_path, 55, y+15, { fit: [220, 70] });
+    else doc.text('______________________________', 55, y+25);
+    doc.text('Firma DP RENT:', 330, y);
+    doc.text('______________________________', 330, y+25);
+    doc.end();
+
+    stream.on('finish', async () => {
+      try {
+        const driveRes = await uploadFileToDrive(
+          file,
+          path.basename(file),
+          'application/pdf',
+          `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`
+        );
+
+        if (driveRes) {
+          db.run(`UPDATE prenotazioni SET pdf_path = ?, pdf_drive_file_id = ?, pdf_drive_web_link = ? WHERE id = ?`,
+            [file, driveRes.id, driveRes.webViewLink, id]);
+        } else {
+          db.run(`UPDATE prenotazioni SET pdf_path = ? WHERE id = ?`, [file, id]);
+        }
+      } catch (e) {
+        console.log('Errore upload PDF Google Drive:', e.message);
+        db.run(`UPDATE prenotazioni SET pdf_path = ? WHERE id = ?`, [file, id]);
+      }
+      callback(null, file);
+    });
+    stream.on('error', callback);
+  });
+}
+
+// Dashboard
+app.get('/', (req, res) => {
+  db.get(`SELECT COUNT(*) as tot FROM mezzi`, [], (e1, mezzi) => {
+    db.get(`SELECT COUNT(*) as tot FROM prenotazioni`, [], (e2, pren) => {
+      db.all(`SELECT * FROM mezzi`, [], (e3, allMezzi) => {
+        const alerts = (allMezzi || []).map(m => {
+          const a = alertMezzo(m);
+          return a ? `<div><b>${esc(m.targa)} ${esc(m.modello)}</b>${a}</div>` : '';
+        }).join('');
+        res.send(page('Dashboard', `
+          <div class="box">
+            <h2>Gestionale DP RENT attivo</h2>
+            <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
+            <p>Contratti / prenotazioni: <b>${pren ? pren.tot : 0}</b></p>
+            <p class="notice">Versione test con SQLite/file locali. Quando Ã¨ definitiva passiamo a dati permanenti.</p>
+          </div>
+          <div class="box">
+            <h2>Alert mezzi</h2>
+            ${alerts || '<p class="ok">Nessun alert mezzi.</p>'}
+          </div>
+        `));
+      });
+    });
+  });
+});
+
+// Logo
+app.get('/logo', (req, res) => {
+  const hasLogo = fs.existsSync(path.join(publicDir, 'logo.png'));
+  res.send(page('Logo', `
+    <div class="box">
+      <h2>Logo DP RENT</h2>
+      ${hasLogo ? `<p>Logo attuale:</p><img src="/public/logo.png" style="max-width:240px;background:#eee;padding:10px;border-radius:8px;">` : `<p>Nessun logo caricato: nel PDF verrÃ  usata la scritta DP RENT.</p>`}
+      <form method="POST" action="/logo" enctype="multipart/form-data">
+        <label>Carica logo PNG/JPG</label>
+        <input type="file" name="logo" accept="image/png,image/jpeg" required>
+        <button>Salva logo</button>
+      </form>
+    </div>
+  `));
+});
+app.post('/logo', multer({storage: multer.diskStorage({destination:(req,file,cb)=>cb(null,publicDir), filename:(req,file,cb)=>cb(null,'logo.png')})}).single('logo'), (req, res) => res.redirect('/logo'));
+
+// Import Excel
+app.get('/import-mezzi', (req, res) => {
+  res.send(page('Import Excel', `
+    <div class="box">
+      <h2>Import mezzi da Excel</h2>
+      <form method="POST" action="/import-mezzi" enctype="multipart/form-data">
+        <input type="file" name="file" accept=".xlsx,.xls,.csv" required>
+        <button>Carica e importa</button>
+      </form>
+    </div>
+  `));
+});
+app.post('/import-mezzi', upload.single('file'), (req, res) => {
+  if (!req.file) return res.send('File mancante');
+  const wb = XLSX.readFile(req.file.path);
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
+  let imported = 0;
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO mezzi
+    (uid,targa,km,km_attuali,marca,modello,cilindrata,alimentazione,codice_tipo,categoria,descrizione,descrizione_pubblica,posti,stazione,prezzo_giorno,km_inclusi,stato)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT stato FROM mezzi WHERE targa=?),'disponibile'))
+  `);
+  rows.forEach(r => {
+    const targa = normalize(r['Targa']);
+    if (!targa) return;
+    const cat = categoriaFromRow(r);
+    const modelloTemp = {marca: normalize(r['Marca']), modello: normalize(r['Modello']), categoria: cat};
+    const descPub = descrizionePubblica(modelloTemp);
+    let posti = cat === '9_POSTI' ? 9 : null;
+    stmt.run([
+      normalize(r['UID']), targa,
+      Number(r['Km percor'] || r['Km percorsi'] || r['Km'] || 0),
+      Number(r['Km percor'] || r['Km percorsi'] || r['Km'] || 0),
+      normalize(r['Marca']), normalize(r['Modello']), normalize(r['Cilindrata']),
+      normalize(r['Alimentaz'] || r['Alimentazione']),
+      normalize(r['Codice Tip'] || r['Codice Tipo']),
+      cat,
+      normalize(r['Descrizion'] || r['Descrizione'] || r['Immagini consegna']),
+      descPub,
+      posti,
+      normalize(r['Stazione']),
+      prezzoCategoria(cat),
+      kmCategoria(cat),
+      targa
+    ]);
+    imported++;
+  });
+  stmt.finalize();
+  fs.unlinkSync(req.file.path);
+  res.send(page('Import completato', `<h2 class="ok">Import completato</h2><p>Mezzi importati/aggiornati: <b>${imported}</b></p><a class="btn" href="/mezzi-web">Vai ai mezzi</a>`));
+});
+
+// Mezzi + scheda
+app.get('/mezzi-web', (req, res) => {
+  db.all(`SELECT * FROM mezzi ORDER BY categoria,targa`, [], (err, rows) => {
+    const trs = rows.map(m => `
+      <tr>
+        <td>${m.id}</td>
+        <td><a href="/mezzo/${m.id}"><b>${esc(m.targa)}</b></a></td>
+        <td>${esc(m.marca)}</td>
+        <td>${esc(m.modello)}</td>
+        <td>${esc(m.categoria)}</td>
+        <td>${esc(descrizionePubblica(m))}</td>
+        <td>euro ${Number(m.prezzo_giorno || 0).toFixed(2)}</td>
+        <td>${m.km_inclusi}</td>
+        <td>${alertBadge(m)}</td>
+        <td>${esc(m.stato)}</td>
+      </tr>`).join('');
+    res.send(page('Mezzi', `
+      <h2>Elenco mezzi</h2>
+      <p>Clicca sulla targa per aprire la scheda mezzo con km, manutenzione, bollo, revisione e alert.</p>
+      <table>
+        <tr><th>ID</th><th>Targa</th><th>Marca</th><th>Modello</th><th>Categoria</th><th>Descrizione pubblica</th><th>Prezzo</th><th>Km/giorno</th><th>Alert</th><th>Stato</th></tr>
+        ${trs}
+      </table>
+    `));
+  });
+});
+
+app.get('/mezzo/:id', (req, res) => {
+  db.get(`SELECT * FROM mezzi WHERE id=?`, [req.params.id], (err, m) => {
+    if (!m) return res.send('Mezzo non trovato');
+    db.all(`SELECT * FROM allegati WHERE mezzo_id=? ORDER BY id DESC`, [m.id], (e2, files) => {
+      const lista = files.map(f => `<li>${esc(f.tipo)} - ${esc(f.originalname)} ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Google Drive</a>` : ''}</li>`).join('');
+      res.send(page('Scheda mezzo', `
+        <div class="box">
+          <h2>Scheda mezzo ${esc(m.targa)} ${alertBadge(m)}</h2>
+          ${alertMezzo(m) || '<p class="ok">Nessun alert attivo.</p>'}
+          <form method="POST" action="/mezzo/${m.id}">
+            <div class="grid">
+              <div><label>Targa</label><input name="targa" value="${esc(m.targa)}" required></div>
+              <div><label>Marca</label><input name="marca" value="${esc(m.marca)}"></div>
+              <div><label>Modello</label><input name="modello" value="${esc(m.modello)}"></div>
+              <div><label>Categoria</label><select name="categoria">
+                ${['FURGONE','9_POSTI','AUTO_DACIA','AUTO_GOLF','ESCAVATORE','SEMOVENTE'].map(c=>`<option ${m.categoria===c?'selected':''}>${c}</option>`).join('')}
+              </select></div>
+              <div><label>Posti</label><input type="number" name="posti" value="${esc(m.posti)}"></div>
+              <div><label>Descrizione pubblica cliente</label><input name="descrizione_pubblica" value="${esc(descrizionePubblica(m))}"></div>
+              <div><label>Prezzo giorno</label><input type="number" step="0.01" name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></div>
+              <div><label>Km inclusi/giorno</label><input type="number" name="km_inclusi" value="${esc(m.km_inclusi)}"></div>
+              <div><label>Km attuali</label><input type="number" name="km_attuali" value="${esc(m.km_attuali || m.km)}"></div>
+              <div><label>Scadenza tagliando km</label><input type="number" name="tagliando_km_scadenza" value="${esc(m.tagliando_km_scadenza)}"></div>
+              <div><label>Scadenza tagliando data</label><input type="date" name="tagliando_data_scadenza" value="${esc(m.tagliando_data_scadenza)}"></div>
+              <div><label>Revisione</label><input type="date" name="revisione_scadenza" value="${esc(m.revisione_scadenza)}"></div>
+              <div><label>Bollo</label><input type="date" name="bollo_scadenza" value="${esc(m.bollo_scadenza)}"></div>
+              <div><label>Assicurazione</label><input type="date" name="assicurazione_scadenza" value="${esc(m.assicurazione_scadenza)}"></div>
+              <div><label>Gomme / altra manutenzione</label><input type="date" name="gomme_scadenza" value="${esc(m.gomme_scadenza)}"></div>
+              <div><label>Alert giorni prima</label><input type="number" name="alert_giorni" value="${esc(m.alert_giorni || 30)}"></div>
+              <div><label>Alert km prima</label><input type="number" name="alert_km" value="${esc(m.alert_km || 1000)}"></div>
+            </div>
+            <label>Note manutenzione</label>
+            <textarea name="manutenzione_note">${esc(m.manutenzione_note)}</textarea>
+            <button>Salva scheda mezzo</button>
+          </form>
+          <hr>
+          <h3>Foto/documenti mezzo</h3>
+          <form method="POST" action="/mezzo/${m.id}/foto" enctype="multipart/form-data">
+            <select name="tipo">
+              <option>Foto mezzo fronte</option><option>Foto mezzo retro</option><option>Foto lato dx</option><option>Foto lato sx</option>
+              <option>Foto interno</option><option>Libretto</option><option>Assicurazione</option><option>Bollo</option><option>Revisione</option><option>Manutenzione</option>
+            </select>
+            <input type="file" name="file" accept="image/*,.pdf" required>
+            <button>Carica file mezzo</button>
+          </form>
+          <ul>${lista}</ul>
+          <a class="btn" href="/mezzi-web">Torna elenco mezzi</a>
+        </div>
+      `));
+    });
+  });
+});
+
+app.post('/mezzo/:id', (req, res) => {
+  const b = req.body;
+  db.run(`
+    UPDATE mezzi SET
+    targa=?, marca=?, modello=?, categoria=?, posti=?, descrizione_pubblica=?, prezzo_giorno=?, km_inclusi=?,
+    km_attuali=?, tagliando_km_scadenza=?, tagliando_data_scadenza=?, revisione_scadenza=?, bollo_scadenza=?,
+    assicurazione_scadenza=?, gomme_scadenza=?, alert_giorni=?, alert_km=?, manutenzione_note=?
+    WHERE id=?
+  `, [
+    b.targa,b.marca,b.modello,b.categoria,b.posti,b.descrizione_pubblica,b.prezzo_giorno,b.km_inclusi,
+    b.km_attuali,b.tagliando_km_scadenza,b.tagliando_data_scadenza,b.revisione_scadenza,b.bollo_scadenza,
+    b.assicurazione_scadenza,b.gomme_scadenza,b.alert_giorni,b.alert_km,b.manutenzione_note,req.params.id
+  ], () => res.redirect(`/mezzo/${req.params.id}`));
+});
+
+app.post('/mezzo/:id/foto', upload.single('file'), async (req, res) => {
+  if (!req.file) return res.send('File mancante');
+
+  db.get(`SELECT targa,modello FROM mezzi WHERE id=?`, [req.params.id], async (err, m) => {
+    let driveRes = null;
+    try {
+      driveRes = await uploadFileToDrive(
+        req.file.path,
+        `${Date.now()}_${req.body.tipo}_${req.file.originalname}`,
+        req.file.mimetype,
+        `MEZZO ${m?.targa || req.params.id} ${m?.modello || ''}`
+      );
+    } catch (e) {
+      console.log('Errore upload foto mezzo Drive:', e.message);
+    }
+
+    db.run(`INSERT INTO allegati (mezzo_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
+      [req.params.id, req.body.tipo, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype, driveRes?.id || null, driveRes?.webViewLink || null],
+      () => res.redirect(`/mezzo/${req.params.id}`));
+  });
+});
+
+app.get('/scadenze-mezzi', (req, res) => {
+  db.all(`SELECT * FROM mezzi ORDER BY targa`, [], (err, rows) => {
+    const trs = rows.map(m => `
+      <tr>
+        <td><a href="/mezzo/${m.id}"><b>${esc(m.targa)}</b></a></td>
+        <td>${esc(descrizionePubblica(m))}</td>
+        <td>${esc(m.km_attuali || m.km)}</td>
+        <td>${esc(m.tagliando_km_scadenza)}</td>
+        <td>${esc(m.tagliando_data_scadenza)}</td>
+        <td>${esc(m.revisione_scadenza)}</td>
+        <td>${esc(m.bollo_scadenza)}</td>
+        <td>${esc(m.assicurazione_scadenza)}</td>
+        <td>${alertBadge(m)}</td>
+      </tr>`).join('');
+    const alerts = rows.map(m => alertMezzo(m) ? `<div><b>${esc(m.targa)} ${esc(m.modello)}</b>${alertMezzo(m)}</div>` : '').join('');
+    res.send(page('Scadenze mezzi', `
+      <h2>Scadenze e manutenzioni mezzi</h2>
+      <div class="box">${alerts || '<p class="ok">Nessun alert attivo.</p>'}</div>
+      <table>
+        <tr><th>Targa</th><th>Descrizione</th><th>Km</th><th>Tagliando km</th><th>Tagliando data</th><th>Revisione</th><th>Bollo</th><th>Assicurazione</th><th>Alert</th></tr>
+        ${trs}
+      </table>
+    `));
+  });
+});
+
+// Nuova prenotazione
+app.get('/nuova-prenotazione', (req, res) => {
+  const selectedMezzo = normalize(req.query.mezzo_id);
+  const selectedData = normalize(req.query.data);
+  db.all(`SELECT * FROM mezzi ORDER BY categoria,targa`, [], (err, mezzi) => {
+    const opt = mezzi.map(m => `<option value="${m.id}" ${String(m.id)===selectedMezzo?'selected':''}>${esc(m.targa)} - ${esc(descrizionePubblica(m))}</option>`).join('');
+    res.send(page('Nuova prenotazione', `
+      <h2>Nuova prenotazione / contratto</h2>
+      ${selectedData ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(selectedData)}</b>.</p>` : ''}
+      <form method="POST" action="/prenota-admin">
+        <div class="grid">
+          <div><label>Nome</label><input name="nome" required></div>
+          <div><label>Cognome</label><input name="cognome" required></div>
+          <div><label>Telefono</label><input name="telefono" required></div>
+          <div><label>Email</label><input name="email"></div>
+          <div><label>Codice fiscale</label><input name="codice_fiscale"></div>
+          <div><label>Indirizzo</label><input name="indirizzo"></div>
+          <div><label>Citta</label><input name="citta"></div>
+          <div><label>CAP</label><input name="cap"></div>
+          <div><label>Tipo cliente</label><select name="tipo_cliente"><option>privato</option><option>azienda</option></select></div>
+          <div><label>P.IVA</label><input name="piva"></div>
+          <div><label>Ragione sociale</label><input name="ragione_sociale"></div>
+          <div><label>Mezzo</label><select name="mezzo_id">${opt}</select></div>
+          <div><label>Data inizio</label><input type="date" name="data_inizio" value="${esc(selectedData)}" required></div>
+          <div><label>Ora inizio</label><input type="time" name="ora_inizio" value="08:30"></div>
+          <div><label>Data fine</label><input type="date" name="data_fine" value="${esc(selectedData)}" required></div>
+          <div><label>Ora fine</label><input type="time" name="ora_fine" value="18:00"></div>
+          <div><label>Km previsti</label><input type="number" name="km_previsti" value="150"></div>
+          <div><label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions('4/4 pieno')}</select></div>
+        </div>
+        <label>Note</label><textarea name="note"></textarea>
+        <button>Crea contratto</button>
+      </form>
+    `));
+  });
+});
+
+app.post('/prenota-admin', (req, res) => {
+  const b = req.body;
+  db.get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id], (err, mezzo) => {
+    if (!mezzo) return res.send('Mezzo non trovato');
+    queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, (e2, occ) => {
+      if (occ) return res.send(page('Occupato', `<h2 class="bad">Mezzo occupato in queste date</h2><a class="btn" href="/planning">Vai al planning</a>`));
+      const calc = calcolaTotale(mezzo, b.data_inizio, b.data_fine, b.ora_inizio, b.ora_fine, b.km_previsti);
+      db.run(`
+        INSERT INTO prenotazioni
+        (codice,nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,tipo_cliente,piva,ragione_sociale,mezzo_id,data_inizio,data_fine,ora_inizio,ora_fine,giorni,km_previsti,extra_fuori_orario,imponibile,iva,totale,cauzione,carburante_uscita,stato,note)
+        VALUES ('TEMP',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      `, [
+        b.nome,b.cognome,b.telefono,b.email,b.codice_fiscale,b.indirizzo,b.citta,b.cap,b.tipo_cliente,b.piva,b.ragione_sociale,
+        b.mezzo_id,b.data_inizio,b.data_fine,b.ora_inizio,b.ora_fine,calc.giorni,Number(b.km_previsti || 0),calc.extra_fuori_orario,
+        calc.imponibile,calc.iva,calc.totale,CAUZIONE,b.carburante_uscita || '4/4 pieno','bozza',b.note
+      ], function(err3) {
+        if (err3) return res.send(String(err3));
+        const cod = codicePratica(this.lastID);
+        db.run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, this.lastID]);
+        res.send(actionScreen(this.lastID, 'Contratto creato', `Codice: <b>${cod}</b><br>Totale: <b>euro ${calc.totale.toFixed(2)}</b>`));
+      });
+    });
+  });
+});
+
+// Pagina cliente senza targa
+app.get('/prenota', (req, res) => {
+  res.send(page('Prenota DP RENT', `
+    <h2>Richiesta prenotazione cliente</h2>
+    <p class="notice">Il cliente sceglie solo la categoria. La targa non viene mostrata lato cliente.</p>
+    <form method="POST" action="/prenota-cliente">
+      <div class="grid">
+        <div><label>Tipo mezzo</label><select name="categoria" required>
+          <option value="FURGONE">Furgone cargo/merci</option>
+          <option value="9_POSTI">Pulmino 9 posti</option>
+          <option value="AUTO_DACIA">Auto economica</option>
+          <option value="AUTO_GOLF">Auto categoria Golf</option>
+          <option value="ESCAVATORE">Escavatore</option>
+          <option value="SEMOVENTE">Piattaforma / semovente</option>
+        </select></div>
+        <div><label>Nome</label><input name="nome" required></div>
+        <div><label>Cognome</label><input name="cognome" required></div>
+        <div><label>Telefono</label><input name="telefono" required></div>
+        <div><label>Email</label><input name="email"></div>
+        <div><label>Codice fiscale</label><input name="codice_fiscale"></div>
+        <div><label>Indirizzo</label><input name="indirizzo"></div>
+        <div><label>Citta</label><input name="citta"></div>
+        <div><label>CAP</label><input name="cap"></div>
+        <div><label>Data inizio</label><input type="date" name="data_inizio" required></div>
+        <div><label>Ora inizio</label><input type="time" name="ora_inizio" value="08:30"></div>
+        <div><label>Data fine</label><input type="date" name="data_fine" required></div>
+        <div><label>Ora fine</label><input type="time" name="ora_fine" value="18:00"></div>
+        <div><label>Km previsti</label><input type="number" name="km_previsti" value="150"></div>
+      </div>
+      <button>Invia richiesta</button>
+    </form>
+  `));
+});
+app.post('/prenota-cliente', (req, res) => {
+  const b = req.body;
+  db.all(`SELECT * FROM mezzi WHERE categoria=? ORDER BY id ASC`, [b.categoria], (err, mezzi) => {
+    if (!mezzi || mezzi.length === 0) return res.send(page('Nessun mezzo', '<h2>Nessun mezzo disponibile per questa categoria</h2>'));
+    function prova(index) {
+      if (index >= mezzi.length) return res.send(page('Non disponibile', '<h2>Nessun mezzo libero nelle date richieste</h2>'));
+      const mezzo = mezzi[index];
+      queryDisponibilita(mezzo.id, b.data_inizio, b.data_fine, (e2, occ) => {
+        if (occ) return prova(index + 1);
+        const calc = calcolaTotale(mezzo, b.data_inizio, b.data_fine, b.ora_inizio, b.ora_fine, b.km_previsti);
+        db.run(`
+          INSERT INTO prenotazioni
+          (codice,nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,tipo_cliente,mezzo_id,data_inizio,data_fine,ora_inizio,ora_fine,giorni,km_previsti,extra_fuori_orario,imponibile,iva,totale,cauzione,stato)
+          VALUES ('TEMP',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `, [
+          b.nome,b.cognome,b.telefono,b.email,b.codice_fiscale,b.indirizzo,b.citta,b.cap,'privato',
+          mezzo.id,b.data_inizio,b.data_fine,b.ora_inizio || '08:30',b.ora_fine || '18:00',calc.giorni,Number(b.km_previsti || 0),calc.extra_fuori_orario,
+          calc.imponibile,calc.iva,calc.totale,CAUZIONE,'richiesta_cliente'
+        ], function(err3) {
+          if (err3) return res.send(String(err3));
+          const cod = codicePratica(this.lastID);
+          db.run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, this.lastID]);
+          res.send(page('Richiesta inviata', `
+            <h2 class="ok">Richiesta inviata</h2>
+            <p>Codice: <b>${cod}</b></p>
+            <p>Totale previsto: <b>euro ${calc.totale.toFixed(2)}</b></p>
+            <p>DP RENT confermera la prenotazione.</p>
+          `));
+        });
+      });
+    }
+    prova(0);
+  });
+});
+
+// Dettaglio, storico, planning
+app.get('/prenotazione/:id', (req, res) => {
+  db.get(`
+    SELECT p.*, m.targa, m.marca, m.modello, m.categoria, m.descrizione_pubblica
+    FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?
+  `, [req.params.id], (err, p) => {
+    if (!p) return res.send('Contratto non trovato');
+    res.send(page('Dettaglio contratto', `
+      <div class="box">
+        <h2>Contratto ${esc(p.codice)}</h2>
+        <p><b>Cliente:</b> ${esc(p.nome)} ${esc(p.cognome)} - ${esc(p.telefono)}</p>
+        <p><b>Mezzo:</b> <a href="/mezzo/${p.mezzo_id}">${esc(p.targa)} ${esc(descrizionePubblica(p))}</a></p>
+        <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} â ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
+        <p><b>Totale:</b> euro ${Number(p.totale || 0).toFixed(2)}</p>
+        <p><b>Stato:</b> ${esc(p.stato)}</p>
+        <p><b>Carburante:</b> uscita ${esc(p.carburante_uscita)} / rientro ${esc(p.carburante_rientro)}</p>
+        <p><b>Km:</b> uscita ${esc(p.km_uscita)} / rientro ${esc(p.km_rientro)}</p>
+        <p><b>Note:</b> ${esc(p.note)}</p>
+        <div class="actions">
+          <a class="btn" href="/contratto/${p.id}">Scarica / stampa PDF</a>
+          <a class="btn btn2" href="/firma/${p.id}">Firma su tablet</a>
+          <a class="btn btn2" href="/email/${p.id}">Invia via email</a>
+          <a class="btn btn3" href="/documenti/${p.id}">Documenti cliente / foto in-out</a>
+          <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
+          <a class="btn btn3" href="/checkin/${p.id}">Check-in</a>
+          <a class="btn btn2" href="/prenotazioni">Storico</a>
+        </div>
+      </div>
+    `));
+  });
+});
+
+app.get('/prenotazioni', (req, res) => {
+  const q = normalize(req.query.q), stato = normalize(req.query.stato), dal = normalize(req.query.dal), al = normalize(req.query.al);
+  let sql = `SELECT p.*, m.targa, m.marca, m.modello, m.descrizione_pubblica FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE 1=1`;
+  const params = [];
+  if (q) { sql += ` AND (p.codice LIKE ? OR p.nome LIKE ? OR p.cognome LIKE ? OR p.telefono LIKE ? OR m.targa LIKE ?)`; params.push(`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`); }
+  if (stato) { sql += ` AND p.stato=?`; params.push(stato); }
+  if (dal) { sql += ` AND date(p.data_inizio)>=date(?)`; params.push(dal); }
+  if (al) { sql += ` AND date(p.data_fine)<=date(?)`; params.push(al); }
+  sql += ` ORDER BY p.id DESC`;
+  db.all(sql, params, (err, rows) => {
+    const trs = rows.map(p => `
+      <tr>
+        <td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td>
+        <td>${esc(p.nome)} ${esc(p.cognome)}</td>
+        <td>${esc(p.telefono)}<br>${esc(p.email)}</td>
+        <td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td>
+        <td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td>
+        <td>euro ${Number(p.totale || 0).toFixed(2)}</td>
+        <td>${esc(p.stato)}</td>
+        <td><a href="/prenotazione/${p.id}">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/firma/${p.id}">Firma</a><br><a href="/email/${p.id}">Email</a><br><a href="/stato/${p.id}/confermato">Conferma</a></td>
+      </tr>`).join('');
+    res.send(page('Storico', `
+      <h2>Storico contratti / prenotazioni</h2>
+      <form method="GET" action="/prenotazioni" class="box">
+        <div class="grid">
+          <input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}">
+          <select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select>
+          <input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}">
+        </div><button>Cerca</button>
+      </form>
+      <table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${trs}</table>
+    `));
+  });
+});
+app.get('/stato/:id/:stato', (req, res) => db.run(`UPDATE prenotazioni SET stato=? WHERE id=?`, [req.params.stato, req.params.id], () => res.redirect('/prenotazioni')));
+
+app.get('/planning', (req, res) => {
+  const mese = req.query.mese || moment().format('YYYY-MM');
+  const start = moment(mese + '-01'), days = start.daysInMonth();
+  db.all(`SELECT * FROM mezzi ORDER BY targa`, [], (e1, mezzi) => {
+    db.all(`SELECT p.*, m.targa, m.marca, m.modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.stato!='annullato'`, [], (e2, pren) => {
+      let header = '<th class="sticky-col">Mezzo</th>';
+      for (let d=1; d<=days; d++) header += `<th>${d}</th>`;
+      let rows = '';
+      mezzi.forEach(m => {
+        rows += `<tr><td class="sticky-col"><a href="/mezzo/${m.id}"><b>${esc(m.targa)}</b></a><br>${esc(descrizionePubblica(m))}</td>`;
+        for (let d=1; d<=days; d++) {
+          const day = start.clone().date(d).format('YYYY-MM-DD');
+          const occ = pren.find(p => p.mezzo_id == m.id && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
+          if (occ) {
+            const title = `Contratto: ${esc(occ.codice)} | Cliente: ${esc(occ.nome)} ${esc(occ.cognome)} | Tel: ${esc(occ.telefono)} | Dal ${esc(occ.data_inizio)} al ${esc(occ.data_fine)}`;
+            rows += `<td class="occupato" title="${title}" onclick="window.location='/prenotazione/${occ.id}'">O</td>`;
+          } else {
+            rows += `<td class="libero" title="Libero - clicca per prenotare ${esc(m.targa)} il ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'">L</td>`;
+          }
+        }
+        rows += '</tr>';
+      });
+      const prec = start.clone().subtract(1,'month').format('YYYY-MM'), succ = start.clone().add(1,'month').format('YYYY-MM');
+      res.send(page('Planning', `
+        <h2>Planning ${start.format('MM/YYYY')}</h2>
+        <p><a href="/planning?mese=${prec}">â Mese precedente</a> | <a href="/planning?mese=${succ}">Mese successivo â</a></p>
+        <p><span class="libero" style="padding:6px;">Libero: clic per prenotare</span> <span class="occupato" style="padding:6px;">Occupato: clic per aprire contratto</span></p>
+        <div class="sticky-table"><table><tr>${header}</tr>${rows}</table></div>`));
+    });
+  });
+});
+
+// Documenti cliente/foto IN OUT
+app.get('/documenti/:id', (req, res) => {
+  db.all(`SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id DESC`, [req.params.id], (err, files) => {
+    const lista = files.map(f => `<li>${esc(f.tipo)} - ${esc(f.originalname)} ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Google Drive</a>` : ''}</li>`).join('');
+    res.send(page('Documenti', `
+      <h2>Documenti cliente / foto in-out</h2>
+      <form method="POST" action="/documenti/${req.params.id}" enctype="multipart/form-data">
+        <label>Tipo documento/foto</label>
+        <select name="tipo">
+          <option>Patente fronte</option><option>Patente retro</option><option>Documento fronte</option><option>Documento retro</option><option>Codice fiscale</option>
+          <option>Foto uscita fronte</option><option>Foto uscita retro</option><option>Foto uscita lato dx</option><option>Foto uscita lato sx</option><option>Foto uscita interno</option><option>Foto danni uscita</option>
+          <option>Foto rientro fronte</option><option>Foto rientro retro</option><option>Foto rientro lato dx</option><option>Foto rientro lato sx</option><option>Foto rientro interno</option><option>Foto danni rientro</option>
+        </select>
+        <input type="file" name="file" accept="image/*,.pdf" required>
+        <button>Carica</button>
+      </form><h3>Allegati caricati</h3><ul>${lista}</ul><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a>`));
+  });
+});
+app.post('/documenti/:id', upload.single('file'), (req, res) => {
+  if (!req.file) return res.send('File mancante');
+  db.run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype) VALUES (?,?,?,?,?,?)`,
+    [req.params.id, req.body.tipo, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype],
+    () => res.redirect(`/documenti/${req.params.id}`));
+});
+
+app.get('/checkout/:id', (req, res) => {
+  db.get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id], (err, p) => {
+    if (!p) return res.send('Contratto non trovato');
+    res.send(page('Check-out', `<h2>Check-out mezzo</h2><form method="POST" action="/checkout/${p.id}">
+      <label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions(p.carburante_uscita)}</select>
+      <label>Km uscita</label><input type="number" name="km_uscita" value="${esc(p.km_uscita)}">
+      <label>Note</label><textarea name="note">${esc(p.note)}</textarea><button>Salva check-out</button></form>
+      <a class="btn btn3" href="/documenti/${p.id}">Carica foto uscita</a>`));
+  });
+});
+app.post('/checkout/:id', (req, res) => {
+  db.get(`SELECT mezzo_id FROM prenotazioni WHERE id=?`, [req.params.id], (e,p) => {
+    db.run(`UPDATE prenotazioni SET carburante_uscita=?, km_uscita=?, note=?, stato='in_corso' WHERE id=?`,
+      [req.body.carburante_uscita, req.body.km_uscita, req.body.note, req.params.id], () => {
+        if (p && req.body.km_uscita) db.run(`UPDATE mezzi SET km_attuali=? WHERE id=?`, [req.body.km_uscita, p.mezzo_id]);
+        res.send(actionScreen(req.params.id, 'Check-out salvato', 'Contratto aggiornato in stato in_corso.'));
+      });
+  });
+});
+app.get('/checkin/:id', (req, res) => {
+  db.get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id], (err, p) => {
+    if (!p) return res.send('Contratto non trovato');
+    res.send(page('Check-in', `<h2>Check-in mezzo</h2><form method="POST" action="/checkin/${p.id}">
+      <label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select>
+      <label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}">
+      <label>Note</label><textarea name="note">${esc(p.note)}</textarea><button>Salva check-in</button></form>
+      <a class="btn btn3" href="/documenti/${p.id}">Carica foto rientro</a>`));
+  });
+});
+app.post('/checkin/:id', (req, res) => {
+  db.get(`SELECT mezzo_id FROM prenotazioni WHERE id=?`, [req.params.id], (e,p) => {
+    db.run(`UPDATE prenotazioni SET carburante_rientro=?, km_rientro=?, note=?, stato='rientrato' WHERE id=?`,
+      [req.body.carburante_rientro, req.body.km_rientro, req.body.note, req.params.id], () => {
+        if (p && req.body.km_rientro) db.run(`UPDATE mezzi SET km_attuali=? WHERE id=?`, [req.body.km_rientro, p.mezzo_id]);
+        res.send(actionScreen(req.params.id, 'Check-in salvato', 'Contratto aggiornato in stato rientrato.'));
+      });
+  });
+});
+
+// PDF/Firma/Email
+app.get('/contratto/:id', (req, res) => generaPdfContratto(req.params.id, (err,file) => err ? res.send('Errore PDF: '+err.message) : res.download(file)));
+
+app.get('/firma/:id', (req, res) => {
+  res.send(page('Firma', `
+    <div class="box">
+      <h2>Firma contratto</h2>
+      <canvas id="canvas"></canvas>
+      <button onclick="clearCanvas()">Cancella</button>
+      <button onclick="saveFirma()">Salva firma</button>
+    </div>
+    <script>
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      canvas.width = canvas.offsetWidth;
+      canvas.height = 230;
+      let drawing = false;
+      function pos(e) {
+        const r = canvas.getBoundingClientRect();
+        const t = e.touches ? e.touches[0] : e;
+        return { x: t.clientX - r.left, y: t.clientY - r.top };
+      }
+      function start(e) { drawing = true; const p = pos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); e.preventDefault(); }
+      function move(e) { if (!drawing) return; const p = pos(e); ctx.lineTo(p.x, p.y); ctx.stroke(); e.preventDefault(); }
+      function end(e) { drawing = false; e.preventDefault(); }
+      canvas.addEventListener('mousedown', start);
+      canvas.addEventListener('mousemove', move);
+      canvas.addEventListener('mouseup', end);
+      canvas.addEventListener('touchstart', start);
+      canvas.addEventListener('touchmove', move);
+      canvas.addEventListener('touchend', end);
+      function clearCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+      function saveFirma() {
+        fetch('/firma/${req.params.id}', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firma: canvas.toDataURL('image/png') })
+        }).then(() => location.href = '/prenotazione/${req.params.id}');
+      }
+    </script>
+  `));
+});
+
+app.post('/firma/:id', (req, res) => {
+  const data = req.body.firma;
+  if (!data) return res.status(400).send('Firma mancante');
+  const base64 = data.split(',')[1];
+  const file = path.join(firmeDir, `firma_${req.params.id}.png`);
+  fs.writeFileSync(file, base64, 'base64');
+  db.run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id], () => generaPdfContratto(req.params.id, () => res.send('OK')));
+});
+
+app.get('/email/:id', (req,res)=>{
+  db.get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id],(err,p)=>{
+    if(!p)return res.send('Contratto non trovato');
+    res.send(page('Invia email', `<h2>Invia contratto via email</h2><form method="POST" action="/email/${p.id}">
+      <label>Email destinatario</label><input name="email" value="${esc(p.email)}" required>
+      <label>Messaggio</label><textarea name="messaggio">Buongiorno, in allegato trova il contratto DP RENT.</textarea><button>Invia email</button></form>
+      <p class="notice">Per inviare davvero configura su Render: SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.</p>`));
+  });
+});
+app.post('/email/:id',(req,res)=>{
+  generaPdfContratto(req.params.id, async (err,file)=>{
+    if(err)return res.send('Errore PDF: '+err.message);
+    if(!process.env.SMTP_HOST){
+      return res.send(page('SMTP mancante', `<h2 class="bad">Email non configurata</h2><p>Il PDF Ã¨ pronto, ma per inviare email devi configurare SMTP su Render.</p><a class="btn" href="/contratto/${req.params.id}">Scarica PDF</a>`));
+    }
+    const transporter=nodemailer.createTransport({
+      host:process.env.SMTP_HOST, port:Number(process.env.SMTP_PORT||587),
+      secure:Number(process.env.SMTP_PORT||587)===465,
+      auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS}
+    });
+    await transporter.sendMail({
+      from:process.env.SMTP_FROM||AZIENDA.email, to:req.body.email, subject:'Contratto DP RENT',
+      text:req.body.messaggio||'In allegato contratto DP RENT.',
+      attachments:[{filename:path.basename(file),path:file}]
+    });
+    db.run(`UPDATE prenotazioni SET stato='inviato_email' WHERE id=?`,[req.params.id]);
+    res.send(actionScreen(req.params.id,'Email inviata','Contratto inviato correttamente.'));
+  });
+});
+
+app.get('/mezzi', (req,res)=> db.all(`SELECT * FROM mezzi`, [], (err,rows)=>res.json(rows||[])));
+
+
+app.get('/test-email', async (req, res) => {
   try {
-    const db = JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
-    db.counters = db.counters || { mezzi: 0, prenotazioni: 0, allegati: 0 };
-    db.mezzi = db.mezzi || [];
-    db.prenotazioni = db.prenotazioni || [];
-    db.allegati = db.allegati || [];
-    return db;
+    await sendEmail(
+      process.env.ALERT_EMAIL || process.env.SMTP_USER,
+      'TEST DP RENT APP',
+      'Email di test dal gestionale DP RENT. Se la ricevi, SMTP Gmail funziona.',
+      []
+    );
+    res.send(page('Test Email', `<div class="box"><h2 class="ok">Email inviata</h2><p>Controlla ${esc(process.env.ALERT_EMAIL || process.env.SMTP_USER || '')}</p><a class="btn" href="/">Dashboard</a></div>`));
   } catch (e) {
-    return defaultDb();
+    res.send(page('Errore Email', `<div class="box"><h2 class="bad">Errore email</h2><pre>${esc(e.message)}</pre><p>Controlla variabili SMTP su Render.</p><a class="btn" href="/">Dashboard</a></div>`));
   }
-}
+});
 
-function saveDb(db) { fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)); }
-function esc(v) { return String(v ?? '').replace(/[&<>"']/g, s => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#039;' }[s])); }
-function euro(v) { return Number(v || 0).toFixed(2); }
-function nowIt() { return new Date().toLocaleString('it-IT', { timeZone: 'Europe/Rome' }); }
-function todayCode() { const d = new Date(); return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`; }
-function toISODate(v) {
-  if (!v) return '';
-  const s = String(v).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const m = s.match(/^(\d{1,2})[\/\-\.](\d{1,2})(?:[\/\-\.](\d{2,4}))?$/);
-  if (m) {
-    const y = m[3] ? (m[3].length === 2 ? '20' + m[3] : m[3]) : String(new Date().getFullYear());
-    return `${y}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+app.get('/test-drive', async (req, res) => {
+  try {
+    if (!googleDriveConfigured()) {
+      return res.send(page('Google Drive non configurato', `<div class="box"><h2 class="bad">Google Drive non configurato</h2><p>Servono variabili:</p><pre>GOOGLE_SERVICE_ACCOUNT_EMAIL
+GOOGLE_PRIVATE_KEY
+GOOGLE_DRIVE_FOLDER_ID</pre><a class="btn" href="/">Dashboard</a></div>`));
+    }
+
+    const testFile = path.join(uploadDir, `test-drive-${Date.now()}.txt`);
+    fs.writeFileSync(testFile, 'Test Google Drive DP RENT');
+
+    const driveRes = await uploadFileToDrive(testFile, path.basename(testFile), 'text/plain', 'TEST DP RENT');
+
+    res.send(page('Test Drive', `<div class="box"><h2 class="ok">Upload Google Drive riuscito</h2><p><a target="_blank" href="${esc(driveRes.webViewLink)}">Apri file su Google Drive</a></p><a class="btn" href="/">Dashboard</a></div>`));
+  } catch (e) {
+    res.send(page('Errore Drive', `<div class="box"><h2 class="bad">Errore Google Drive</h2><pre>${esc(e.message)}</pre><p>Controlla service account e condivisione cartella Drive.</p><a class="btn" href="/">Dashboard</a></div>`));
   }
-  return s;
-}
-function dateIt(v) { const iso = toISODate(v); if (!iso) return ''; const d = new Date(iso+'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString('it-IT'); }
-function validateDates(body) {
-  body.data_inizio = toISODate(body.data_inizio);
-  body.data_fine = toISODate(body.data_fine);
-  if (!body.data_inizio || !body.data_fine) return 'Inserire data inizio e data fine';
-  const start = new Date(body.data_inizio + 'T00:00:00');
-  const end = new Date(body.data_fine + 'T00:00:00');
-  if (isNaN(start) || isNaN(end)) return 'Formato data non valido';
-  if (end < start) return 'Data rientro precedente alla data uscita';
-  return '';
-}
-function giorniNoleggio(a,b){ const d1=new Date(toISODate(a)+'T00:00:00'); const d2=new Date(toISODate(b)+'T00:00:00'); return Math.max(1, Math.floor((d2-d1)/86400000)+1 || 1); }
-function extraOrario(ora){ if(!ora) return 0; const [h,m]=String(ora).split(':').map(Number); const min=(h||0)*60+(m||0); return min < 510 || min > 1110 ? EXTRA_FUORI_ORARIO : 0; }
-function categoriaAuto(marca, modello, desc, codice){ const s=`${marca||''} ${modello||''} ${desc||''} ${codice||''}`.toUpperCase(); if(s.includes('GOLF'))return'AUTO_GOLF'; if(s.includes('DACIA'))return'AUTO_DACIA'; if(s.includes('ESCAVATORE'))return'ESCAVATORE'; if(s.includes('SEMOVENTE')||s.includes('PIATTAFORMA'))return'SEMOVENTE'; if(s.includes('9 POSTI')||s.includes('9P')||s.includes('TOURNEO')||s.includes('PULMINO'))return'9_POSTI'; return'FURGONE'; }
-function prezzoCategoria(cat){ if(cat==='AUTO_DACIA') return 50; if(cat==='AUTO_GOLF') return 60; if(cat==='ESCAVATORE'||cat==='SEMOVENTE') return 50; return 70; }
-function kmCategoria(cat){ return (cat==='ESCAVATORE'||cat==='SEMOVENTE') ? 0 : 150; }
-function descCliente(m){ if(!m)return''; if(m.descrizione_cliente)return m.descrizione_cliente; const base=`${m.marca||''} ${m.modello||''}`.trim(); if(m.categoria==='9_POSTI')return `${base} - pulmino 9 posti`; if(m.categoria==='FURGONE')return `${base} - furgone cargo`; if(m.categoria==='ESCAVATORE')return `${base} - escavatore`; if(m.categoria==='SEMOVENTE')return `${base} - semovente / piattaforma`; return base || m.descrizione || 'Mezzo DP RENT'; }
-function calcola(p, mezzo){ const giorni=giorniNoleggio(p.data_inizio,p.data_fine); const prezzo=Number(mezzo.prezzo_giorno||prezzoCategoria(mezzo.categoria)); const kmG=Number(mezzo.km_inclusi||kmCategoria(mezzo.categoria)); const kmInclusi=giorni*kmG; const kmPrev=Number(p.km_previsti||0); const extraKm=kmG>0?Math.max(0, kmPrev-kmInclusi)*EXTRA_KM:0; const extraFO=extraOrario(p.ora_inizio)+extraOrario(p.ora_fine); const imponibile=giorni*prezzo+extraKm+extraFO; return { giorni, kmInclusi, extraKm, extraFuoriOrario: extraFO, imponibile, iva: imponibile*IVA, totale: imponibile*(1+IVA) }; }
-function fuelOptions(sel){ return ['4/4 pieno','3/4','1/2','1/4','Riserva','Vuoto'].map(v=>`<option ${v===sel?'selected':''}>${esc(v)}</option>`).join(''); }
+});
 
-function checkAlerts(m){
-  const out=[]; const km=Number(m.km||0); const alertKm=Number(m.alert_km||1000); const alertG=Number(m.alert_giorni||30); const today=new Date(); today.setHours(0,0,0,0);
-  if(m.tagliando_km){ const diff=Number(m.tagliando_km)-km; if(diff<=0)out.push(`â Tagliando scaduto di ${Math.abs(diff)} km`); else if(diff<=alertKm)out.push(`â ï¸ Tagliando vicino: mancano ${diff} km`); }
-  function dAlert(label,value){ if(!value)return; const d=new Date(toISODate(value)+'T00:00:00'); if(isNaN(d))return; const diff=Math.ceil((d-today)/86400000); if(diff<0)out.push(`â ${label} scaduto il ${dateIt(value)}`); else if(diff<=alertG)out.push(`â ï¸ ${label} in scadenza il ${dateIt(value)} (${diff} giorni)`); }
-  dAlert('Revisione',m.revisione); dAlert('Bollo',m.bollo); dAlert('Assicurazione',m.assicurazione); dAlert('Gomme/Manutenzione',m.gomme);
-  return out;
-}
-
-function googleDriveConfigured(){ return !!(process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY && process.env.GOOGLE_DRIVE_FOLDER_ID); }
-function getDrive(){ const key=String(process.env.GOOGLE_PRIVATE_KEY||'').replace(/\\n/g,'\n'); const auth=new google.auth.JWT({ email:process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, key, scopes:['https://www.googleapis.com/auth/drive.file'] }); return google.drive({version:'v3',auth}); }
-async function driveUpload(localPath, filename, mimetype, folderName){
-  if(!googleDriveConfigured() || !fs.existsSync(localPath)) return null;
-  const drive=getDrive(); const parent=process.env.GOOGLE_DRIVE_FOLDER_ID; let folderId=parent;
-  if(folderName){ const safe=String(folderName).replace(/[\/\\:*?"<>|]/g,'-').slice(0,120); const q=`'${parent}' in parents and name='${safe}' and mimeType='application/vnd.google-apps.folder' and trashed=false`; const found=await drive.files.list({q, fields:'files(id,name)', pageSize:1}); if(found.data.files && found.data.files.length) folderId=found.data.files[0].id; else { const created=await drive.files.create({requestBody:{name:safe,mimeType:'application/vnd.google-apps.folder',parents:[parent]},fields:'id'}); folderId=created.data.id; } }
-  const up=await drive.files.create({ requestBody:{name:filename,parents:[folderId]}, media:{mimeType:mimetype||'application/octet-stream',body:fs.createReadStream(localPath)}, fields:'id,webViewLink' });
-  return { id: up.data.id, link: up.data.webViewLink };
-}
-
-async function sendEmail(to, subject, text, attachments=[]){
-  if(!process.env.SMTP_HOST) throw new Error('SMTP non configurato');
-  const transporter=nodemailer.createTransport({ host:process.env.SMTP_HOST, port:Number(process.env.SMTP_PORT||465), secure:String(process.env.SMTP_SECURE||'').toLowerCase()==='true', auth:{user:process.env.SMTP_USER, pass:process.env.SMTP_PASS}, tls:{rejectUnauthorized:false} });
-  await transporter.verify();
-  return transporter.sendMail({ from:process.env.SMTP_FROM||process.env.SMTP_USER, to, subject, text, attachments });
-}
-async function sendAlert(subject,text){ try{ const to=process.env.ALERT_EMAIL||process.env.SMTP_USER; if(to) await sendEmail(to,subject,text); }catch(e){ console.log('Errore alert:',e.message); } }
-
-function layout(title, body){
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-  body{margin:0;font-family:Arial;background:#f4f4f4;color:#111}header{background:#070707;color:white;padding:22px;font-size:32px;font-weight:900}nav{background:#c40000;padding:12px;display:flex;gap:10px;flex-wrap:wrap}nav a{color:white;text-decoration:none;font-weight:bold;padding:8px}main{padding:18px}.card{background:white;border-radius:14px;padding:18px;margin:12px 0;box-shadow:0 2px 10px #ccc}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}.tile{background:#111;color:white;border-radius:20px;padding:32px;text-align:center;text-decoration:none;font-size:23px;font-weight:900;border-bottom:8px solid #c40000}input,select,textarea,button{width:100%;box-sizing:border-box;padding:11px;margin:5px 0 12px;border:1px solid #aaa;border-radius:7px}button,.btn{background:#c40000;color:white;border:0;border-radius:8px;padding:11px 16px;text-decoration:none;font-weight:bold;display:inline-block;width:auto;margin:4px}.btn2{background:#222}.btn3{background:#0b6b2d}.ok{color:green}.bad{color:#c40000}.warn{color:#bd6b00}table{width:100%;border-collapse:collapse;background:white}th,td{border:1px solid #ddd;padding:7px;font-size:13px;vertical-align:top}th{background:#111;color:white}.free{background:#32b849;color:white;text-align:center;font-weight:bold;cursor:pointer}.busy{background:#d60000;color:white;text-align:center;font-weight:bold;cursor:pointer}.alert{background:#ffe2e2;border:1px solid #c40000;border-radius:8px;padding:9px;margin:7px 0}.notice{background:#fff4ce;border:1px solid #d8bd54;border-radius:8px;padding:9px;margin:7px 0}.sticky{overflow:auto;max-height:78vh}.sticky th{position:sticky;top:0;z-index:2}.sticky .first{position:sticky;left:0;background:white;z-index:1;min-width:190px}.sticky th.first{background:#111;color:white;z-index:3}canvas{width:100%;height:240px;border:2px solid #111;background:white;touch-action:none}@media(max-width:700px){header{font-size:25px}main{padding:8px}nav a{font-size:14px}.tile{font-size:19px;padding:24px}}
-  </style></head><body><header>DP RENT APP</header><nav><a href="/">Dashboard</a><a href="/mezzi">Mezzi</a><a href="/import">Import Excel</a><a href="/nuova">Nuova prenotazione</a><a href="/planning">Planning</a><a href="/storico">Storico</a><a href="/rientri">Rientri</a><a href="/scadenze">Scadenze</a><a href="/cliente">Pagina cliente</a><a href="/test-email">Test Email</a><a href="/test-drive">Test Drive</a></nav><main>${body}</main></body></html>`;
-}
-
-app.get('/', (req,res)=>{ const db=loadDb(); const alerts=db.mezzi.flatMap(m=>checkAlerts(m).map(a=>`<div class="alert"><b>${esc(m.targa)} ${esc(m.descrizione)}</b><br>${esc(a)}</div>`)).join(''); res.send(layout('Dashboard',`<div class="grid"><a class="tile" href="/nuova">â Nuova prenotazione</a><a class="tile" href="/planning">ð Planning</a><a class="tile" href="/mezzi">ð Mezzi</a><a class="tile" href="/rientri">ð Rientri</a><a class="tile" href="/storico">ð Storico</a><a class="tile" href="/scadenze">â ï¸ Scadenze</a><a class="tile" href="/cliente">ð² Pagina cliente</a><a class="tile" href="/import">ð Import Excel</a></div><div class="card"><h2>Situazione</h2><p>Mezzi: <b>${db.mezzi.length}</b></p><p>Contratti: <b>${db.prenotazioni.length}</b></p><p>Email: <b>${esc(process.env.SMTP_HOST||'non configurata')}</b></p><p>Google Drive: <b>${googleDriveConfigured()?'configurato':'non configurato'}</b></p></div><div class="card"><h2>Alert</h2>${alerts||'<p class="ok">Nessun alert.</p>'}</div>`)); });
-app.get('/test-email', async(req,res)=>{ try{ await sendEmail(process.env.ALERT_EMAIL||process.env.SMTP_USER,'TEST DP RENT','Email funzionante DP RENT'); res.send('EMAIL OK'); }catch(e){ res.send('ERRORE EMAIL: '+e.message); } });
-app.get('/test-drive', async(req,res)=>{ try{ if(!googleDriveConfigured()) return res.send('DRIVE NON CONFIGURATO'); const file=path.join(UPLOAD_DIR,`test-drive-${Date.now()}.txt`); fs.writeFileSync(file,'Test Google Drive DP RENT'); const d=await driveUpload(file,path.basename(file),'text/plain','TEST DP RENT'); res.send(`DRIVE OK: <a target="_blank" href="${esc(d.link)}">Apri file</a>`); }catch(e){ res.send('ERRORE DRIVE: '+e.message); } });
-
-app.get('/import',(req,res)=>res.send(layout('Import Excel',`<div class="card"><h2>Import mezzi da Excel</h2><p>Colonne lette: Targa, Marca, Modello, Km, Descrizione, Codice Tipo.</p><form method="POST" enctype="multipart/form-data"><input type="file" name="file" accept=".xlsx,.xls,.csv" required><button>Importa mezzi</button></form></div>`)));
-app.post('/import', upload.single('file'), (req,res)=>{ if(!req.file)return res.send('File mancante'); const db=loadDb(); const wb=XLSX.readFile(req.file.path); const rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]); let count=0; rows.forEach(r=>{ const targa=String(r.Targa||r.targa||'').trim(); if(!targa)return; const marca=String(r.Marca||r.marca||'').trim(); const modello=String(r.Modello||r.modello||'').trim(); const descrizione=String(r.Descrizione||r.descrizion||'').trim(); const codice=String(r['Codice Tip']||r['Codice Tipo']||'').trim(); const km=Number(r['Km percor']||r['Km percorsi']||r.Km||r.km||0); const categoria=categoriaAuto(marca,modello,descrizione,codice); let mezzo=db.mezzi.find(m=>String(m.targa).toUpperCase()===targa.toUpperCase()); if(!mezzo){db.counters.mezzi++; mezzo={id:db.counters.mezzi}; db.mezzi.push(mezzo);} Object.assign(mezzo,{targa,marca,modello,categoria,descrizione:mezzo.descrizione||descCliente({marca,modello,categoria}),descrizione_cliente:mezzo.descrizione_cliente||descCliente({marca,modello,categoria}),km:km||mezzo.km||0,prezzo_giorno:mezzo.prezzo_giorno||prezzoCategoria(categoria),km_inclusi:mezzo.km_inclusi||kmCategoria(categoria),alert_km:mezzo.alert_km||1000,alert_giorni:mezzo.alert_giorni||30}); count++; }); saveDb(db); try{fs.unlinkSync(req.file.path)}catch{} res.send(layout('Import completato',`<div class="card"><h2 class="ok">Import completato</h2><p>Mezzi importati/aggiornati: <b>${count}</b></p><a class="btn" href="/mezzi">Vai ai mezzi</a></div>`)); });
-
-app.get('/mezzi',(req,res)=>{ const db=loadDb(); const rows=db.mezzi.map(m=>`<tr><td><a href="/mezzo/${m.id}"><b>${esc(m.targa)}</b></a></td><td>${esc(m.descrizione)}</td><td>${esc(m.categoria)}</td><td>${esc(m.km)}</td><td>â¬ ${euro(m.prezzo_giorno)}</td><td>${esc(m.km_inclusi)}</td><td>${esc(m.tagliando_km)}</td><td>${checkAlerts(m).length?'<span class="bad">ALERT</span>':'<span class="ok">OK</span>'}</td></tr>`).join(''); res.send(layout('Mezzi',`<div class="card"><h2>Nuovo mezzo</h2><form method="POST"><div class="grid"><input name="targa" placeholder="Targa" required><input name="descrizione" placeholder="Descrizione" required><select name="categoria"><option>FURGONE</option><option>9_POSTI</option><option>AUTO_DACIA</option><option>AUTO_GOLF</option><option>ESCAVATORE</option><option>SEMOVENTE</option></select><input name="km" type="number" placeholder="Km"><input name="prezzo_giorno" type="number" step="0.01" value="70"><input name="km_inclusi" type="number" value="150"><input name="tagliando_km" type="number" placeholder="Tagliando km"><input name="revisione" type="date"><input name="bollo" type="date"><input name="assicurazione" type="date"><input name="gomme" type="date"></div><button>Salva mezzo</button></form></div><table><tr><th>Targa</th><th>Descrizione</th><th>Categoria</th><th>Km</th><th>Prezzo</th><th>Km/g</th><th>Tagliando</th><th>Alert</th></tr>${rows}</table>`)); });
-app.post('/mezzi',(req,res)=>{ const db=loadDb(); db.counters.mezzi++; db.mezzi.push({id:db.counters.mezzi,...req.body,alert_km:1000,alert_giorni:30}); saveDb(db); res.redirect('/mezzi'); });
-app.get('/mezzo/:id',(req,res)=>{ const db=loadDb(); const m=db.mezzi.find(x=>String(x.id)===String(req.params.id)); if(!m)return res.send('Mezzo non trovato'); const alerts=checkAlerts(m).map(a=>`<div class="alert">${esc(a)}</div>`).join(''); res.send(layout('Scheda mezzo',`<div class="card"><h2>${esc(m.targa)} - ${esc(m.descrizione)}</h2>${alerts||'<p class="ok">Nessun alert.</p>'}<form method="POST"><div class="grid"><input name="targa" value="${esc(m.targa)}"><input name="descrizione" value="${esc(m.descrizione)}"><input name="categoria" value="${esc(m.categoria)}"><input name="km" type="number" value="${esc(m.km)}"><input name="prezzo_giorno" type="number" step="0.01" value="${esc(m.prezzo_giorno)}"><input name="km_inclusi" type="number" value="${esc(m.km_inclusi)}"><input name="tagliando_km" type="number" value="${esc(m.tagliando_km)}"><input name="revisione" type="date" value="${esc(m.revisione)}"><input name="bollo" type="date" value="${esc(m.bollo)}"><input name="assicurazione" type="date" value="${esc(m.assicurazione)}"><input name="gomme" type="date" value="${esc(m.gomme)}"></div><button>Salva</button></form><a class="btn" href="/nuova?mezzo=${m.id}">Prenota</a></div>`)); });
-app.post('/mezzo/:id',(req,res)=>{ const db=loadDb(); const m=db.mezzi.find(x=>String(x.id)===String(req.params.id)); if(!m)return res.send('Mezzo non trovato'); Object.assign(m,req.body); saveDb(db); res.redirect('/mezzo/'+m.id); });
-
-function formPrenotazione(action, mezzoId=''){ const db=loadDb(); const opts=db.mezzi.map(m=>`<option value="${m.id}" ${String(m.id)===String(mezzoId)?'selected':''}>${esc(m.descrizione)} (${esc(m.targa)})</option>`).join(''); return `<form method="POST" action="${action}"><div class="grid"><input name="cliente" placeholder="Cliente" required><input name="telefono" placeholder="Telefono" required><input name="email" placeholder="Email"><input name="codice_fiscale" placeholder="Codice fiscale"><input name="indirizzo" placeholder="Indirizzo"><select name="fatturazione"><option>Privato</option><option>Azienda</option></select><input name="piva" placeholder="P.IVA"><input name="ragione_sociale" placeholder="Ragione sociale"><input name="pec" placeholder="PEC"><input name="sdi" placeholder="SDI"><input name="conducente1" placeholder="Conducente 1"><input name="patente1" placeholder="Patente 1"><input type="date" name="patente1_scadenza"><input name="conducente2" placeholder="Conducente 2"><input name="patente2" placeholder="Patente 2"><input type="date" name="patente2_scadenza"><select name="mezzo_id" required>${opts}</select><input type="date" name="data_inizio" required><input type="time" name="ora_inizio" value="08:30"><input type="date" name="data_fine" required><input type="time" name="ora_fine" value="18:00"><input type="number" name="km_previsti" value="150"><select name="carburante_uscita">${fuelOptions('4/4 pieno')}</select></div><textarea name="note" placeholder="Note"></textarea><button>Crea contratto</button></form>`; }
-app.get('/nuova',(req,res)=>res.send(layout('Nuova prenotazione',`<div class="card"><h2>Nuova prenotazione</h2>${formPrenotazione('/nuova',req.query.mezzo)}</div>`)));
-app.post('/nuova',(req,res)=>{ const db=loadDb(); const err=validateDates(req.body); if(err)return res.send(layout('Errore date',`<div class="card"><h2 class="bad">${esc(err)}</h2><a class="btn" href="/nuova">Torna</a></div>`)); const mezzo=db.mezzi.find(m=>String(m.id)===String(req.body.mezzo_id)); if(!mezzo)return res.send('Mezzo mancante'); const occupato=db.prenotazioni.find(p=>p.stato!=='annullato'&&String(p.mezzo_id)===String(req.body.mezzo_id)&&p.data_inizio<=req.body.data_fine&&p.data_fine>=req.body.data_inizio); if(occupato)return res.send(layout('Occupato',`<div class="card"><h2 class="bad">Mezzo occupato</h2><a class="btn" href="/planning">Planning</a></div>`)); const c=calcola(req.body,mezzo); db.counters.prenotazioni++; const id=db.counters.prenotazioni; db.prenotazioni.push({id,codice:`DPR-${todayCode()}-${String(id).padStart(4,'0')}`,stato:'bozza',created_at:nowIt(),...req.body,mezzo_id:Number(req.body.mezzo_id),giorni:c.giorni,km_inclusi:c.kmInclusi,extra_km:c.extraKm,extra_fuori_orario:c.extraFuoriOrario,imponibile:c.imponibile,iva:c.iva,totale:c.totale,cauzione:CAUZIONE,carburante_rientro:'4/4 pieno'}); saveDb(db); res.redirect('/prenotazione/'+id); });
-app.get('/cliente',(req,res)=>res.send(layout('Pagina cliente',`<div class="card"><h2>Richiesta cliente DP RENT</h2>${formPrenotazione('/nuova')}</div>`)));
-
-app.get('/prenotazione/:id',(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); const m=db.mezzi.find(x=>x.id===p.mezzo_id)||{}; res.send(layout('Contratto',`<div class="card"><h2>${esc(p.codice)}</h2><p><b>Cliente:</b> ${esc(p.cliente)} - ${esc(p.telefono)}</p><p><b>Fatturazione:</b> ${esc(p.fatturazione)} ${esc(p.ragione_sociale)} ${esc(p.piva)} ${esc(p.pec)} ${esc(p.sdi)}</p><p><b>Conducenti:</b> ${esc(p.conducente1)} / ${esc(p.conducente2)}</p><p><b>Mezzo:</b> ${esc(m.targa)} - ${esc(m.descrizione)}</p><p><b>Periodo:</b> ${dateIt(p.data_inizio)} ${esc(p.ora_inizio)} â ${dateIt(p.data_fine)} ${esc(p.ora_fine)}</p><p><b>Totale:</b> â¬ ${euro(p.totale)}</p><p><b>Stato:</b> ${esc(p.stato)}</p>${p.pdf_drive?`<p><b>PDF Drive:</b> <a target="_blank" href="${esc(p.pdf_drive)}">Apri</a></p>`:''}<a class="btn" href="/pdf/${p.id}">Scarica PDF</a><a class="btn btn2" href="/email/${p.id}">Invia email</a><a class="btn btn2" href="/foto/${p.id}">Foto/documenti</a><a class="btn btn2" href="/firma/${p.id}">Firma</a><a class="btn btn2" href="/firma-link/${p.id}">Link firma</a><a class="btn btn3" href="/checkout/${p.id}">Check-out</a><a class="btn btn3" href="/checkin/${p.id}">Check-in</a><a class="btn btn2" href="/nexi/${p.id}">Nexi</a></div>`)); });
-
-function generaPdf(p,m){ const file=path.join(CONTRACT_DIR,`contratto_${p.codice}.pdf`); const doc=new PDFDocument({size:'A4',margin:32}); doc.pipe(fs.createWriteStream(file)); doc.rect(0,0,595,82).fill('#111'); doc.fillColor('white').fontSize(28).text('DP RENT',42,28); doc.fontSize(10).text(`${AZIENDA.nome}\n${AZIENDA.indirizzo}\nP.IVA ${AZIENDA.piva} | Tel. ${AZIENDA.telefono}\n${AZIENDA.email}`,318,16,{width:230,align:'right'}); doc.rect(0,82,595,5).fill('#c40000'); doc.fillColor('black').fontSize(18).text('CONTRATTO DI NOLEGGIO',40,112,{align:'center'}); let y=150; function section(t){ doc.rect(35,y,525,18).fill('#111'); doc.fillColor('white').fontSize(9).text(t,43,y+5); doc.fillColor('black'); y+=24; } function row(a,b){ doc.fontSize(8.5).text(a,43,y); doc.text(String(b||''),185,y,{width:360}); y+=13; } section('DATI CONTRATTO'); row('Numero contratto',p.codice); row('Stato',p.stato); row('Data creazione',p.created_at); section('ANAGRAFICA E FATTURAZIONE'); row('Cliente',p.cliente); row('Telefono',p.telefono); row('Email',p.email); row('Codice fiscale',p.codice_fiscale); row('Indirizzo',p.indirizzo); row('Fatturazione',`${p.fatturazione||''} ${p.ragione_sociale||''} ${p.piva||''}`); row('PEC / SDI',`${p.pec||''} ${p.sdi||''}`); section('CONDUCENTI'); row('Conducente 1',`${p.conducente1||''} - Patente ${p.patente1||''} scad. ${dateIt(p.patente1_scadenza)||''}`); row('Conducente 2',`${p.conducente2||''} - Patente ${p.patente2||''} scad. ${dateIt(p.patente2_scadenza)||''}`); section('VEICOLO E NOLEGGIO'); row('Targa',m.targa); row('Descrizione',m.descrizione); row('Check-out',`${dateIt(p.data_inizio)} ore ${p.ora_inizio||''}`); row('Check-in',`${dateIt(p.data_fine)} ore ${p.ora_fine||''}`); row('Giorni',p.giorni); row('Carburante',`${p.carburante_uscita||''} / ${p.carburante_rientro||''}`); row('Km previsti',p.km_previsti); row('Km uscita/rientro',`${p.km_uscita||''} / ${p.km_rientro||''}`); section('RIEPILOGO ECONOMICO'); row('Extra fuori orario',`â¬ ${euro(p.extra_fuori_orario)} + IVA`); row('Extra km',`â¬ ${euro(p.extra_km)} + IVA`); row('Imponibile',`â¬ ${euro(p.imponibile)}`); row('IVA 22%',`â¬ ${euro(p.iva)}`); row('Totale IVA inclusa',`â¬ ${euro(p.totale)}`); row('Deposito cauzionale',`â¬ ${euro(p.cauzione)}`); y+=4; section('CONDIZIONI E PRIVACY'); doc.fontSize(7.5).text(`Condizioni: ${TERMS_URL}`,43,y); y+=11; doc.text(`Privacy: ${PRIVACY_URL}`,43,y); y+=13; doc.text('Il cliente dichiara di aver preso visione e accettare condizioni generali e privacy. Veicolo da riconsegnare con carburante come consegnato. Danni, multe, pedaggi, franchigie e costi accessori a carico del cliente.',43,y,{width:500}); y+=42; doc.fontSize(10).text('Firma cliente:',43,y); doc.text('Firma DP RENT:',318,y); const firmaPath=p.firma_path && fs.existsSync(p.firma_path) ? p.firma_path : ''; if(firmaPath){ try{ doc.image(firmaPath,43,y+14,{fit:[210,50]}); }catch(e){ doc.text('________________________',43,y+30); } } else { doc.text('________________________',43,y+30); } doc.text('________________________',318,y+30); doc.end(); return file; }
-app.get('/pdf/:id', async(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); const m=db.mezzi.find(x=>x.id===p.mezzo_id)||{}; const file=generaPdf(p,m); setTimeout(async()=>{ try{ const d=await driveUpload(file,path.basename(file),'application/pdf',`${p.codice} - ${p.cliente}`); if(d){p.pdf_drive=d.link; saveDb(db);} }catch(e){ console.log('Drive PDF:',e.message); } res.download(file); },700); });
-app.get('/email/:id', async(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); const m=db.mezzi.find(x=>x.id===p.mezzo_id)||{}; const file=generaPdf(p,m); setTimeout(async()=>{ try{ await sendEmail(p.email||process.env.ALERT_EMAIL,`Contratto DP RENT ${p.codice}`,`Buongiorno,\nin allegato il contratto DP RENT ${p.codice}.\n\nDP RENT`,[{filename:path.basename(file),path:file}]); res.send(layout('Email inviata',`<div class="card"><h2 class="ok">Email inviata</h2><a class="btn" href="/prenotazione/${p.id}">Torna</a></div>`)); }catch(e){ res.send(layout('Errore email',`<div class="card"><h2 class="bad">Errore email</h2><pre>${esc(e.message)}</pre></div>`)); } },700); });
-
-app.get('/foto/:id',(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); const files=db.allegati.filter(a=>String(a.prenotazione_id)===String(p.id)); const opts=['Patente conducente 1','Documento conducente 1','Patente conducente 2','Documento conducente 2','Foto uscita fronte','Foto uscita retro','Foto uscita lato destro','Foto uscita lato sinistro','Foto uscita interno','Foto rientro fronte','Foto rientro retro','Foto rientro lato destro','Foto rientro lato sinistro','Foto rientro interno','Danno','File generico'].map(v=>`<option>${v}</option>`).join(''); res.send(layout('Foto',`<div class="card"><h2>Foto / documenti</h2><form method="POST" enctype="multipart/form-data"><select name="tipo">${opts}</select><label>Scatta foto da telefono/tablet o scegli file da Mac/PC</label><input type="file" name="file" accept="image/*,.pdf" capture="environment" required><button>Carica</button></form><a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a><h3>File caricati</h3><ul>${files.map(f=>`<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}">${esc(f.originalname)}</a> ${f.drive_link?`- <a target="_blank" href="${esc(f.drive_link)}">Drive</a>`:''}</li>`).join('')}</ul></div>`)); });
-app.post('/foto/:id', upload.single('file'), async(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); if(!req.file)return res.send(layout('Errore upload',`<div class="card"><h2 class="bad">Nessun file selezionato</h2><a class="btn" href="/foto/${p.id}">Torna</a></div>`)); let d=null; try{ d=await driveUpload(req.file.path,`${Date.now()}_${req.body.tipo}_${req.file.originalname}`,req.file.mimetype,`${p.codice} - ${p.cliente}`); }catch(e){console.log('Drive foto:',e.message)} db.counters.allegati++; db.allegati.push({id:db.counters.allegati,prenotazione_id:p.id,tipo:req.body.tipo,filename:req.file.filename,originalname:req.file.originalname,drive_link:d?d.link:'',created_at:nowIt()}); saveDb(db); res.redirect('/foto/'+p.id); });
-
-app.get('/firma/:id',(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); res.send(layout('Firma',`<div class="card"><h2>Firma contratto ${esc(p.codice)}</h2><canvas id="firma"></canvas><button onclick="pulisci()">Cancella</button><button onclick="salva()">Salva firma</button><a class="btn btn2" href="/prenotazione/${p.id}">Torna</a></div><script>const canvas=document.getElementById('firma');const ctx=canvas.getContext('2d');function resize(){canvas.width=canvas.offsetWidth;canvas.height=240;ctx.lineWidth=3;ctx.lineCap='round';}resize();let drawing=false;function pos(e){const r=canvas.getBoundingClientRect();const t=e.touches?e.touches[0]:e;return{x:t.clientX-r.left,y:t.clientY-r.top};}function start(e){drawing=true;const p=pos(e);ctx.beginPath();ctx.moveTo(p.x,p.y);e.preventDefault();}function move(e){if(!drawing)return;const p=pos(e);ctx.lineTo(p.x,p.y);ctx.stroke();e.preventDefault();}function stop(e){drawing=false;e.preventDefault();}canvas.addEventListener('mousedown',start);canvas.addEventListener('mousemove',move);canvas.addEventListener('mouseup',stop);canvas.addEventListener('mouseleave',stop);canvas.addEventListener('touchstart',start,{passive:false});canvas.addEventListener('touchmove',move,{passive:false});canvas.addEventListener('touchend',stop,{passive:false});function pulisci(){ctx.clearRect(0,0,canvas.width,canvas.height);}async function salva(){const r=await fetch('/firma/${p.id}',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({firma:canvas.toDataURL('image/png')})});if(r.ok){location.href='/prenotazione/${p.id}';}else{alert('Errore firma');}}</script>`)); });
-app.post('/firma/:id', (req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.status(404).send('Contratto non trovato'); if(!req.body || !req.body.firma)return res.status(400).send('Firma mancante'); const base64=String(req.body.firma).replace(/^data:image\/png;base64,/,''); const filePath=path.join(UPLOAD_DIR,`firma_${p.id}.png`); fs.writeFileSync(filePath,base64,'base64'); p.firma_path=filePath; p.stato='firmato'; saveDb(db); console.log('FIRMA SALVATA:',filePath); res.send('OK'); });
-app.get('/firma-link/:id',(req,res)=>{ const link=`${req.protocol}://${req.get('host')}/firma/${req.params.id}`; res.send(layout('Link firma',`<div class="card"><h2>Link firma cliente</h2><input value="${esc(link)}" readonly onclick="this.select()"><a class="btn" href="https://wa.me/?text=${encodeURIComponent('Firma contratto DP RENT: '+link)}">Invia WhatsApp</a><a class="btn btn2" href="/prenotazione/${req.params.id}">Torna</a></div>`)); });
-
-app.get('/checkout/:id',(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); res.send(layout('Check-out',`<div class="card"><h2>Check-out ${esc(p.codice)}</h2><form method="POST"><input type="number" name="km_uscita" value="${esc(p.km_uscita)}" placeholder="Km uscita"><select name="carburante_uscita">${fuelOptions(p.carburante_uscita)}</select><textarea name="note_uscita" placeholder="Note uscita">${esc(p.note_uscita)}</textarea><button>Salva check-out</button></form><a class="btn btn2" href="/foto/${p.id}">Foto uscita</a></div>`)); });
-app.post('/checkout/:id',(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); p.km_uscita=Number(req.body.km_uscita||0); p.carburante_uscita=req.body.carburante_uscita; p.note_uscita=req.body.note_uscita; p.stato='in_corso'; const m=db.mezzi.find(x=>x.id===p.mezzo_id); if(m&&p.km_uscita)m.km=p.km_uscita; saveDb(db); res.redirect('/prenotazione/'+p.id); });
-app.get('/checkin/:id',(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); res.send(layout('Check-in',`<div class="card"><h2>Check-in ${esc(p.codice)}</h2><form method="POST"><input type="number" name="km_rientro" value="${esc(p.km_rientro)}" placeholder="Km rientro" required><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select><textarea name="note_rientro" placeholder="Note rientro / danni">${esc(p.note_rientro)}</textarea><button>Chiudi rientro</button></form><a class="btn btn2" href="/foto/${p.id}">Foto rientro</a></div>`)); });
-app.post('/checkin/:id',async(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); p.km_rientro=Number(req.body.km_rientro||0); p.carburante_rientro=req.body.carburante_rientro; p.note_rientro=req.body.note_rientro; p.stato='rientrato'; const m=db.mezzi.find(x=>x.id===p.mezzo_id); if(m&&p.km_rientro)m.km=p.km_rientro; saveDb(db); if(m){const alerts=checkAlerts(m); if(alerts.length) await sendAlert(`ALERT DP RENT ${m.targa}`,`Mezzo ${m.targa} ${m.descrizione}\nKm rientro: ${p.km_rientro}\n\n${alerts.join('\n')}`);} res.redirect('/prenotazione/'+p.id); });
-
-app.get('/rientri',(req,res)=>{ const db=loadDb(); const q=String(req.query.q||'').toLowerCase(); let list=db.prenotazioni.filter(p=>p.stato!=='rientrato'&&p.stato!=='annullato'); if(q)list=list.filter(p=>{const m=db.mezzi.find(x=>x.id===p.mezzo_id)||{}; return `${p.codice} ${p.cliente} ${p.telefono} ${m.targa} ${m.descrizione}`.toLowerCase().includes(q);}); const rows=list.map(p=>{const m=db.mezzi.find(x=>x.id===p.mezzo_id)||{}; return `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.cliente)}<br>${esc(p.telefono)}</td><td>${esc(m.targa)}<br>${esc(m.descrizione)}</td><td>${dateIt(p.data_inizio)} â ${dateIt(p.data_fine)}</td><td>${esc(p.stato)}</td><td><a class="btn" href="/checkin/${p.id}">Check-in</a></td></tr>`;}).join(''); res.send(layout('Rientri',`<div class="card"><h2>Rientri / Check-in</h2><form><input name="q" placeholder="Cerca targa, cliente, telefono, codice" value="${esc(req.query.q||'')}"><button>Cerca</button></form></div><table><tr><th>Contratto</th><th>Cliente</th><th>Mezzo</th><th>Date</th><th>Stato</th><th>Azione</th></tr>${rows}</table>`)); });
-app.get('/storico',(req,res)=>{ const db=loadDb(); const q=String(req.query.q||'').toLowerCase(); let list=db.prenotazioni.slice().reverse(); if(q)list=list.filter(p=>{const m=db.mezzi.find(x=>x.id===p.mezzo_id)||{}; return `${p.codice} ${p.cliente} ${p.telefono} ${m.targa} ${m.descrizione}`.toLowerCase().includes(q);}); const rows=list.map(p=>{const m=db.mezzi.find(x=>x.id===p.mezzo_id)||{}; return `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.cliente)}</td><td>${esc(p.telefono)}</td><td>${esc(m.targa)}<br>${esc(m.descrizione)}</td><td>${dateIt(p.data_inizio)} â ${dateIt(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td></tr>`;}).join(''); res.send(layout('Storico',`<div class="card"><h2>Storico</h2><form><input name="q" placeholder="Cerca nome, targa, telefono, codice" value="${esc(req.query.q||'')}"><button>Cerca</button></form></div><table><tr><th>Contratto</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th></tr>${rows}</table>`)); });
-app.get('/planning',(req,res)=>{ const db=loadDb(); const now=new Date(); const y=Number(req.query.y||now.getFullYear()); const mo=Number(req.query.m||now.getMonth()+1); const days=new Date(y,mo,0).getDate(); const prev=new Date(y,mo-2,1); const next=new Date(y,mo,1); let head='<th class="first">Mezzo</th>'; for(let d=1;d<=days;d++)head+=`<th>${d}</th>`; const rows=db.mezzi.map(m=>{let r=`<tr><td class="first"><b>${esc(m.targa)}</b><br>${esc(m.descrizione)}</td>`; for(let d=1;d<=days;d++){const date=`${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}`; const occ=db.prenotazioni.find(p=>String(p.mezzo_id)===String(m.id)&&p.stato!=='annullato'&&p.data_inizio<=date&&p.data_fine>=date); r+=occ?`<td class="busy" onclick="location.href='/prenotazione/${occ.id}'">O</td>`:`<td class="free" onclick="location.href='/nuova?mezzo=${m.id}'">L</td>`;} return r+'</tr>';}).join(''); res.send(layout('Planning',`<h2>Planning ${mo}/${y}</h2><p><a href="/planning?y=${prev.getFullYear()}&m=${prev.getMonth()+1}">â Mese precedente</a> | <a href="/planning?y=${next.getFullYear()}&m=${next.getMonth()+1}">Mese successivo â</a></p><div class="sticky"><table><tr>${head}</tr>${rows}</table></div>`)); });
-app.get('/scadenze',(req,res)=>{ const db=loadDb(); const rows=db.mezzi.map(m=>`<tr><td><a href="/mezzo/${m.id}">${esc(m.targa)}</a></td><td>${esc(m.descrizione)}</td><td>${esc(m.km)}</td><td>${esc(m.tagliando_km)}</td><td>${esc(m.revisione)}</td><td>${esc(m.bollo)}</td><td>${esc(m.assicurazione)}</td><td>${checkAlerts(m).join('<br>')||'<span class="ok">OK</span>'}</td></tr>`).join(''); res.send(layout('Scadenze',`<h2>Scadenze</h2><table><tr><th>Targa</th><th>Mezzo</th><th>Km</th><th>Tagliando</th><th>Revisione</th><th>Bollo</th><th>Assicurazione</th><th>Alert</th></tr>${rows}</table>`)); });
-
-function nexiMac(params, key){ const s=Object.keys(params).sort().map(k=>`${k}=${params[k]}`).join('&') + key; return crypto.createHash('sha1').update(s).digest('hex'); }
-app.get('/nexi/:id',(req,res)=>{ const db=loadDb(); const p=db.prenotazioni.find(x=>String(x.id)===String(req.params.id)); if(!p)return res.send('Contratto non trovato'); if(!process.env.NEXI_ALIAS||!process.env.NEXI_MAC_KEY)return res.send(layout('Nexi',`<div class="card"><h2>Nexi predisposto</h2><p>Mancano NEXI_ALIAS e NEXI_MAC_KEY.</p><a class="btn" href="/prenotazione/${p.id}">Torna</a></div>`)); const importo=Math.round(Number(p.totale||0)*100); const params={alias:process.env.NEXI_ALIAS,importo,divisa:'EUR',codTrans:p.codice,url:`${req.protocol}://${req.get('host')}/nexi-ok/${p.id}`,url_back:`${req.protocol}://${req.get('host')}/prenotazione/${p.id}`}; const mac=nexiMac(params,process.env.NEXI_MAC_KEY); res.send(layout('Nexi',`<div class="card"><h2>Nexi PayMail predisposto</h2><p>Importo: â¬ ${euro(p.totale)}</p><p>MAC calcolato: ${esc(mac)}</p><p>Qui si collega endpoint reale Nexi PayMail con alias/MAC.</p><a class="btn" href="/prenotazione/${p.id}">Torna</a></div>`)); });
-
-app.listen(PORT, '0.0.0.0', () => console.log('DP RENT APP avviata su porta ' + PORT));
+app.listen(PORT, () => console.log('DP RENT APP V8 ONLINE'));
