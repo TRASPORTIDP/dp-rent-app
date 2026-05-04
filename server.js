@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').setDefaultResultOrder('ipv4first');
 
@@ -223,6 +224,10 @@ function privacyCheckboxHtml() {
   `;
 }
 
+
+const OCR_PREFILL = {};
+function makeOcrId(){ return 'OCR' + Date.now() + Math.floor(Math.random()*10000); }
+
 function page(title, content) {
   const logoPath = path.join(publicDir, 'logo.png');
   const logoHtml = fs.existsSync(logoPath)
@@ -276,7 +281,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V29 OCR EDITABILE</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V30 OCR IMPORT FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -889,7 +894,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V29 OCR EDITABILE'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V30 OCR IMPORT FIX'));
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -911,7 +916,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V29 OCR EDITABILE</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V30 OCR IMPORT FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1144,30 +1149,24 @@ app.get('/ocr-precontratto', (req, res) => {
   res.send(page('OCR prima del contratto', `
     <div class="box">
       <h2>OCR patente/documento prima del contratto</h2>
-      <p class="notice">Premi il pulsante sotto: da iPhone/iPad puoi scegliere <b>Scatta foto</b> oppure <b>Libreria foto</b>.</p>
-
+      <p class="notice">Da iPhone/iPad premi il pulsante e scegli Scatta foto oppure Libreria foto.</p>
       <form method="POST" action="/ocr-precontratto" enctype="multipart/form-data">
         <label>Tipo documento</label>
         <select name="tipo">
           <option>Patente</option>
-          <option>Carta identitÃ </option>
+          <option>Carta identita</option>
           <option>Codice fiscale</option>
           <option>Altro documento</option>
         </select>
-
-        <label class="btn" style="display:block;text-align:center;font-size:24px;padding:18px;margin-top:14px">
-          ð¸ Scatta / carica documento
+        <label class="btn" style="display:block;text-align:center;font-size:22px;padding:18px;margin-top:14px">
+          Scatta / carica documento
           <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
         </label>
-
         <button id="submitBtn" style="display:none">Leggi documento</button>
       </form>
-
       <a class="btn btn2" href="/nuova-prenotazione">Torna</a>
-
       <p class="notice">Dopo aver scelto la foto, la lettura parte automaticamente.</p>
     </div>
-
     <script>
       const input = document.getElementById('fileInput');
       input.addEventListener('change', function () {
@@ -1182,22 +1181,22 @@ app.get('/ocr-precontratto', (req, res) => {
 app.post('/ocr-precontratto', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.send('File mancante');
-
     const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
-
     function v(x) { return esc(x || ''); }
-
     res.send(page('Controlla dati OCR', `
       <div class="box">
         <h2>Controlla e modifica i dati letti</h2>
-        <p class="notice">L'AI puÃ² sbagliare. Correggi i campi se serve, poi premi <b>Continua al contratto</b>.</p>
-
-        <form method="GET" action="/nuova-prenotazione">
+        <p class="notice">L'AI puo sbagliare. Correggi i campi se serve, poi premi Continua al contratto.</p>
+        <form method="POST" action="/ocr-precontratto/applica">
           <div class="grid">
             <div><label>Nome</label><input name="nome" value="${v(dati.nome)}"></div>
             <div><label>Cognome</label><input name="cognome" value="${v(dati.cognome)}"></div>
+            <div><label>Telefono</label><input name="telefono" value=""></div>
+            <div><label>Email</label><input name="email" value=""></div>
             <div><label>Codice fiscale</label><input name="codice_fiscale" value="${v(dati.codice_fiscale)}"></div>
             <div><label>Indirizzo</label><input name="indirizzo" value="${v(dati.indirizzo)}"></div>
+            <div><label>Citta</label><input name="citta" value=""></div>
+            <div><label>CAP</label><input name="cap" value=""></div>
             <div><label>Data nascita</label><input type="date" name="data_nascita" value="${v(dati.data_nascita)}"></div>
             <div><label>Luogo nascita</label><input name="luogo_nascita" value="${v(dati.luogo_nascita)}"></div>
             <div><label>Numero documento</label><input name="documento_numero" value="${v(dati.numero_documento)}"></div>
@@ -1206,10 +1205,8 @@ app.post('/ocr-precontratto', upload.single('file'), async (req, res) => {
             <div><label>Scadenza patente</label><input type="date" name="patente1_scadenza" value="${v(dati.data_scadenza)}"></div>
             <div><label>Categoria patente</label><input name="categoria_patente" value="${v(dati.categoria_patente)}"></div>
           </div>
-
           <button>Continua al contratto con questi dati</button>
         </form>
-
         <a class="btn btn2" href="/ocr-precontratto">Riprova OCR</a>
       </div>
     `));
@@ -1218,13 +1215,39 @@ app.post('/ocr-precontratto', upload.single('file'), async (req, res) => {
   }
 });
 
+
+app.post('/ocr-precontratto/applica', (req, res) => {
+  const id = makeOcrId();
+  OCR_PREFILL[id] = {
+    nome: req.body.nome || '',
+    cognome: req.body.cognome || '',
+    telefono: req.body.telefono || '',
+    email: req.body.email || '',
+    codice_fiscale: req.body.codice_fiscale || '',
+    indirizzo: req.body.indirizzo || '',
+    citta: req.body.citta || '',
+    cap: req.body.cap || '',
+    data_nascita: req.body.data_nascita || '',
+    luogo_nascita: req.body.luogo_nascita || '',
+    documento_numero: req.body.documento_numero || '',
+    documento_scadenza: req.body.documento_scadenza || '',
+    patente1: req.body.patente1 || '',
+    patente1_scadenza: req.body.patente1_scadenza || '',
+    categoria_patente: req.body.categoria_patente || ''
+  };
+  res.redirect('/nuova-prenotazione?ocr=' + encodeURIComponent(id));
+});
+
 app.get('/nuova-prenotazione', async (req, res) => {
+  const ocrData = OCR_PREFILL[req.query.ocr] || {};
+  req.query = Object.assign({}, ocrData, req.query || {});
+
   const mezzi = await all(`SELECT * FROM mezzi ORDER BY categoria,targa`);
   res.send(page('Nuova prenotazione', `<h2>Nuova prenotazione / contratto</h2>
       <div class="box" style="border:2px solid #0b6b2d">
         <h3>1) Prima carica/scatta documento o patente</h3>
         <p class="notice">Consigliato: fai OCR prima di creare il contratto, cosÃ¬ i dati cliente si compilano piÃ¹ velocemente.</p>
-        <a class="btn btn3" href="/ocr-precontratto">ð¸ OCR documento/patente prima del contratto</a>
+        <a class="btn btn3" href="/ocr-precontratto"> OCR documento/patente prima del contratto</a>
       </div>
       <h3>2) Poi controlla i dati e crea contratto</h3>
     ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin')}`));
@@ -1399,8 +1422,8 @@ function renderOcrUploadForm(action, backUrl, title = 'Carica documenti') {
         <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
       </form>
 
-      <button type="button" onclick="scattaFoto()">ð¸ Scatta foto</button>
-      <button type="button" class="btn2" onclick="caricaDaDispositivo()">ð Carica da dispositivo</button>
+      <button type="button" onclick="scattaFoto()"> Scatta foto</button>
+      <button type="button" class="btn2" onclick="caricaDaDispositivo()"> Carica da dispositivo</button>
       <a class="btn btn2" href="${backUrl}">Torna</a>
     </div>
 
