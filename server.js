@@ -1,16 +1,5 @@
 require('dotenv').config();
 require('dns').s
-addColumn('prenotazioni','cargos_checkin_luogo_cod','TEXT');
-addColumn('prenotazioni','cargos_agenzia_nome','TEXT');
-addColumn('prenotazioni','cargos_veicolo_tipo','TEXT DEFAULT "1"');
-addColumn('prenotazioni','cargos_cittadinanza_cod','TEXT');
-addColumn('prenotazioni','cargos_doc_luogoril_cod','TEXT');
-addColumn('prenotazioni','conducente2_data_nascita','TEXT');
-addColumn('prenotazioni','conducente2_doc_numero','TEXT');
-addColumn('prenotazioni','conducente2_recapito','TEXT');
-addColumn('mezzi','blocco_motore','INTEGER DEFAULT 0');
-etDefaultResultOrder('ipv4first');
-
 const express = require('express');
 const bodyParser = require('body-parser');
 const sqlite3 = require('sqlite3').verbose();
@@ -64,16 +53,15 @@ const upload = multer({ dest: uploadDir });
 const db = new sqlite3.Database(path.join(DATA_DIR, 'database.sqlite'));
 
 function addColumn(table, column, type) {
-  try {
-    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, (err) => {
-      if (err && !String(err.message || '').includes('duplicate column')) {
-        console.log('ADD COLUMN warning:', table, column, err.message);
-      }
-    });
-  } catch (e) {
-    console.log('ADD COLUMN skipped:', table, column, e.message);
-  }
+  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, (err) => {
+    if (err && !String(err.message || '').includes('duplicate column')) {
+      console.log('ADD COLUMN warning:', table, column, err.message);
+    }
+  });
 }
+
+
+
 
 
 function run(sql, params = []) {
@@ -97,45 +85,45 @@ function all(sql, params = []) {
 
 
 db.serialize(() => {
-
-
+  // CARGOS V36 columns
   addColumn('prenotazioni','cargos_pagamento_tipo','TEXT DEFAULT "0"');
-  
+  addColumn('prenotazioni','cargos_checkout_luogo_cod','TEXT');
   addColumn('prenotazioni','cargos_checkout_indirizzo','TEXT');
-  
+  addColumn('prenotazioni','cargos_checkin_luogo_cod','TEXT');
   addColumn('prenotazioni','cargos_checkin_indirizzo','TEXT');
-  
+  addColumn('prenotazioni','cargos_operatore_id','TEXT');
   addColumn('prenotazioni','cargos_agenzia_id','TEXT');
-  
+  addColumn('prenotazioni','cargos_agenzia_nome','TEXT');
   addColumn('prenotazioni','cargos_agenzia_luogo_cod','TEXT');
-  
+  addColumn('prenotazioni','cargos_agenzia_indirizzo','TEXT');
   addColumn('prenotazioni','cargos_agenzia_tel','TEXT');
-  
+  addColumn('prenotazioni','cargos_veicolo_tipo','TEXT DEFAULT "1"');
   addColumn('prenotazioni','cargos_veicolo_colore','TEXT');
-  
+  addColumn('prenotazioni','cargos_veicolo_gps','INTEGER DEFAULT 0');
   addColumn('prenotazioni','cargos_veicolo_bloccom','INTEGER DEFAULT 0');
-  
+  addColumn('prenotazioni','cargos_cittadinanza_cod','TEXT');
   addColumn('prenotazioni','cargos_nascita_luogo_cod','TEXT');
-  
+  addColumn('prenotazioni','cargos_residenza_luogo_cod','TEXT');
   addColumn('prenotazioni','cargos_doc_tipo_cod','TEXT DEFAULT "CI"');
-  
+  addColumn('prenotazioni','cargos_doc_luogoril_cod','TEXT');
   addColumn('prenotazioni','cargos_patente_luogoril_cod','TEXT');
-  
+  addColumn('prenotazioni','conducente2_nome','TEXT');
   addColumn('prenotazioni','conducente2_cognome','TEXT');
-  
+  addColumn('prenotazioni','conducente2_data_nascita','TEXT');
   addColumn('prenotazioni','conducente2_nascita_luogo_cod','TEXT');
-  
+  addColumn('prenotazioni','conducente2_cittadinanza_cod','TEXT');
   addColumn('prenotazioni','conducente2_doc_tipo_cod','TEXT');
-  
+  addColumn('prenotazioni','conducente2_doc_numero','TEXT');
   addColumn('prenotazioni','conducente2_doc_luogoril_cod','TEXT');
-  
+  addColumn('prenotazioni','conducente2_patente_numero','TEXT');
   addColumn('prenotazioni','conducente2_patente_luogoril_cod','TEXT');
-  
+  addColumn('prenotazioni','conducente2_recapito','TEXT');
   addColumn('mezzi','cargos_veicolo_tipo','TEXT DEFAULT "1"');
-  
+  addColumn('mezzi','colore','TEXT');
   addColumn('mezzi','gps','INTEGER DEFAULT 0');
-  
-  db.run(`
+  addColumn('mezzi','blocco_motore','INTEGER DEFAULT 0');
+
+db.run(`
     CREATE TABLE IF NOT EXISTS mezzi (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       uid TEXT,
@@ -371,7 +359,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V35 DEFINITIVA STABILE</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V36 DEFINITIVA FIX CRASH</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -985,7 +973,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V35 DEFINITIVA STABILE'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V36 DEFINITIVA FIX CRASH'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1034,7 +1022,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V35 DEFINITIVA STABILE</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V36 DEFINITIVA FIX CRASH</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2664,6 +2652,10 @@ app.use((err, req, res, next) => {
 // =========================
 // RENDER PORT BINDING - VERSIONE DEFINITIVA
 // =========================
+
+// =========================
+// RENDER PORT BINDING - V36 DEFINITIVA
+// =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V35 DEFINITIVA STABILE ONLINE su porta ' + PORT);
+  console.log('DP RENT APP V36 DEFINITIVA FIX CRASH ONLINE su porta ' + PORT);
 });
