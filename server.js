@@ -179,7 +179,39 @@ db.serialize(() => {
     ['km_uscita','INTEGER'], ['km_rientro','INTEGER'], ['note','TEXT']
   ].forEach(c => addColumn('prenotazioni', c[0], c[1]));
 
+  
   db.run(`
+    CREATE TABLE IF NOT EXISTS clienti (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      codice_fiscale TEXT UNIQUE,
+      indirizzo TEXT,
+      citta TEXT,
+      cap TEXT,
+      data_nascita TEXT,
+      luogo_nascita TEXT,
+      documento_numero TEXT,
+      documento_scadenza TEXT,
+      patente_numero TEXT,
+      patente_scadenza TEXT,
+      categoria_patente TEXT,
+      note TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  [
+    ['telefono','TEXT'],['email','TEXT'],['codice_fiscale','TEXT'],['indirizzo','TEXT'],
+    ['citta','TEXT'],['cap','TEXT'],['data_nascita','TEXT'],['luogo_nascita','TEXT'],
+    ['documento_numero','TEXT'],['documento_scadenza','TEXT'],['patente_numero','TEXT'],
+    ['patente_scadenza','TEXT'],['categoria_patente','TEXT'],['note','TEXT'],['updated_at','TEXT']
+  ].forEach(c => addColumn('clienti', c[0], c[1]));
+
+db.run(`
     CREATE TABLE IF NOT EXISTS allegati (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       prenotazione_id INTEGER,
@@ -280,13 +312,14 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V32 OCR DOPPIO STEP</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V33 PRO CLIENTI</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
 <a href="/scadenze-mezzi">Scadenze</a>
 <a href="/import-mezzi">Import Excel</a>
 <a href="/nuova-prenotazione">Nuova prenotazione</a>
+<a href="/clienti">Clienti</a>
 <a href="/prenotazioni">Storico</a>
 <a href="/planning">Planning</a>
 <a href="/prenota">Pagina cliente</a>
@@ -893,7 +926,34 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V32 OCR DOPPIO STEP'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V33 PRO CLIENTI'));
+
+function salvaClienteStorico(dati, cb) {
+  const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
+  const params = [
+    dati.nome || '', dati.cognome || '', dati.telefono || '', dati.email || '', cf || null,
+    dati.indirizzo || '', dati.citta || '', dati.cap || '', dati.data_nascita || '', dati.luogo_nascita || '',
+    dati.documento_numero || '', dati.documento_scadenza || '', dati.patente1 || dati.patente_numero || '',
+    dati.patente1_scadenza || dati.patente_scadenza || '', dati.categoria_patente || '', dati.note_cliente || ''
+  ];
+  const doInsert = () => db.run(`
+    INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,
+    documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,note)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `, params, function(err){ cb && cb(err, this ? this.lastID : null); });
+  if (cf) {
+    db.get(`SELECT id FROM clienti WHERE codice_fiscale=?`, [cf], (e, old) => {
+      if (old) {
+        db.run(`
+          UPDATE clienti SET nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?, indirizzo=?, citta=?, cap=?,
+          data_nascita=?, luogo_nascita=?, documento_numero=?, documento_scadenza=?, patente_numero=?, patente_scadenza=?,
+          categoria_patente=?, note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+        `, [...params, old.id], err => cb && cb(err, old.id));
+      } else doInsert();
+    });
+  } else doInsert();
+}
+
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -915,7 +975,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V32 OCR DOPPIO STEP</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V33 PRO CLIENTI</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1146,6 +1206,240 @@ function formPrenotazione(mezzi, selectedMezzo, selectedData, action, query = {}
 
 
 // OCR DOPPIO STEP: DOCUMENTO + PATENTE
+
+// OCR PRO: CARTA IDENTITA FRONTE/RETRO + PATENTE + STORICO CLIENTI
+app.get('/ocr-pro', (req, res) => {
+  res.send(page('OCR PRO cliente', `
+    <div class="box">
+      <h2>OCR PRO cliente</h2>
+      <p class="notice">Flusso PRO: carta identita fronte, carta identita retro, patente. Poi controlli i dati e salvi cliente.</p>
+      <form method="POST" action="/ocr-pro/fronte" enctype="multipart/form-data">
+        <label class="btn" style="display:block;text-align:center;font-size:22px;padding:18px;margin-top:14px">
+          Step 1 - Scatta/CARICA carta identita FRONTE
+          <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+        </label>
+        <button id="submitBtn" style="display:none">Avanti</button>
+      </form>
+      <a class="btn btn2" href="/nuova-prenotazione">Torna</a>
+    </div>
+    <script>
+      const input = document.getElementById('fileInput');
+      input.addEventListener('change', function(){ if(this.files && this.files.length) document.getElementById('submitBtn').click(); });
+    </script>
+  `));
+});
+
+app.post('/ocr-pro/fronte', upload.single('file'), (req, res) => {
+  if (!req.file) return res.send('File mancante');
+  const id = makeOcrId();
+  OCR_PREFILL[id] = { fronte_path:req.file.path, fronte_mime:req.file.mimetype, retro_path:'', retro_mime:'', patente_path:'', patente_mime:'', documento:{}, patente:{} };
+  res.redirect('/ocr-pro/retro?id=' + encodeURIComponent(id));
+});
+
+app.get('/ocr-pro/retro', (req, res) => {
+  const id = req.query.id;
+  if (!id || !OCR_PREFILL[id]) return res.redirect('/ocr-pro');
+  res.send(page('OCR PRO retro', `
+    <div class="box">
+      <h2>Step 2 - Carta identita RETRO</h2>
+      <p class="notice">Ora scatta/carica il retro della carta identita: di solito qui ci sono CF e indirizzo.</p>
+      <form method="POST" action="/ocr-pro/retro" enctype="multipart/form-data">
+        <input type="hidden" name="id" value="${esc(id)}">
+        <label class="btn" style="display:block;text-align:center;font-size:22px;padding:18px;margin-top:14px">
+          Step 2 - Scatta/CARICA carta identita RETRO
+          <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+        </label>
+        <button id="submitBtn" style="display:none">Avanti</button>
+      </form>
+      <a class="btn btn2" href="/ocr-pro">Ricomincia</a>
+    </div>
+    <script>
+      const input = document.getElementById('fileInput');
+      input.addEventListener('change', function(){ if(this.files && this.files.length) document.getElementById('submitBtn').click(); });
+    </script>
+  `));
+});
+
+app.post('/ocr-pro/retro', upload.single('file'), (req, res) => {
+  const id = req.body.id;
+  if (!id || !OCR_PREFILL[id]) return res.redirect('/ocr-pro');
+  if (!req.file) return res.send('File mancante');
+  OCR_PREFILL[id].retro_path = req.file.path;
+  OCR_PREFILL[id].retro_mime = req.file.mimetype;
+  res.redirect('/ocr-pro/patente?id=' + encodeURIComponent(id));
+});
+
+app.get('/ocr-pro/patente', (req, res) => {
+  const id = req.query.id;
+  if (!id || !OCR_PREFILL[id]) return res.redirect('/ocr-pro');
+  res.send(page('OCR PRO patente', `
+    <div class="box">
+      <h2>Step 3 - Patente</h2>
+      <p class="notice">Ora scatta/carica la patente del conducente.</p>
+      <form method="POST" action="/ocr-pro/patente" enctype="multipart/form-data">
+        <input type="hidden" name="id" value="${esc(id)}">
+        <label class="btn" style="display:block;text-align:center;font-size:22px;padding:18px;margin-top:14px">
+          Step 3 - Scatta/CARICA PATENTE
+          <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+        </label>
+        <button id="submitBtn" style="display:none">Leggi tutto</button>
+      </form>
+      <a class="btn btn2" href="/ocr-pro">Ricomincia</a>
+    </div>
+    <script>
+      const input = document.getElementById('fileInput');
+      input.addEventListener('change', function(){ if(this.files && this.files.length) document.getElementById('submitBtn').click(); });
+    </script>
+  `));
+});
+
+app.post('/ocr-pro/patente', upload.single('file'), async (req, res) => {
+  try {
+    const id = req.body.id;
+    if (!id || !OCR_PREFILL[id]) return res.redirect('/ocr-pro');
+    if (!req.file) return res.send('File mancante');
+    const item = OCR_PREFILL[id];
+    item.patente_path = req.file.path;
+    item.patente_mime = req.file.mimetype;
+    let fronte = {}, retro = {}, patente = {};
+    try { fronte = await estraiDatiDocumentoConAI(item.fronte_path, item.fronte_mime); } catch(e) { fronte = {}; }
+    try { retro = await estraiDatiDocumentoConAI(item.retro_path, item.retro_mime); } catch(e) { retro = {}; }
+    try { patente = await estraiDatiDocumentoConAI(item.patente_path, item.patente_mime); } catch(e) { patente = {}; }
+    item.documento = Object.assign({}, fronte || {}, retro || {});
+    item.patente = patente || {};
+    res.redirect('/ocr-pro/conferma?id=' + encodeURIComponent(id));
+  } catch(e) {
+    res.status(500).send(page('Errore OCR PRO', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-pro">Riprova</a></div>`));
+  }
+});
+
+app.get('/ocr-pro/conferma', (req, res) => {
+  const id = req.query.id;
+  const data = OCR_PREFILL[id];
+  if (!id || !data) return res.redirect('/ocr-pro');
+  const d = data.documento || {};
+  const p = data.patente || {};
+  const pick = (...vals) => vals.find(x => x && String(x).trim()) || '';
+  const v = x => esc(x || '');
+  const nome = pick(d.nome, p.nome);
+  const cognome = pick(d.cognome, p.cognome);
+  const cf = pick(d.codice_fiscale, p.codice_fiscale);
+  const indirizzo = pick(d.indirizzo, p.indirizzo);
+  const dataNascita = pick(d.data_nascita, p.data_nascita);
+  const luogoNascita = pick(d.luogo_nascita, p.luogo_nascita);
+  const documentoNumero = pick(d.numero_documento);
+  const documentoScadenza = pick(d.data_scadenza);
+  const patenteNumero = pick(p.numero_patente, p.numero_documento);
+  const patenteScadenza = pick(p.data_scadenza);
+  const categoriaPatente = pick(p.categoria_patente);
+  res.send(page('Controllo dati OCR PRO', `
+    <div class="box">
+      <h2>Controlla dati cliente</h2>
+      <p class="notice">Correggi eventuali errori. Il cliente verra salvato nello storico.</p>
+      <form method="POST" action="/ocr-pro/applica">
+        <input type="hidden" name="id" value="${esc(id)}">
+        <h3>Cliente / documento</h3>
+        <div class="grid">
+          <div><label>Nome</label><input name="nome" value="${v(nome)}"></div>
+          <div><label>Cognome</label><input name="cognome" value="${v(cognome)}"></div>
+          <div><label>Telefono</label><input name="telefono" value=""></div>
+          <div><label>Email</label><input name="email" value=""></div>
+          <div><label>Codice fiscale</label><input name="codice_fiscale" value="${v(cf)}"></div>
+          <div><label>Indirizzo</label><input name="indirizzo" value="${v(indirizzo)}"></div>
+          <div><label>Citta</label><input name="citta" value=""></div>
+          <div><label>CAP</label><input name="cap" value=""></div>
+          <div><label>Data nascita</label><input type="date" name="data_nascita" value="${v(dataNascita)}"></div>
+          <div><label>Luogo nascita</label><input name="luogo_nascita" value="${v(luogoNascita)}"></div>
+          <div><label>Numero documento</label><input name="documento_numero" value="${v(documentoNumero)}"></div>
+          <div><label>Scadenza documento</label><input type="date" name="documento_scadenza" value="${v(documentoScadenza)}"></div>
+        </div>
+        <h3>Conducente / patente</h3>
+        <div class="grid">
+          <div><label>Conducente 1</label><input name="conducente1" value="${v((nome + ' ' + cognome).trim())}"></div>
+          <div><label>Numero patente</label><input name="patente1" value="${v(patenteNumero)}"></div>
+          <div><label>Scadenza patente</label><input type="date" name="patente1_scadenza" value="${v(patenteScadenza)}"></div>
+          <div><label>Categoria patente</label><input name="categoria_patente" value="${v(categoriaPatente)}"></div>
+        </div>
+        <label>Note cliente</label><textarea name="note_cliente"></textarea>
+        <button>Salva cliente e continua al contratto</button>
+      </form>
+      <a class="btn btn2" href="/ocr-pro">Rifai OCR</a>
+    </div>
+  `));
+});
+
+app.post('/ocr-pro/applica', (req, res) => {
+  const id = req.body.id || makeOcrId();
+  const dati = {
+    nome:req.body.nome||'', cognome:req.body.cognome||'', telefono:req.body.telefono||'', email:req.body.email||'',
+    codice_fiscale:req.body.codice_fiscale||'', indirizzo:req.body.indirizzo||'', citta:req.body.citta||'', cap:req.body.cap||'',
+    data_nascita:req.body.data_nascita||'', luogo_nascita:req.body.luogo_nascita||'', documento_numero:req.body.documento_numero||'',
+    documento_scadenza:req.body.documento_scadenza||'', conducente1:req.body.conducente1||'', patente1:req.body.patente1||'',
+    patente1_scadenza:req.body.patente1_scadenza||'', categoria_patente:req.body.categoria_patente||'', note_cliente:req.body.note_cliente||''
+  };
+  OCR_PREFILL[id] = dati;
+  salvaClienteStorico(dati, () => res.redirect('/nuova-prenotazione?ocr=' + encodeURIComponent(id)));
+});
+
+app.get('/clienti', (req, res) => {
+  const q = String(req.query.q || '').trim();
+  let sql = `SELECT * FROM clienti WHERE 1=1`;
+  const params = [];
+  if (q) {
+    sql += ` AND (nome LIKE ? OR cognome LIKE ? OR telefono LIKE ? OR email LIKE ? OR codice_fiscale LIKE ? OR patente_numero LIKE ?)`;
+    params.push(`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`);
+  }
+  sql += ` ORDER BY updated_at DESC, id DESC LIMIT 200`;
+  db.all(sql, params, (err, rows) => {
+    const trs = (rows || []).map(c => `
+      <tr>
+        <td><a href="/cliente/${c.id}"><b>${esc(c.nome)} ${esc(c.cognome)}</b></a></td>
+        <td>${esc(c.telefono||'')}<br>${esc(c.email||'')}</td>
+        <td>${esc(c.codice_fiscale||'')}</td>
+        <td>${esc(c.documento_numero||'')}<br>Scad. ${esc(c.documento_scadenza||'')}</td>
+        <td>${esc(c.patente_numero||'')}<br>Scad. ${esc(c.patente_scadenza||'')}</td>
+        <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a></td>
+      </tr>`).join('');
+    res.send(page('Clienti', `
+      <div class="box"><h2>Storico clienti</h2>
+      <form method="GET" action="/clienti"><input name="q" placeholder="Cerca nome, telefono, CF, patente" value="${esc(q)}"><button>Cerca</button></form>
+      <a class="btn btn3" href="/ocr-pro">Nuovo cliente con OCR PRO</a></div>
+      <table><tr><th>Cliente</th><th>Contatti</th><th>CF</th><th>Documento</th><th>Patente</th><th>Azione</th></tr>${trs || '<tr><td colspan="6">Nessun cliente.</td></tr>'}</table>
+    `));
+  });
+});
+
+app.get('/cliente/:id', (req, res) => {
+  db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err, c) => {
+    if (!c) return res.redirect('/clienti');
+    res.send(page('Scheda cliente', `<div class="box">
+      <h2>${esc(c.nome)} ${esc(c.cognome)}</h2>
+      <p><b>Telefono:</b> ${esc(c.telefono||'')}</p><p><b>Email:</b> ${esc(c.email||'')}</p>
+      <p><b>CF:</b> ${esc(c.codice_fiscale||'')}</p>
+      <p><b>Indirizzo:</b> ${esc(c.indirizzo||'')}, ${esc(c.citta||'')} ${esc(c.cap||'')}</p>
+      <p><b>Documento:</b> ${esc(c.documento_numero||'')} - scad. ${esc(c.documento_scadenza||'')}</p>
+      <p><b>Patente:</b> ${esc(c.patente_numero||'')} - scad. ${esc(c.patente_scadenza||'')} - cat. ${esc(c.categoria_patente||'')}</p>
+      <p><b>Note:</b> ${esc(c.note||'')}</p>
+      <a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto da cliente</a>
+      <a class="btn btn2" href="/clienti">Torna clienti</a>
+    </div>`));
+  });
+});
+
+app.get('/nuova-da-cliente/:id', (req, res) => {
+  db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err, c) => {
+    if (!c) return res.redirect('/clienti');
+    const id = makeOcrId();
+    OCR_PREFILL[id] = {
+      nome:c.nome||'', cognome:c.cognome||'', telefono:c.telefono||'', email:c.email||'', codice_fiscale:c.codice_fiscale||'',
+      indirizzo:c.indirizzo||'', citta:c.citta||'', cap:c.cap||'', data_nascita:c.data_nascita||'', luogo_nascita:c.luogo_nascita||'',
+      documento_numero:c.documento_numero||'', documento_scadenza:c.documento_scadenza||'', conducente1:`${c.nome||''} ${c.cognome||''}`.trim(),
+      patente1:c.patente_numero||'', patente1_scadenza:c.patente_scadenza||'', categoria_patente:c.categoria_patente||''
+    };
+    res.redirect('/nuova-prenotazione?ocr=' + encodeURIComponent(id));
+  });
+});
+
 app.get('/ocr-doppio', (req, res) => {
   res.send(page('OCR carta identita e patente', `
     <div class="box">
@@ -1178,7 +1472,7 @@ app.post('/ocr-doppio/documento', upload.single('file'), async (req, res) => {
     OCR_PREFILL[id] = { documento: documento || {}, patente: {} };
     res.redirect('/ocr-doppio/patente?id=' + encodeURIComponent(id));
   } catch (e) {
-    res.status(500).send(page('Errore OCR documento', `<div class="box"><h2 class="bad">Errore OCR documento</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-doppio">Riprova</a></div>`));
+    res.status(500).send(page('Errore OCR documento', `<div class="box"><h2 class="bad">Errore OCR documento</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-pro">Riprova</a></div>`));
   }
 });
 
@@ -1198,7 +1492,7 @@ app.get('/ocr-doppio/patente', (req, res) => {
         </label>
         <button id="submitBtn" style="display:none">Leggi patente</button>
       </form>
-      <a class="btn btn2" href="/ocr-doppio">Ricomincia</a>
+      <a class="btn btn2" href="/ocr-pro">Ricomincia</a>
     </div>
     <script>
       const input = document.getElementById('fileInput');
@@ -1218,7 +1512,7 @@ app.post('/ocr-doppio/patente', upload.single('file'), async (req, res) => {
     OCR_PREFILL[id].patente = patente || {};
     res.redirect('/ocr-doppio/conferma?id=' + encodeURIComponent(id));
   } catch (e) {
-    res.status(500).send(page('Errore OCR patente', `<div class="box"><h2 class="bad">Errore OCR patente</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-doppio">Riprova</a></div>`));
+    res.status(500).send(page('Errore OCR patente', `<div class="box"><h2 class="bad">Errore OCR patente</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-pro">Riprova</a></div>`));
   }
 });
 
@@ -1280,7 +1574,7 @@ app.get('/ocr-doppio/conferma', (req, res) => {
         </div>
         <button>Continua al contratto con questi dati</button>
       </form>
-      <a class="btn btn2" href="/ocr-doppio">Rifai OCR da capo</a>
+      <a class="btn btn2" href="/ocr-pro">Rifai OCR da capo</a>
     </div>
   `));
 });
@@ -1370,11 +1664,11 @@ app.post('/ocr-precontratto', upload.single('file'), async (req, res) => {
           </div>
           <button>Continua al contratto con questi dati</button>
         </form>
-        <a class="btn btn2" href="/ocr-doppio">Riprova OCR</a>
+        <a class="btn btn2" href="/ocr-pro">Riprova OCR</a>
       </div>
     `));
   } catch (e) {
-    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><p>Serve OPENAI_API_KEY su Render.</p><a class="btn" href="/ocr-doppio">Riprova</a></div>`));
+    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><p>Serve OPENAI_API_KEY su Render.</p><a class="btn" href="/ocr-pro">Riprova</a></div>`));
   }
 });
 
@@ -1410,7 +1704,7 @@ app.get('/nuova-prenotazione', async (req, res) => {
       <div class="box" style="border:2px solid #0b6b2d">
         <h3>1) Prima carica/scatta documento o patente</h3>
         <p class="notice">Consigliato: fai OCR prima di creare il contratto, cosÃ¬ i dati cliente si compilano piÃ¹ velocemente.</p>
-        <a class="btn btn3" href="/ocr-doppio"> OCR carta identita + patente</a>
+        <a class="btn btn3" href="/ocr-pro"> OCR carta identita + patente</a>
       </div>
       <h3>2) Poi controlla i dati e crea contratto</h3>
     ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin', req.query)}`));
@@ -1418,6 +1712,13 @@ app.get('/nuova-prenotazione', async (req, res) => {
 app.post('/prenota-admin', async (req, res) => {
   try {
     const b = req.body;
+  salvaClienteStorico({
+    nome: b.nome, cognome: b.cognome, telefono: b.telefono, email: b.email,
+    codice_fiscale: b.codice_fiscale, indirizzo: b.indirizzo, citta: b.citta, cap: b.cap,
+    patente1: b.patente1, patente1_scadenza: b.patente1_scadenza, categoria_patente: b.categoria_patente,
+    note_cliente: b.note_cliente
+  }, () => {});
+
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(page('Errore date', `<div class="box"><h2 class="bad">${esc(erroreDate)}</h2><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
