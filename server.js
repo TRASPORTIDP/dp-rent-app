@@ -350,7 +350,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V34 CARGOS TRACCIATO COMPLETO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V34B RENDER PORT FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -964,7 +964,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V34 CARGOS TRACCIATO COMPLETO'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V34B RENDER PORT FIX'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1013,7 +1013,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V34 CARGOS TRACCIATO COMPLETO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V34B RENDER PORT FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2677,3 +2677,9 @@ function validateCargos(p){const d=cargosRecordData(p); const req=['CONTRATTO_ID
 function cargosSelect(name,selected,map){return `<select name="${name}">`+Object.entries(map).map(([id,desc])=>`<option value="${esc(id)}" ${String(selected||'')===String(id)?'selected':''}>${esc(id)} - ${esc(desc)}</option>`).join('')+`</select>`;}
 function getPrenotazioneCompleta(id,cb){db.get(`SELECT p.*, m.targa, m.marca, m.modello, m.cargos_veicolo_tipo as m_cargos_veicolo_tipo, m.colore, m.gps, m.blocco_motore FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`,[id],cb);}
 
+// =========================
+// RENDER PORT BINDING FIX
+// =========================
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V34B RENDER PORT FIX ONLINE su porta ' + PORT);
+});
