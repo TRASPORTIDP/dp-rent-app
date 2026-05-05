@@ -85,6 +85,15 @@ function all(sql, params = []) {
 
 
 db.serialize(() => {
+  // CARGOS PRO V38 columns
+  addColumn('prenotazioni','cargos_uid','TEXT');
+  addColumn('prenotazioni','cargos_stato','TEXT');
+  addColumn('prenotazioni','cargos_last_check','TEXT');
+  addColumn('prenotazioni','cargos_last_send','TEXT');
+  addColumn('prenotazioni','cargos_last_error','TEXT');
+  addColumn('prenotazioni','drive_folder_id','TEXT');
+  addColumn('prenotazioni','drive_folder_link','TEXT');
+
   // CARGOS V36 columns
   addColumn('prenotazioni','cargos_pagamento_tipo','TEXT DEFAULT "0"');
   addColumn('prenotazioni','cargos_checkout_luogo_cod','TEXT');
@@ -359,7 +368,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V37 CARGOS FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V38 PRO CARGOS</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -973,7 +982,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V37 CARGOS FIX'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V38 PRO CARGOS'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1022,7 +1031,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V37 CARGOS FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V38 PRO CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1905,6 +1914,98 @@ async function cargosRealCall(action, p) {
   };
 }
 
+
+// =========================
+// V38 PRO CARGOS / DRIVE / BRAND
+// =========================
+function safeFileName(v) {
+  return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
+}
+function cargosVisibleStatus(p) {
+  if (p.cargos_uid) return `<span class="badge badge-green">INVIATO UID ${esc(p.cargos_uid)}</span>`;
+  if (p.cargos_stato === 'verificato') return `<span class="badge badge-orange">VERIFICATO</span>`;
+  return `<span class="badge">DA VERIFICARE</span>`;
+}
+function cargosProPayload(p) {
+  const data = cargosRecordData(p);
+  return {
+    contratto_id: data.CONTRATTO_ID,
+    contratto_data: data.CONTRATTO_DATA,
+    pagamento_tipo: data.CONTRATTO_TIPOP,
+    checkout: { data: data.CONTRATTO_CHECKOUT_DATA, luogo_cod: data.CONTRATTO_CHECKOUT_LUOGO_COD, indirizzo: data.CONTRATTO_CHECKOUT_INDIRIZZO },
+    checkin: { data: data.CONTRATTO_CHECKIN_DATA, luogo_cod: data.CONTRATTO_CHECKIN_LUOGO_COD, indirizzo: data.CONTRATTO_CHECKIN_INDIRIZZO },
+    agenzia: { id: data.AGENZIA_ID, nome: data.AGENZIA_NOME, luogo_cod: data.AGENZIA_LUOGO_COD, indirizzo: data.AGENZIA_INDIRIZZO, telefono: data.AGENZIA_RECAPITO_TEL, operatore_id: data.OPERATORE_ID },
+    veicolo: { tipo: data.VEICOLO_TIPO, marca: data.VEICOLO_MARCA, modello: data.VEICOLO_MODELLO, targa: data.VEICOLO_TARGA, colore: data.VEICOLO_COLORE, gps: data.VEICOLO_GPS, blocco_motore: data.VEICOLO_BLOCCOM },
+    contraente: {
+      cognome: data.CONDUCENTE_CONTRAENTE_COGNOME, nome: data.CONDUCENTE_CONTRAENTE_NOME,
+      nascita_data: data.CONDUCENTE_CONTRAENTE_NASCITA_DATA, nascita_luogo_cod: data.CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD,
+      cittadinanza_cod: data.CONDUCENTE_CONTRAENTE_CITTADINANZA_COD, residenza_luogo_cod: data.CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD,
+      residenza_indirizzo: data.CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO, doc_tipo: data.CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD,
+      doc_numero: data.CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO, doc_luogo_rilascio_cod: data.CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD,
+      patente_numero: data.CONDUCENTE_CONTRAENTE_PATENTE_NUMERO, patente_luogo_rilascio_cod: data.CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD,
+      recapito: data.CONDUCENTE_CONTRAENTE_RECAPITO
+    },
+    conducente2: {
+      cognome: data.CONDUCENTE2_COGNOME, nome: data.CONDUCENTE2_NOME, nascita_data: data.CONDUCENTE2_NASCITA_DATA,
+      nascita_luogo_cod: data.CONDUCENTE2_NASCITA_LUOGO_COD, cittadinanza_cod: data.CONDUCENTE2_CITTADINANZA_COD,
+      doc_tipo: data.CONDUCENTE2_DOCIDE_TIPO_COD, doc_numero: data.CONDUCENTE2_DOCIDE_NUMERO,
+      doc_luogo_rilascio_cod: data.CONDUCENTE2_DOCIDE_LUOGORIL_COD, patente_numero: data.CONDUCENTE2_PATENTE_NUMERO,
+      patente_luogo_rilascio_cod: data.CONDUCENTE2_PATENTE_LUOGORIL_COD, recapito: data.CONDUCENTE2_RECAPITO
+    }
+  };
+}
+function cargosProValidate(p) {
+  const v = (typeof validateCargosV37 === 'function') ? validateCargosV37(p) : validateCargos(p);
+  const payload = cargosProPayload(p);
+  const warnings = [];
+  if (String(payload.veicolo.marca || '').length < 2) warnings.push('Marca veicolo sospetta');
+  if (String(payload.veicolo.modello || '').length < 2) warnings.push('Modello veicolo sospetto');
+  if (!/^\d{2}\/\d{2}\/\d{4}/.test(payload.checkout.data || '')) warnings.push('Data checkout non valida');
+  if (!/^\d{2}\/\d{2}\/\d{4}/.test(payload.checkin.data || '')) warnings.push('Data checkin non valida');
+  return { ok: v.ok && v.fixed_ok, missing: v.missing || [], warnings, length: v.length, fixed_ok: v.fixed_ok, payload };
+}
+async function uploadContractAssetsToDrive(prenotazioneId) {
+  return new Promise((resolve) => {
+    getPrenotazioneCompleta(prenotazioneId, async (err, p) => {
+      if (err || !p || !googleDriveConfigured()) return resolve(null);
+      try {
+        const folderName = `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`.trim();
+        db.all(`SELECT * FROM allegati WHERE prenotazione_id=? AND (drive_file_id IS NULL OR drive_file_id='')`, [prenotazioneId], async (e2, files) => {
+          for (const f of (files || [])) {
+            try {
+              if (!f.path || !fs.existsSync(f.path)) continue;
+              const cleanName = safeFileName(`${f.tipo || 'allegato'}_${f.originalname || f.filename}`);
+              const dr = await uploadFileToDrive(f.path, cleanName, f.mimetype || 'application/octet-stream', folderName);
+              if (dr) db.run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [dr.id, dr.webViewLink, f.id]);
+            } catch (e) { console.log('Drive allegato KO:', e.message); }
+          }
+          resolve(true);
+        });
+      } catch (e) { console.log('Drive assets KO:', e.message); resolve(null); }
+    });
+  });
+}
+function generatePrivacyPage() {
+  return page('Privacy DP RENT', `<div class="box">
+    <h2>Privacy DP RENT</h2>
+    <p><b>Titolare:</b> Trasporti DP S.R.L. - DP RENT</p>
+    <p><b>Sede:</b> Via Tuderte 466, Narni (TR)</p>
+    <p><b>Email:</b> contabilita@trasportidp.com</p>
+    <p>I dati sono trattati per gestione noleggio, contratto, obblighi fiscali, sicurezza, gestione danni/multe e adempimenti obbligatori.</p>
+    <a class="btn" href="/">Torna</a>
+  </div>`);
+}
+function generateCondizioniPage() {
+  return page('Condizioni DP RENT', `<div class="box">
+    <h2>Condizioni generali noleggio DP RENT</h2>
+    <p>Veicolo consegnato in buono stato e da riconsegnare nelle stesse condizioni.</p>
+    <p>Carburante pieno/pieno o livello equivalente indicato nel contratto.</p>
+    <p>Km inclusi come da contratto; extra km conteggiati alla tariffa indicata.</p>
+    <p>Danni, multe, pedaggi, ritardi, smarrimenti e franchigie sono a carico del cliente.</p>
+    <a class="btn" href="/">Torna</a>
+  </div>`);
+}
+
 app.get('/cargos/:id', (req,res)=>{getPrenotazioneCompleta(req.params.id,(err,p)=>{if(!p)return res.send(page('CARGOS','<div class="box"><h2>Contratto non trovato</h2></div>')); const val=k=>esc(p[k]||''); const v=validateCargos(p); res.send(page('Ca.R.G.O.S.',`
 <div class="box"><h2>Ca.R.G.O.S. ${esc(p.codice)}</h2>${v.ok?`<p class="ok">Dati completi. Lunghezza riga: ${v.length}</p>`:`<div class="alert"><b>Mancano campi:</b><br>${v.missing.map(esc).join('<br>')}</div>`}
 <form method="POST" action="/cargos/${p.id}/save">
@@ -1941,7 +2042,7 @@ app.get('/cargos/:id', (req,res)=>{getPrenotazioneCompleta(req.params.id,(err,p)
 <div><label>Numero patente 2</label><input name="conducente2_patente_numero" value="${val('conducente2_patente_numero')}"></div><div><label>Luogo rilascio patente COD 2</label><input name="conducente2_patente_luogoril_cod" value="${val('conducente2_patente_luogoril_cod')}"></div>
 <div><label>Recapito 2</label><input name="conducente2_recapito" value="${val('conducente2_recapito')}"></div></div>
 <button>Salva CARGOS</button></form><hr><div class="actions">
-<a class="btn" href="/cargos/${p.id}/txt">Scarica TXT 1505</a><a class="btn btn2" href="/cargos/${p.id}/csv">Scarica CSV ;</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a><a class="btn btn3" href="/cargos/${p.id}/check">Check</a><a class="btn btn3" href="/cargos/${p.id}/send">Send</a><a class="btn btn2" href="/prenotazione/${p.id}">Torna</a></div></div>`));});});
+<a class="btn" href="/cargos/${p.id}/txt">Scarica TXT 1505</a><a class="btn btn2" href="/cargos/${p.id}/csv">Scarica CSV ;</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a><a class="btn btn3" href="/cargos/${p.id}/verifica">Verifica dati</a><a class="btn btn3" href="/cargos/${p.id}/invia">Invia report a CaRGOS</a><a class="btn btn2" href="/prenotazione/${p.id}">Torna</a></div></div>`));});});
 app.post('/cargos/:id/save',(req,res)=>{const b=req.body; db.run(`UPDATE prenotazioni SET cargos_pagamento_tipo=?,cargos_checkout_luogo_cod=?,cargos_checkout_indirizzo=?,cargos_checkin_luogo_cod=?,cargos_checkin_indirizzo=?,cargos_operatore_id=?,cargos_agenzia_id=?,cargos_agenzia_nome=?,cargos_agenzia_luogo_cod=?,cargos_agenzia_indirizzo=?,cargos_agenzia_tel=?,cargos_veicolo_tipo=?,cargos_veicolo_colore=?,cargos_veicolo_gps=?,cargos_veicolo_bloccom=?,cargos_cittadinanza_cod=?,cargos_nascita_luogo_cod=?,cargos_residenza_luogo_cod=?,cargos_doc_tipo_cod=?,cargos_doc_luogoril_cod=?,cargos_patente_luogoril_cod=?,conducente2_nome=?,conducente2_cognome=?,conducente2_data_nascita=?,conducente2_nascita_luogo_cod=?,conducente2_cittadinanza_cod=?,conducente2_doc_tipo_cod=?,conducente2_doc_numero=?,conducente2_doc_luogoril_cod=?,conducente2_patente_numero=?,conducente2_patente_luogoril_cod=?,conducente2_recapito=? WHERE id=?`,[b.cargos_pagamento_tipo,b.cargos_checkout_luogo_cod,b.cargos_checkout_indirizzo,b.cargos_checkin_luogo_cod,b.cargos_checkin_indirizzo,b.cargos_operatore_id,b.cargos_agenzia_id,b.cargos_agenzia_nome,b.cargos_agenzia_luogo_cod,b.cargos_agenzia_indirizzo,b.cargos_agenzia_tel,b.cargos_veicolo_tipo,b.cargos_veicolo_colore,b.cargos_veicolo_gps,b.cargos_veicolo_bloccom,b.cargos_cittadinanza_cod,b.cargos_nascita_luogo_cod,b.cargos_residenza_luogo_cod,b.cargos_doc_tipo_cod,b.cargos_doc_luogoril_cod,b.cargos_patente_luogoril_cod,b.conducente2_nome,b.conducente2_cognome,b.conducente2_data_nascita,b.conducente2_nascita_luogo_cod,b.conducente2_cittadinanza_cod,b.conducente2_doc_tipo_cod,b.conducente2_doc_numero,b.conducente2_doc_luogoril_cod,b.conducente2_patente_numero,b.conducente2_patente_luogoril_cod,b.conducente2_recapito,req.params.id],()=>res.redirect('/cargos/'+req.params.id));});
 
 
@@ -2002,36 +2103,45 @@ app.get('/cargos/:id/preview', (req, res) => {
   });
 });
 
-app.get('/cargos/:id/check', async (req, res) => {
-  getPrenotazioneCompleta(req.params.id, async (err, p) => {
-    if (!p) return res.send('Contratto non trovato');
-    const result = await cargosRealCall('CHECK', p);
-    res.send(page('Check CARGOS', `
-      <div class="box">
-        <h2>Check CARGOS</h2>
-        <pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre>
-        <a class="btn" href="/cargos/${p.id}">Torna CARGOS</a>
-        <a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a>
-      </div>
-    `));
-  });
-});
 
-app.get('/cargos/:id/send', async (req, res) => {
-  getPrenotazioneCompleta(req.params.id, async (err, p) => {
-    if (!p) return res.send('Contratto non trovato');
-    const result = await cargosRealCall('SEND', p);
-    res.send(page('Invio CARGOS', `
+
+
+app.get('/cargos/:id/verifica', (req, res) => {
+  getPrenotazioneCompleta(req.params.id, (err, p) => {
+    if (!p) return res.send(page('Verifica CARGOS', '<div class="box"><h2>Contratto non trovato</h2></div>'));
+    const check = cargosProValidate(p);
+    const stato = check.ok ? 'verificato' : 'errore_verifica';
+    db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_check=?, cargos_last_error=? WHERE id=?`,
+      [stato, new Date().toISOString(), check.ok ? '' : JSON.stringify({missing:check.missing,warnings:check.warnings}).slice(0,500), p.id]);
+    res.send(page('Verifica CARGOS', `
       <div class="box">
-        <h2>Invio CARGOS</h2>
-        <pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre>
-        <p class="notice">Invio reale bloccato finche non confermiamo AES/token esatto: cosi evitiamo invii errati alla Polizia.</p>
-        <a class="btn" href="/cargos/${p.id}">Torna CARGOS</a>
-        <a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a>
+        <h2>Verifica dati Ca.R.G.O.S. ${check.ok ? '<span class="ok">OK</span>' : '<span class="bad">KO</span>'}</h2>
+        <p><b>Lunghezza riga:</b> ${check.length} / 1505</p>
+        ${cargosMissingHtml(check.missing)}
+        ${check.warnings.length ? `<div class="notice"><b>Avvisi:</b><br>${check.warnings.map(esc).join('<br>')}</div>` : ''}
+        <div class="actions">
+          <a class="btn btn2" href="/cargos/${p.id}/preview">Preview leggibile</a>
+          <a class="btn" href="/cargos/${p.id}/txt">Scarica TXT ufficiale</a>
+          ${check.ok ? `<a class="btn btn3" href="/cargos/${p.id}/invia">Invia report a CaRGOS</a>` : ''}
+          <a class="btn btn2" href="/cargos/${p.id}">Torna</a>
+        </div>
       </div>
+      <div class="box"><h3>Payload leggibile</h3><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(check.payload,null,2))}</pre></div>
     `));
   });
 });
+app.get('/cargos/:id/check', (req, res) => res.redirect(`/cargos/${req.params.id}/verifica`));
+app.get('/cargos/:id/invia', async (req, res) => {
+  getPrenotazioneCompleta(req.params.id, async (err, p) => {
+    if (!p) return res.send(page('Invio CARGOS', '<div class="box"><h2>Contratto non trovato</h2></div>'));
+    const check = cargosProValidate(p);
+    if (!check.ok) return res.send(page('Invio CARGOS', `<div class="box"><h2 class="bad">Invio bloccato</h2>${cargosMissingHtml(check.missing)}<a class="btn" href="/cargos/${p.id}">Torna</a></div>`));
+    const result = { ok:false, ready:true, message:'Record verificato. Invio reale non eseguito: serve endpoint AES/Token ufficiale CARGOS.', length:check.length };
+    db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_send=?, cargos_last_error=? WHERE id=?`, ['pronto_invio', new Date().toISOString(), JSON.stringify(result).slice(0,500), p.id]);
+    res.send(page('Invio CARGOS', `<div class="box"><h2>Invio report a CaRGOS</h2><p class="notice">Verifica OK. Manca endpoint AES reale.</p><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/cargos/${p.id}/txt">Scarica TXT ufficiale</a><a class="btn btn2" href="/cargos/${p.id}">Torna</a></div>`));
+  });
+});
+app.get('/cargos/:id/send', (req, res) => res.redirect(`/cargos/${req.params.id}/invia`));
 
 app.get('/prenotazione/:id', async (req, res) => {
   const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria, m.descrizione_pubblica FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
@@ -2745,7 +2855,7 @@ CARGOS_BASE_URL=https://cargos.poliziadistato.it/CARGOS_API</pre>
 
 app.get('/cargos', async (req, res) => {
   const rows = await all(`SELECT p.*, m.targa FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id ORDER BY p.id DESC LIMIT 50`);
-  const trs = rows.map(p => `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Check</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Send</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
   res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Ca.R.G.O.S.</h2><p>Modulo pronto. Quando hai username/password/APIKEY e codici tabelle, Check e Send diventano reali.</p><p><b>Configurato:</b> ${cargosConfigured() ? '<span class="ok">SI</span>' : '<span class="bad">NO</span>'}</p><p>Servono: CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_AGENZIA_ID, CARGOS_OPERATORE_ID, CARGOS_LUOGO_COD.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>Azione</th></tr>${trs}</table>`));
 });
 
@@ -2824,8 +2934,3 @@ app.use((err, req, res, next) => {
 // =========================
 
 // =========================
-// RENDER PORT BINDING - V37
-// =========================
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V37 CARGOS FIX ONLINE su porta ' + PORT);
-});
