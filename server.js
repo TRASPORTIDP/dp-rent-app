@@ -85,6 +85,156 @@ function all(sql, params = []) {
 
 
 db.serialize(() => {
+  // V40 CARGOS / DRIVE columns
+  addColumn('prenotazioni','cargos_uid','TEXT');
+  addColumn('prenotazioni','cargos_transactionid','TEXT');
+  addColumn('prenotazioni','cargos_stato','TEXT');
+  addColumn('prenotazioni','cargos_last_check','TEXT');
+  addColumn('prenotazioni','cargos_last_send','TEXT');
+  addColumn('prenotazioni','cargos_last_error','TEXT');
+  addColumn('prenotazioni','drive_folder_id','TEXT');
+  addColumn('prenotazioni','drive_folder_link','TEXT');
+
+  // =========================
+  // V39 - CREAZIONE TABELLE BASE PRIMA DEGLI ALTER TABLE
+  // =========================
+  console.log('Inizializzo database DP RENT V39...');
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS clienti (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      cf TEXT,
+      indirizzo TEXT,
+      citta TEXT,
+      cap TEXT,
+      provincia TEXT,
+      azienda TEXT,
+      piva TEXT,
+      pec TEXT,
+      sdi TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS mezzi (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tipo TEXT,
+      marca TEXT,
+      modello TEXT,
+      descrizione TEXT,
+      targa TEXT,
+      colore TEXT,
+      km INTEGER DEFAULT 0,
+      km_attuali INTEGER DEFAULT 0,
+      prezzo_giorno REAL DEFAULT 0,
+      km_inclusi INTEGER DEFAULT 150,
+      deposito REAL DEFAULT 500,
+      stato TEXT DEFAULT 'attivo',
+      note TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS prenotazioni (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      codice TEXT,
+      cliente_id INTEGER,
+      mezzo_id INTEGER,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      cf TEXT,
+      indirizzo TEXT,
+      citta TEXT,
+      cap TEXT,
+      provincia TEXT,
+      fatturazione TEXT,
+      azienda TEXT,
+      piva TEXT,
+      pec TEXT,
+      sdi TEXT,
+      mezzo TEXT,
+      targa TEXT,
+      data_inizio TEXT,
+      ora_inizio TEXT,
+      data_fine TEXT,
+      ora_fine TEXT,
+      giorni INTEGER DEFAULT 1,
+      km_previsti INTEGER DEFAULT 150,
+      km_inclusi INTEGER DEFAULT 150,
+      km_uscita INTEGER,
+      km_rientro INTEGER,
+      carburante_uscita TEXT,
+      carburante_rientro TEXT,
+      totale REAL DEFAULT 0,
+      cauzione REAL DEFAULT 500,
+      stato TEXT DEFAULT 'bozza',
+      firma TEXT,
+      pdf_path TEXT,
+      pdf_drive_link TEXT,
+      drive_folder_id TEXT,
+      drive_folder_link TEXT,
+      note TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS allegati (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prenotazione_id INTEGER,
+      tipo TEXT,
+      filename TEXT,
+      originalname TEXT,
+      path TEXT,
+      mimetype TEXT,
+      size INTEGER,
+      drive_file_id TEXT,
+      drive_web_link TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS scadenze (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mezzo_id INTEGER,
+      tipo TEXT,
+      data TEXT,
+      km INTEGER,
+      note TEXT,
+      stato TEXT DEFAULT 'aperta',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS cargos_invii (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prenotazione_id INTEGER,
+      uid TEXT,
+      stato TEXT,
+      richiesta TEXT,
+      risposta TEXT,
+      errore TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS impostazioni (
+      chiave TEXT PRIMARY KEY,
+      valore TEXT
+    )
+  `);
+
   // CARGOS PRO V38 columns
   addColumn('prenotazioni','cargos_uid','TEXT');
   addColumn('prenotazioni','cargos_stato','TEXT');
@@ -368,7 +518,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V38 PRO CARGOS</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V40 CARGOS REALE DRIVE PRIVACY</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -982,7 +1132,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V38 PRO CARGOS'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V40 CARGOS REALE DRIVE PRIVACY'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1031,7 +1181,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V38 PRO CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V40 CARGOS REALE DRIVE PRIVACY</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1916,7 +2066,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V38 PRO CARGOS / DRIVE / BRAND
+// V40 CARGOS REALE DRIVE PRIVACY / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -2006,6 +2156,368 @@ function generateCondizioniPage() {
   </div>`);
 }
 
+
+// =========================
+// V40 CARGOS REALE + DRIVE + PRIVACY DP
+// =========================
+const CARGOS_BASE_URL = (process.env.CARGOS_BASE_URL || 'https://cargos.poliziadistato.it/CARGOS_API').replace(/\/+$/, '');
+
+function cleanCargos(v, len) {
+  return String(v || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ÃÃÃÃÃÃ\/\.\-\+\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, len);
+}
+
+function cargosPad(v, len) {
+  return cleanCargos(v, len).padEnd(len, ' ');
+}
+
+function cargosNum(v, len) {
+  return String(v || '').replace(/\D/g, '').slice(0, len).padStart(len, '0');
+}
+
+function cargosDateTime(date, time) {
+  let d = String(date || '').trim();
+  let t = String(time || '').trim();
+  if (!t) {
+    const m = d.match(/(\d{1,2}:\d{2})/);
+    if (m) t = m[1];
+  }
+  if (!t) t = '00:00';
+
+  // YYYY-MM-DD -> DD/MM/YYYY
+  let iso = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) d = `${iso[3]}/${iso[2]}/${iso[1]}`;
+
+  let it = d.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  if (it) {
+    let yy = it[3]; if (yy.length === 2) yy = '20' + yy;
+    d = `${String(it[1]).padStart(2,'0')}/${String(it[2]).padStart(2,'0')}/${yy}`;
+  }
+
+  const tm = t.match(/(\d{1,2}):(\d{2})/);
+  t = tm ? `${String(tm[1]).padStart(2,'0')}:${tm[2]}` : '00:00';
+  return `${d} ${t}`.slice(0,16);
+}
+
+function cargosDateOnly(date) {
+  let d = String(date || '').trim();
+  let iso = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
+  let it = d.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  if (it) {
+    let yy = it[3]; if (yy.length === 2) yy = '20' + yy;
+    return `${String(it[1]).padStart(2,'0')}/${String(it[2]).padStart(2,'0')}/${yy}`;
+  }
+  return ''.padEnd(10, ' ').slice(0,10);
+}
+
+function splitFullNameV40(p) {
+  const nome = String(p.nome || '').trim();
+  const cognome = String(p.cognome || '').trim();
+  if (nome || cognome) return { nome, cognome };
+  const full = String(p.cliente || p.intestatario || '').trim().split(/\s+/);
+  return { nome: full[0] || '', cognome: full.slice(1).join(' ') || '' };
+}
+
+const CARGOS_FIELDS_V40 = [
+  ['CONTRATTO_ID',50], ['CONTRATTO_DATA',16], ['CONTRATTO_TIPOP',1],
+  ['CONTRATTO_CHECKOUT_DATA',16], ['CONTRATTO_CHECKOUT_LUOGO_COD',9], ['CONTRATTO_CHECKOUT_INDIRIZZO',150],
+  ['CONTRATTO_CHECKIN_DATA',16], ['CONTRATTO_CHECKIN_LUOGO_COD',9], ['CONTRATTO_CHECKIN_INDIRIZZO',150],
+  ['OPERATORE_ID',50], ['AGENZIA_ID',30], ['AGENZIA_NOME',70], ['AGENZIA_LUOGO_COD',9], ['AGENZIA_INDIRIZZO',150], ['AGENZIA_RECAPITO_TEL',20],
+  ['VEICOLO_TIPO',1], ['VEICOLO_MARCA',50], ['VEICOLO_MODELLO',100], ['VEICOLO_TARGA',15], ['VEICOLO_COLORE',50], ['VEICOLO_GPS',1], ['VEICOLO_BLOCCOM',1],
+  ['CONDUCENTE_CONTRAENTE_COGNOME',50], ['CONDUCENTE_CONTRAENTE_NOME',30], ['CONDUCENTE_CONTRAENTE_NASCITA_DATA',10],
+  ['CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD',9], ['CONDUCENTE_CONTRAENTE_CITTADINANZA_COD',9],
+  ['CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD',9], ['CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO',150],
+  ['CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD',5], ['CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO',20], ['CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD',9],
+  ['CONDUCENTE_CONTRAENTE_PATENTE_NUMERO',20], ['CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD',9], ['CONDUCENTE_CONTRAENTE_RECAPITO',20],
+  ['CONDUCENTE2_COGNOME',50], ['CONDUCENTE2_NOME',30], ['CONDUCENTE2_NASCITA_DATA',10], ['CONDUCENTE2_NASCITA_LUOGO_COD',9],
+  ['CONDUCENTE2_CITTADINANZA_COD',9], ['CONDUCENTE2_DOCIDE_TIPO_COD',5], ['CONDUCENTE2_DOCIDE_NUMERO',20],
+  ['CONDUCENTE2_DOCIDE_LUOGORIL_COD',9], ['CONDUCENTE2_PATENTE_NUMERO',20], ['CONDUCENTE2_PATENTE_LUOGORIL_COD',9], ['CONDUCENTE2_RECAPITO',20]
+];
+
+function cargosRecordDataV40(p) {
+  const n = splitFullNameV40(p);
+  const agenziaNome = process.env.CARGOS_AGENZIA_NOME || 'TRASPORTI DP S.R.L. - DP RENT';
+  const agenziaInd = process.env.CARGOS_AGENZIA_INDIRIZZO || 'VIA TUDERTE 466, NARNI (TR)';
+  const tel = process.env.CARGOS_AGENZIA_TEL || '0744817108';
+  const luogo = process.env.CARGOS_LUOGO_COD || p.cargos_luogo_cod || '055023';
+  const tipoPagamento = process.env.CARGOS_TIPO_PAGAMENTO || p.cargos_pagamento_tipo || '1';
+  const tipoVeicolo = p.cargos_veicolo_tipo || process.env.CARGOS_VEICOLO_TIPO || '1';
+
+  return {
+    CONTRATTO_ID: p.codice || `DPR-${p.id}`,
+    CONTRATTO_DATA: cargosDateTime(p.created_at || new Date().toISOString(), ''),
+    CONTRATTO_TIPOP: tipoPagamento,
+    CONTRATTO_CHECKOUT_DATA: cargosDateTime(p.data_inizio, p.ora_inizio || '08:30'),
+    CONTRATTO_CHECKOUT_LUOGO_COD: p.cargos_checkout_luogo_cod || luogo,
+    CONTRATTO_CHECKOUT_INDIRIZZO: p.cargos_checkout_indirizzo || agenziaInd,
+    CONTRATTO_CHECKIN_DATA: cargosDateTime(p.data_fine, p.ora_fine || '18:00'),
+    CONTRATTO_CHECKIN_LUOGO_COD: p.cargos_checkin_luogo_cod || luogo,
+    CONTRATTO_CHECKIN_INDIRIZZO: p.cargos_checkin_indirizzo || agenziaInd,
+    OPERATORE_ID: process.env.CARGOS_OPERATORE_ID || p.cargos_operatore_id || '1',
+    AGENZIA_ID: process.env.CARGOS_AGENZIA_ID || p.cargos_agenzia_id || '001',
+    AGENZIA_NOME: p.cargos_agenzia_nome || agenziaNome,
+    AGENZIA_LUOGO_COD: p.cargos_agenzia_luogo_cod || luogo,
+    AGENZIA_INDIRIZZO: p.cargos_agenzia_indirizzo || agenziaInd,
+    AGENZIA_RECAPITO_TEL: p.cargos_agenzia_tel || tel,
+    VEICOLO_TIPO: tipoVeicolo,
+    VEICOLO_MARCA: p.marca || (String(p.mezzo || '').split(' ')[0] || ''),
+    VEICOLO_MODELLO: p.modello || p.mezzo || '',
+    VEICOLO_TARGA: p.targa || '',
+    VEICOLO_COLORE: p.colore || p.cargos_veicolo_colore || '',
+    VEICOLO_GPS: String(p.gps ?? p.cargos_veicolo_gps ?? process.env.CARGOS_VEICOLO_GPS ?? '0'),
+    VEICOLO_BLOCCOM: String(p.blocco_motore ?? p.cargos_veicolo_bloccom ?? process.env.CARGOS_VEICOLO_BLOCCOM ?? '0'),
+    CONDUCENTE_CONTRAENTE_COGNOME: n.cognome,
+    CONDUCENTE_CONTRAENTE_NOME: n.nome,
+    CONDUCENTE_CONTRAENTE_NASCITA_DATA: cargosDateOnly(p.data_nascita || p.nascita_data),
+    CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.cargos_nascita_luogo_cod || luogo,
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: p.cargos_cittadinanza_cod || process.env.CARGOS_CITTADINANZA_COD || '100000100',
+    CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.cargos_residenza_luogo_cod || luogo,
+    CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
+    CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: p.cargos_doc_tipo_cod || 'CI',
+    CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO: p.numero_documento || p.doc_numero || p.documento_numero || '',
+    CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD: p.cargos_doc_luogoril_cod || luogo,
+    CONDUCENTE_CONTRAENTE_PATENTE_NUMERO: p.numero_patente || p.patente_numero || '',
+    CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD: p.cargos_patente_luogoril_cod || luogo,
+    CONDUCENTE_CONTRAENTE_RECAPITO: p.telefono || '',
+    CONDUCENTE2_COGNOME: p.conducente2_cognome || '',
+    CONDUCENTE2_NOME: p.conducente2_nome || '',
+    CONDUCENTE2_NASCITA_DATA: cargosDateOnly(p.conducente2_data_nascita || ''),
+    CONDUCENTE2_NASCITA_LUOGO_COD: p.conducente2_nascita_luogo_cod || '',
+    CONDUCENTE2_CITTADINANZA_COD: p.conducente2_cittadinanza_cod || '',
+    CONDUCENTE2_DOCIDE_TIPO_COD: p.conducente2_doc_tipo_cod || '',
+    CONDUCENTE2_DOCIDE_NUMERO: p.conducente2_doc_numero || '',
+    CONDUCENTE2_DOCIDE_LUOGORIL_COD: p.conducente2_doc_luogoril_cod || '',
+    CONDUCENTE2_PATENTE_NUMERO: p.conducente2_patente_numero || '',
+    CONDUCENTE2_PATENTE_LUOGORIL_COD: p.conducente2_patente_luogoril_cod || '',
+    CONDUCENTE2_RECAPITO: p.conducente2_recapito || ''
+  };
+}
+
+function buildCargosFixedRecordV40(p) {
+  const d = cargosRecordDataV40(p);
+  const rec = CARGOS_FIELDS_V40.map(([name, len]) => cargosPad(d[name], len)).join('');
+  return rec.slice(0, 1505).padEnd(1505, ' ');
+}
+
+function cargosRowsV40(p) {
+  const d = cargosRecordDataV40(p);
+  let pos = 1;
+  return CARGOS_FIELDS_V40.map(([name, len]) => {
+    const value = cleanCargos(d[name], len);
+    const row = { name, len, value, dal: pos, al: pos + len - 1 };
+    pos += len;
+    return row;
+  });
+}
+
+function validateCargosV40(p) {
+  const d = cargosRecordDataV40(p);
+  const missing = [];
+  const req = [
+    'CONTRATTO_ID','CONTRATTO_DATA','CONTRATTO_TIPOP','CONTRATTO_CHECKOUT_DATA','CONTRATTO_CHECKOUT_LUOGO_COD',
+    'CONTRATTO_CHECKOUT_INDIRIZZO','CONTRATTO_CHECKIN_DATA','CONTRATTO_CHECKIN_LUOGO_COD','CONTRATTO_CHECKIN_INDIRIZZO',
+    'OPERATORE_ID','AGENZIA_ID','AGENZIA_NOME','AGENZIA_LUOGO_COD','AGENZIA_INDIRIZZO','AGENZIA_RECAPITO_TEL',
+    'VEICOLO_TIPO','VEICOLO_MARCA','VEICOLO_MODELLO','VEICOLO_TARGA',
+    'CONDUCENTE_CONTRAENTE_COGNOME','CONDUCENTE_CONTRAENTE_NOME','CONDUCENTE_CONTRAENTE_NASCITA_DATA',
+    'CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD','CONDUCENTE_CONTRAENTE_CITTADINANZA_COD',
+    'CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD','CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO','CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD',
+    'CONDUCENTE_CONTRAENTE_PATENTE_NUMERO','CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD'
+  ];
+  for (const k of req) if (!String(d[k] || '').trim()) missing.push(k);
+  const rec = buildCargosFixedRecordV40(p);
+  return { ok: missing.length === 0 && rec.length === 1505, missing, length: rec.length, record: rec, data: d };
+}
+
+async function cargosGetTokenV40() {
+  const username = process.env.CARGOS_USERNAME;
+  const password = process.env.CARGOS_PASSWORD;
+  if (!username || !password) throw new Error('Mancano CARGOS_USERNAME o CARGOS_PASSWORD');
+  const auth = Buffer.from(`${username}:${password}`).toString('base64');
+  const r = await fetch(`${CARGOS_BASE_URL}/api/Token`, {
+    method: 'POST',
+    headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' }
+  });
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  if (!r.ok || !data.access_token) throw new Error(`Token CARGOS KO ${r.status}: ${text.slice(0,500)}`);
+  return data.access_token;
+}
+
+function cargosEncryptTokenV40(accessToken) {
+  const keySource = String(process.env.CARGOS_APIKEY || '');
+  if (keySource.length < 24) throw new Error('CARGOS_APIKEY deve avere almeno 24 caratteri');
+  const key = Buffer.from(keySource.slice(0, 24), 'utf8');
+  const cipher = crypto.createCipheriv('des-ede3', key, null); // 3DES ECB PKCS7
+  cipher.setAutoPadding(true);
+  return Buffer.concat([cipher.update(Buffer.from(accessToken, 'utf8')), cipher.final()]).toString('base64');
+}
+
+async function cargosCallV40(endpoint, records) {
+  const token = await cargosGetTokenV40();
+  const encrypted = cargosEncryptTokenV40(token);
+  const r = await fetch(`${CARGOS_BASE_URL}/api/${endpoint}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${encrypted}`,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    },
+    body: JSON.stringify(records)
+  });
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
+  return { httpStatus: r.status, ok: r.ok, data };
+}
+
+async function uploadAllContrattoDriveV40(prenotazioneId) {
+  if (!googleDriveConfigured()) return null;
+  return new Promise((resolve) => {
+    getPrenotazioneCompleta(prenotazioneId, async (err, p) => {
+      if (err || !p) return resolve(null);
+      const folderName = `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`.trim();
+
+      try {
+        db.all(`SELECT * FROM allegati WHERE prenotazione_id=?`, [prenotazioneId], async (e, files) => {
+          for (const f of (files || [])) {
+            try {
+              if (!f.path || !fs.existsSync(f.path)) continue;
+              if (f.drive_file_id) continue;
+              const name = `${String(f.tipo || 'allegato').replace(/\s+/g,'_')}_${f.originalname || f.filename || 'file'}`;
+              const dr = await uploadFileToDrive(f.path, name, f.mimetype || 'application/octet-stream', folderName);
+              if (dr) db.run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [dr.id, dr.webViewLink, f.id]);
+            } catch (e2) { console.log('Drive allegato V40 KO:', e2.message); }
+          }
+          resolve(true);
+        });
+      } catch(e) { console.log('Drive V40 KO:', e.message); resolve(null); }
+    });
+  });
+}
+
+function privacyHtmlV40() {
+  return page('Privacy DP RENT', `<div class="box">
+    <h1>Privacy DP RENT</h1>
+    <p><b>Titolare:</b> Trasporti DP S.R.L. - DP RENT</p>
+    <p><b>Sede:</b> Via Tuderte 466, Narni (TR)</p>
+    <p><b>Contatti:</b> 0744817108 - contabilita@trasportidp.com</p>
+    <p>I dati personali e i documenti sono trattati per identificazione cliente, gestione contratto di noleggio, obblighi fiscali, sicurezza, gestione danni, multe, pedaggi e adempimenti previsti dalla normativa.</p>
+    <p>I dati possono essere comunicati alle autoritÃ  competenti quando richiesto dalla legge.</p>
+    <a class="btn" href="/">Torna</a>
+  </div>`);
+}
+
+function condizioniHtmlV40() {
+  return page('Condizioni DP RENT', `<div class="box">
+    <h1>Condizioni generali DP RENT</h1>
+    <p>Il cliente riceve il mezzo in buono stato e si impegna a riconsegnarlo nelle stesse condizioni, salvo normale usura.</p>
+    <p>Carburante: livello indicato nel contratto, normalmente pieno/pieno.</p>
+    <p>Km inclusi e extra km sono quelli indicati nel contratto.</p>
+    <p>Danni, franchigie, ritardi, multe, pedaggi, smarrimento chiavi/documenti e costi accessori sono a carico del cliente.</p>
+    <p>Il deposito cauzionale Ã¨ gestito separatamente secondo accordi DP RENT.</p>
+    <a class="btn" href="/">Torna</a>
+  </div>`);
+}
+
+
+app.get('/privacy', (req, res) => res.send(privacyHtmlV40()));
+app.get('/condizioni', (req, res) => res.send(condizioniHtmlV40()));
+
+app.get('/cargos/:id/txt', (req, res) => {
+  getPrenotazioneCompleta(req.params.id, (err, p) => {
+    if (!p) return res.status(404).send('Contratto non trovato');
+    const rec = buildCargosFixedRecordV40(p);
+    res.setHeader('Content-Type', 'text/plain; charset=ascii');
+    res.setHeader('Content-Disposition', `attachment; filename="cargos_${p.codice || p.id}.txt"`);
+    res.end(rec + '\n');
+  });
+});
+
+app.get('/cargos/:id/preview', (req, res) => {
+  getPrenotazioneCompleta(req.params.id, (err, p) => {
+    if (!p) return res.status(404).send('Contratto non trovato');
+    const v = validateCargosV40(p);
+    const rows = cargosRowsV40(p);
+    res.send(page('CARGOS Preview V40', `
+      <div class="box">
+        <h2>Ca.R.G.O.S. Preview V40</h2>
+        <p><b>Contratto:</b> ${esc(p.codice || p.id)}</p>
+        <p><b>Lunghezza record:</b> ${v.length}/1505 ${v.ok ? '<span class="ok">OK</span>' : '<span class="bad">KO</span>'}</p>
+        ${v.missing.length ? `<div class="alert"><b>Mancano:</b><br>${v.missing.map(esc).join('<br>')}</div>` : '<p class="ok">Campi obbligatori OK</p>'}
+        <div class="actions">
+          <a class="btn" href="/cargos/${p.id}/check">Verifica dati CaRGOS</a>
+          <a class="btn btn3" href="/cargos/${p.id}/send">Invia report CaRGOS</a>
+          <a class="btn btn2" href="/cargos/${p.id}/txt">Scarica TXT 1505</a>
+          <a class="btn btn2" href="/cargos/${p.id}">Torna</a>
+        </div>
+      </div>
+      <div class="box">
+        <h3>Tracciato campi</h3>
+        <table><tr><th>Campo</th><th>Dal</th><th>Al</th><th>Dim</th><th>Valore</th></tr>
+        ${rows.map(r => `<tr><td>${esc(r.name)}</td><td>${r.dal}</td><td>${r.al}</td><td>${r.len}</td><td>${esc(r.value)}</td></tr>`).join('')}
+        </table>
+      </div>
+      <div class="box">
+        <h3>Record ufficiale 1505</h3>
+        <pre style="white-space:pre;overflow:auto;background:#111;color:white;padding:12px;border-radius:8px;">${esc(v.record)}</pre>
+      </div>
+    `));
+  });
+});
+
+app.get('/cargos/:id/check', async (req, res) => {
+  getPrenotazioneCompleta(req.params.id, async (err, p) => {
+    if (!p) return res.status(404).send('Contratto non trovato');
+    const v = validateCargosV40(p);
+    if (!v.ok) {
+      return res.send(page('CARGOS Check', `<div class="box"><h2 class="bad">Verifica locale KO</h2><p>Mancano campi obbligatori:</p><pre>${esc(v.missing.join('\n'))}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
+    }
+    try {
+      const result = await cargosCallV40('Check', [v.record]);
+      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_check=?, cargos_last_error=? WHERE id=?`,
+        [result.ok ? 'check_ok' : 'check_ko', new Date().toISOString(), JSON.stringify(result).slice(0,1000), p.id]);
+      res.send(page('CARGOS Check', `<div class="box"><h2>Risposta Check CaRGOS</h2><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/cargos/${p.id}/send">Invia report</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a></div>`));
+    } catch(e) {
+      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_check=?, cargos_last_error=? WHERE id=?`, ['check_errore', new Date().toISOString(), e.message, p.id]);
+      res.send(page('CARGOS Check Errore', `<div class="box"><h2 class="bad">Errore Check CaRGOS</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
+    }
+  });
+});
+
+app.get('/cargos/:id/verifica', (req, res) => res.redirect(`/cargos/${req.params.id}/check`));
+
+app.get('/cargos/:id/send', async (req, res) => {
+  getPrenotazioneCompleta(req.params.id, async (err, p) => {
+    if (!p) return res.status(404).send('Contratto non trovato');
+    const v = validateCargosV40(p);
+    if (!v.ok) return res.send(page('CARGOS Send', `<div class="box"><h2 class="bad">Invio bloccato</h2><pre>${esc(v.missing.join('\n'))}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
+    try {
+      const result = await cargosCallV40('Send', [v.record]);
+      let uid = '';
+      try {
+        const arr = result?.data;
+        if (Array.isArray(arr) && arr[0]) uid = arr[0].transactionid || arr[0].transactionId || '';
+        uid = uid || result?.data?.transactionid || result?.data?.transactionId || '';
+      } catch {}
+      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_send=?, cargos_last_error=?, cargos_transactionid=?, cargos_uid=? WHERE id=?`,
+        [result.ok ? 'send_ok' : 'send_ko', new Date().toISOString(), JSON.stringify(result).slice(0,1000), uid, uid, p.id]);
+      db.run(`INSERT INTO cargos_invii (prenotazione_id, uid, stato, richiesta, risposta, errore) VALUES (?,?,?,?,?,?)`,
+        [p.id, uid, result.ok ? 'send_ok' : 'send_ko', v.record, JSON.stringify(result).slice(0,4000), result.ok ? '' : JSON.stringify(result).slice(0,1000)]);
+      res.send(page('CARGOS Send', `<div class="box"><h2>Risposta Invio CaRGOS</h2><p><b>UID:</b> ${esc(uid || '-')}</p><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/prenotazione/${p.id}">Torna contratto</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a></div>`));
+    } catch(e) {
+      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_send=?, cargos_last_error=? WHERE id=?`, ['send_errore', new Date().toISOString(), e.message, p.id]);
+      res.send(page('CARGOS Send Errore', `<div class="box"><h2 class="bad">Errore Invio CaRGOS</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
+    }
+  });
+});
+
+app.get('/cargos/:id/invia', (req, res) => res.redirect(`/cargos/${req.params.id}/send`));
+
 app.get('/cargos/:id', (req,res)=>{getPrenotazioneCompleta(req.params.id,(err,p)=>{if(!p)return res.send(page('CARGOS','<div class="box"><h2>Contratto non trovato</h2></div>')); const val=k=>esc(p[k]||''); const v=validateCargos(p); res.send(page('Ca.R.G.O.S.',`
 <div class="box"><h2>Ca.R.G.O.S. ${esc(p.codice)}</h2>${v.ok?`<p class="ok">Dati completi. Lunghezza riga: ${v.length}</p>`:`<div class="alert"><b>Mancano campi:</b><br>${v.missing.map(esc).join('<br>')}</div>`}
 <form method="POST" action="/cargos/${p.id}/save">
@@ -2049,99 +2561,10 @@ app.post('/cargos/:id/save',(req,res)=>{const b=req.body; db.run(`UPDATE prenota
 
 
 
-app.get('/cargos/:id/txt', (req, res) => {
-  getPrenotazioneCompleta(req.params.id, (err, p) => {
-    if (!p) return res.send('Contratto non trovato');
-    const rec = buildCargosFixedRecord(p);
-    res.setHeader('Content-Type','text/plain; charset=ascii');
-    res.setHeader('Content-Disposition', `attachment; filename="cargos_fixed_${p.codice || p.id}.txt"`);
-    res.end(rec + '\n');
-  });
-});
-
-app.get('/cargos/:id/csv', (req, res) => {
-  getPrenotazioneCompleta(req.params.id, (err, p) => {
-    if (!p) return res.send('Contratto non trovato');
-    const csv = buildCargosCsvHeader() + '\n' + buildCargosCsvRecord(p) + '\n';
-    res.setHeader('Content-Type','text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="cargos_csv_${p.codice || p.id}.csv"`);
-    res.end(csv);
-  });
-});
-
-app.get('/cargos/:id/preview', (req, res) => {
-  getPrenotazioneCompleta(req.params.id, (err, p) => {
-    if (!p) return res.send('Contratto non trovato');
-    const rec = buildCargosFixedRecord(p);
-    const csv = buildCargosCsvRecord(p);
-    const v = validateCargosV37(p);
-    res.send(page('Preview CARGOS', `
-      <div class="box">
-        <h2>Preview CARGOS ${esc(p.codice)}</h2>
-        <p><b>Lunghezza TXT fisso:</b> ${rec.length} / 1505 ${v.fixed_ok ? '<span class="ok">OK</span>' : '<span class="bad">KO</span>'}</p>
-        ${cargosMissingHtml(v.missing)}
-        <div class="actions">
-          <a class="btn" href="/cargos/${p.id}/txt">Scarica TXT fisso 1505</a>
-          <a class="btn btn2" href="/cargos/${p.id}/csv">Scarica CSV ;</a>
-          <a class="btn btn2" href="/cargos/${p.id}">Torna CARGOS</a>
-        </div>
-      </div>
-      <div class="box">
-        <h3>Vista campi separati</h3>
-        ${cargosHumanTable(p)}
-      </div>
-      <div class="box">
-        <h3>CSV con separatore ;</h3>
-        <pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;font-size:12px;">${esc(buildCargosCsvHeader() + '\\n' + csv)}</pre>
-      </div>
-      <div class="box">
-        <h3>TXT fisso 1505 caratteri</h3>
-        <p class="notice">Questa riga puo sembrare attaccata perche il formato fisso non usa separatori. La tabella sopra serve per controllarla.</p>
-        <pre style="white-space:pre;overflow:auto;background:#111;color:white;padding:12px;border-radius:8px;font-size:12px;">${esc(rec)}</pre>
-      </div>
-    `));
-  });
-});
 
 
 
 
-app.get('/cargos/:id/verifica', (req, res) => {
-  getPrenotazioneCompleta(req.params.id, (err, p) => {
-    if (!p) return res.send(page('Verifica CARGOS', '<div class="box"><h2>Contratto non trovato</h2></div>'));
-    const check = cargosProValidate(p);
-    const stato = check.ok ? 'verificato' : 'errore_verifica';
-    db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_check=?, cargos_last_error=? WHERE id=?`,
-      [stato, new Date().toISOString(), check.ok ? '' : JSON.stringify({missing:check.missing,warnings:check.warnings}).slice(0,500), p.id]);
-    res.send(page('Verifica CARGOS', `
-      <div class="box">
-        <h2>Verifica dati Ca.R.G.O.S. ${check.ok ? '<span class="ok">OK</span>' : '<span class="bad">KO</span>'}</h2>
-        <p><b>Lunghezza riga:</b> ${check.length} / 1505</p>
-        ${cargosMissingHtml(check.missing)}
-        ${check.warnings.length ? `<div class="notice"><b>Avvisi:</b><br>${check.warnings.map(esc).join('<br>')}</div>` : ''}
-        <div class="actions">
-          <a class="btn btn2" href="/cargos/${p.id}/preview">Preview leggibile</a>
-          <a class="btn" href="/cargos/${p.id}/txt">Scarica TXT ufficiale</a>
-          ${check.ok ? `<a class="btn btn3" href="/cargos/${p.id}/invia">Invia report a CaRGOS</a>` : ''}
-          <a class="btn btn2" href="/cargos/${p.id}">Torna</a>
-        </div>
-      </div>
-      <div class="box"><h3>Payload leggibile</h3><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(check.payload,null,2))}</pre></div>
-    `));
-  });
-});
-app.get('/cargos/:id/check', (req, res) => res.redirect(`/cargos/${req.params.id}/verifica`));
-app.get('/cargos/:id/invia', async (req, res) => {
-  getPrenotazioneCompleta(req.params.id, async (err, p) => {
-    if (!p) return res.send(page('Invio CARGOS', '<div class="box"><h2>Contratto non trovato</h2></div>'));
-    const check = cargosProValidate(p);
-    if (!check.ok) return res.send(page('Invio CARGOS', `<div class="box"><h2 class="bad">Invio bloccato</h2>${cargosMissingHtml(check.missing)}<a class="btn" href="/cargos/${p.id}">Torna</a></div>`));
-    const result = { ok:false, ready:true, message:'Record verificato. Invio reale non eseguito: serve endpoint AES/Token ufficiale CARGOS.', length:check.length };
-    db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_send=?, cargos_last_error=? WHERE id=?`, ['pronto_invio', new Date().toISOString(), JSON.stringify(result).slice(0,500), p.id]);
-    res.send(page('Invio CARGOS', `<div class="box"><h2>Invio report a CaRGOS</h2><p class="notice">Verifica OK. Manca endpoint AES reale.</p><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/cargos/${p.id}/txt">Scarica TXT ufficiale</a><a class="btn btn2" href="/cargos/${p.id}">Torna</a></div>`));
-  });
-});
-app.get('/cargos/:id/send', (req, res) => res.redirect(`/cargos/${req.params.id}/invia`));
 
 app.get('/prenotazione/:id', async (req, res) => {
   const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria, m.descrizione_pubblica FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
@@ -2574,7 +2997,7 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     ]
   );
 
-  res.redirect(`/documenti/${req.params.id}`);
+  await uploadAllContrattoDriveV40(req.params.id); res.redirect(`/documenti/${req.params.id}`);
 });
 
 app.get('/checkout/:id', async (req, res) => {
@@ -2802,18 +3225,6 @@ app.get('/nexi-ko/:id', async (req, res) => {
 
 
 
-app.get('/privacy', (req, res) => {
-  res.send(page('Privacy DP RENT', `
-    <div class="box">
-      <h2>Informativa Privacy DP RENT</h2>
-      <p>Trasporti DP S.R.L. tratta i dati personali per gestione richiesta, prenotazione, contratto di noleggio, fatturazione, pagamenti, sicurezza del mezzo, gestione danni, multe, sinistri e obblighi di legge.</p>
-      <p>I dati possono includere dati anagrafici, contatti, documento, patente, codice fiscale, immagini dei documenti, foto del mezzo, dati di pagamento e dati contrattuali.</p>
-      <p>I dati sono conservati per il tempo necessario alla gestione del rapporto e agli obblighi fiscali/legali.</p>
-      <p>Per richieste privacy: ${esc(AZIENDA.email)}</p>
-      <a class="btn" href="/">Torna</a>
-    </div>
-  `));
-});
 
 app.get('/termini-noleggio', (req, res) => {
   res.send(page('Condizioni noleggio DP RENT', `
@@ -2934,3 +3345,19 @@ app.use((err, req, res, next) => {
 // =========================
 
 // =========================
+// RENDER PORT BINDING - V37
+// =========================
+// =========================
+// RENDER PORT BINDING - V38
+// =========================
+
+// =========================
+// RENDER PORT BINDING - V39
+// =========================
+
+// =========================
+// RENDER PORT BINDING - V40
+// =========================
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V40 CARGOS REALE DRIVE PRIVACY ONLINE su porta ' + PORT);
+});
