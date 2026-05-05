@@ -280,7 +280,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V31 OCR IMPORT VERIFICATO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V32 OCR DOPPIO STEP</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -893,7 +893,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V31 OCR IMPORT VERIFICATO'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V32 OCR DOPPIO STEP'));
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
@@ -915,7 +915,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V31 OCR IMPORT VERIFICATO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V32 OCR DOPPIO STEP</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1144,6 +1144,170 @@ function formPrenotazione(mezzi, selectedMezzo, selectedData, action, query = {}
   </form>`;
 }
 
+
+// OCR DOPPIO STEP: DOCUMENTO + PATENTE
+app.get('/ocr-doppio', (req, res) => {
+  res.send(page('OCR carta identita e patente', `
+    <div class="box">
+      <h2>OCR cliente - Step 1 di 2</h2>
+      <p class="notice">Prima scatta o carica la carta identita/documento. Dopo passerai alla patente.</p>
+      <form method="POST" action="/ocr-doppio/documento" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" value="Carta identita">
+        <label class="btn" style="display:block;text-align:center;font-size:22px;padding:18px;margin-top:14px">
+          Scatta / carica CARTA IDENTITA
+          <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+        </label>
+        <button id="submitBtn" style="display:none">Leggi documento</button>
+      </form>
+      <a class="btn btn2" href="/nuova-prenotazione">Torna</a>
+    </div>
+    <script>
+      const input = document.getElementById('fileInput');
+      input.addEventListener('change', function () {
+        if (this.files && this.files.length) document.getElementById('submitBtn').click();
+      });
+    </script>
+  `));
+});
+
+app.post('/ocr-doppio/documento', upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.send('File mancante');
+    const documento = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
+    const id = makeOcrId();
+    OCR_PREFILL[id] = { documento: documento || {}, patente: {} };
+    res.redirect('/ocr-doppio/patente?id=' + encodeURIComponent(id));
+  } catch (e) {
+    res.status(500).send(page('Errore OCR documento', `<div class="box"><h2 class="bad">Errore OCR documento</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-doppio">Riprova</a></div>`));
+  }
+});
+
+app.get('/ocr-doppio/patente', (req, res) => {
+  const id = req.query.id;
+  if (!id || !OCR_PREFILL[id]) return res.redirect('/ocr-doppio');
+  res.send(page('OCR patente', `
+    <div class="box">
+      <h2>OCR cliente - Step 2 di 2</h2>
+      <p class="notice">Ora scatta o carica la patente. I dati verranno uniti al documento.</p>
+      <form method="POST" action="/ocr-doppio/patente" enctype="multipart/form-data">
+        <input type="hidden" name="id" value="${esc(id)}">
+        <input type="hidden" name="tipo" value="Patente">
+        <label class="btn" style="display:block;text-align:center;font-size:22px;padding:18px;margin-top:14px">
+          Scatta / carica PATENTE
+          <input id="fileInput" type="file" name="file" accept="image/*,.pdf" style="display:none" required>
+        </label>
+        <button id="submitBtn" style="display:none">Leggi patente</button>
+      </form>
+      <a class="btn btn2" href="/ocr-doppio">Ricomincia</a>
+    </div>
+    <script>
+      const input = document.getElementById('fileInput');
+      input.addEventListener('change', function () {
+        if (this.files && this.files.length) document.getElementById('submitBtn').click();
+      });
+    </script>
+  `));
+});
+
+app.post('/ocr-doppio/patente', upload.single('file'), async (req, res) => {
+  try {
+    const id = req.body.id;
+    if (!id || !OCR_PREFILL[id]) return res.redirect('/ocr-doppio');
+    if (!req.file) return res.send('File mancante');
+    const patente = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
+    OCR_PREFILL[id].patente = patente || {};
+    res.redirect('/ocr-doppio/conferma?id=' + encodeURIComponent(id));
+  } catch (e) {
+    res.status(500).send(page('Errore OCR patente', `<div class="box"><h2 class="bad">Errore OCR patente</h2><pre>${esc(e.message)}</pre><a class="btn" href="/ocr-doppio">Riprova</a></div>`));
+  }
+});
+
+app.get('/ocr-doppio/conferma', (req, res) => {
+  const id = req.query.id;
+  const data = OCR_PREFILL[id];
+  if (!id || !data) return res.redirect('/ocr-doppio');
+
+  const d = data.documento || {};
+  const p = data.patente || {};
+  const pick = (a, b) => a || b || '';
+  const v = x => esc(x || '');
+
+  const nome = pick(d.nome, p.nome);
+  const cognome = pick(d.cognome, p.cognome);
+  const cf = pick(d.codice_fiscale, p.codice_fiscale);
+  const indirizzo = pick(d.indirizzo, p.indirizzo);
+  const dataNascita = pick(d.data_nascita, p.data_nascita);
+  const luogoNascita = pick(d.luogo_nascita, p.luogo_nascita);
+  const documentoNumero = d.numero_documento || '';
+  const documentoScadenza = d.data_scadenza || '';
+  const patenteNumero = p.numero_patente || p.numero_documento || '';
+  const patenteScadenza = p.data_scadenza || '';
+  const categoriaPatente = p.categoria_patente || '';
+
+  res.send(page('Controllo dati cliente', `
+    <div class="box">
+      <h2>Controlla dati cliente e conducente</h2>
+      <p class="notice">Documento e patente sono stati letti separatamente. Correggi se serve, poi continua.</p>
+      <form method="POST" action="/ocr-doppio/applica">
+        <input type="hidden" name="id" value="${esc(id)}">
+
+        <h3>Dati cliente da documento</h3>
+        <div class="grid">
+          <div><label>Nome</label><input name="nome" value="${v(nome)}"></div>
+          <div><label>Cognome</label><input name="cognome" value="${v(cognome)}"></div>
+          <div><label>Codice fiscale</label><input name="codice_fiscale" value="${v(cf)}"></div>
+          <div><label>Indirizzo</label><input name="indirizzo" value="${v(indirizzo)}"></div>
+          <div><label>Citta</label><input name="citta" value=""></div>
+          <div><label>CAP</label><input name="cap" value=""></div>
+          <div><label>Data nascita</label><input type="date" name="data_nascita" value="${v(dataNascita)}"></div>
+          <div><label>Luogo nascita</label><input name="luogo_nascita" value="${v(luogoNascita)}"></div>
+          <div><label>Numero documento</label><input name="documento_numero" value="${v(documentoNumero)}"></div>
+          <div><label>Scadenza documento</label><input type="date" name="documento_scadenza" value="${v(documentoScadenza)}"></div>
+        </div>
+
+        <h3>Dati conducente da patente</h3>
+        <div class="grid">
+          <div><label>Conducente 1</label><input name="conducente1" value="${v((nome + ' ' + cognome).trim())}"></div>
+          <div><label>Numero patente</label><input name="patente1" value="${v(patenteNumero)}"></div>
+          <div><label>Scadenza patente</label><input type="date" name="patente1_scadenza" value="${v(patenteScadenza)}"></div>
+          <div><label>Categoria patente</label><input name="categoria_patente" value="${v(categoriaPatente)}"></div>
+        </div>
+
+        <h3>Contatti da completare</h3>
+        <div class="grid">
+          <div><label>Telefono</label><input name="telefono" value=""></div>
+          <div><label>Email</label><input name="email" value=""></div>
+        </div>
+        <button>Continua al contratto con questi dati</button>
+      </form>
+      <a class="btn btn2" href="/ocr-doppio">Rifai OCR da capo</a>
+    </div>
+  `));
+});
+
+app.post('/ocr-doppio/applica', (req, res) => {
+  const id = req.body.id || makeOcrId();
+  OCR_PREFILL[id] = {
+    nome: req.body.nome || '',
+    cognome: req.body.cognome || '',
+    telefono: req.body.telefono || '',
+    email: req.body.email || '',
+    codice_fiscale: req.body.codice_fiscale || '',
+    indirizzo: req.body.indirizzo || '',
+    citta: req.body.citta || '',
+    cap: req.body.cap || '',
+    data_nascita: req.body.data_nascita || '',
+    luogo_nascita: req.body.luogo_nascita || '',
+    documento_numero: req.body.documento_numero || '',
+    documento_scadenza: req.body.documento_scadenza || '',
+    conducente1: req.body.conducente1 || '',
+    patente1: req.body.patente1 || '',
+    patente1_scadenza: req.body.patente1_scadenza || '',
+    categoria_patente: req.body.categoria_patente || ''
+  };
+  res.redirect('/nuova-prenotazione?ocr=' + encodeURIComponent(id));
+});
+
 app.get('/ocr-precontratto', (req, res) => {
   res.send(page('OCR prima del contratto', `
     <div class="box">
@@ -1206,11 +1370,11 @@ app.post('/ocr-precontratto', upload.single('file'), async (req, res) => {
           </div>
           <button>Continua al contratto con questi dati</button>
         </form>
-        <a class="btn btn2" href="/ocr-precontratto">Riprova OCR</a>
+        <a class="btn btn2" href="/ocr-doppio">Riprova OCR</a>
       </div>
     `));
   } catch (e) {
-    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><p>Serve OPENAI_API_KEY su Render.</p><a class="btn" href="/ocr-precontratto">Riprova</a></div>`));
+    res.status(500).send(page('Errore OCR', `<div class="box"><h2 class="bad">Errore OCR</h2><pre>${esc(e.message)}</pre><p>Serve OPENAI_API_KEY su Render.</p><a class="btn" href="/ocr-doppio">Riprova</a></div>`));
   }
 });
 
@@ -1246,7 +1410,7 @@ app.get('/nuova-prenotazione', async (req, res) => {
       <div class="box" style="border:2px solid #0b6b2d">
         <h3>1) Prima carica/scatta documento o patente</h3>
         <p class="notice">Consigliato: fai OCR prima di creare il contratto, cosÃ¬ i dati cliente si compilano piÃ¹ velocemente.</p>
-        <a class="btn btn3" href="/ocr-precontratto"> OCR documento/patente prima del contratto</a>
+        <a class="btn btn3" href="/ocr-doppio"> OCR carta identita + patente</a>
       </div>
       <h3>2) Poi controlla i dati e crea contratto</h3>
     ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin', req.query)}`));
