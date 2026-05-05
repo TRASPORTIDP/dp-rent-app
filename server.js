@@ -1,42 +1,14 @@
 require('dotenv').config();
 require('dns').s
-
-  addColumn('prenotazioni','cargos_pagamento_tipo','TEXT DEFAULT "0"');
-  addColumn('prenotazioni','cargos_checkout_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_checkout_indirizzo','TEXT');
-  addColumn('prenotazioni','cargos_checkin_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_checkin_indirizzo','TEXT');
-  addColumn('prenotazioni','cargos_operatore_id','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_id','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_nome','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_indirizzo','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_tel','TEXT');
-  addColumn('prenotazioni','cargos_veicolo_tipo','TEXT DEFAULT "1"');
-  addColumn('prenotazioni','cargos_veicolo_colore','TEXT');
-  addColumn('prenotazioni','cargos_veicolo_gps','INTEGER DEFAULT 0');
-  addColumn('prenotazioni','cargos_veicolo_bloccom','INTEGER DEFAULT 0');
-  addColumn('prenotazioni','cargos_cittadinanza_cod','TEXT');
-  addColumn('prenotazioni','cargos_nascita_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_residenza_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_doc_tipo_cod','TEXT DEFAULT "CI"');
-  addColumn('prenotazioni','cargos_doc_luogoril_cod','TEXT');
-  addColumn('prenotazioni','cargos_patente_luogoril_cod','TEXT');
-  addColumn('prenotazioni','conducente2_nome','TEXT');
-  addColumn('prenotazioni','conducente2_cognome','TEXT');
-  addColumn('prenotazioni','conducente2_data_nascita','TEXT');
-  addColumn('prenotazioni','conducente2_nascita_luogo_cod','TEXT');
-  addColumn('prenotazioni','conducente2_cittadinanza_cod','TEXT');
-  addColumn('prenotazioni','conducente2_doc_tipo_cod','TEXT');
-  addColumn('prenotazioni','conducente2_doc_numero','TEXT');
-  addColumn('prenotazioni','conducente2_doc_luogoril_cod','TEXT');
-  addColumn('prenotazioni','conducente2_patente_numero','TEXT');
-  addColumn('prenotazioni','conducente2_patente_luogoril_cod','TEXT');
-  addColumn('prenotazioni','conducente2_recapito','TEXT');
-  addColumn('mezzi','cargos_veicolo_tipo','TEXT DEFAULT "1"');
-  addColumn('mezzi','colore','TEXT');
-  addColumn('mezzi','gps','INTEGER DEFAULT 0');
-  addColumn('mezzi','blocco_motore','INTEGER DEFAULT 0');
+addColumn('prenotazioni','cargos_checkin_luogo_cod','TEXT');
+addColumn('prenotazioni','cargos_agenzia_nome','TEXT');
+addColumn('prenotazioni','cargos_veicolo_tipo','TEXT DEFAULT "1"');
+addColumn('prenotazioni','cargos_cittadinanza_cod','TEXT');
+addColumn('prenotazioni','cargos_doc_luogoril_cod','TEXT');
+addColumn('prenotazioni','conducente2_data_nascita','TEXT');
+addColumn('prenotazioni','conducente2_doc_numero','TEXT');
+addColumn('prenotazioni','conducente2_recapito','TEXT');
+addColumn('mezzi','blocco_motore','INTEGER DEFAULT 0');
 etDefaultResultOrder('ipv4first');
 
 const express = require('express');
@@ -91,6 +63,19 @@ app.use('/contracts', express.static(contractsDir));
 const upload = multer({ dest: uploadDir });
 const db = new sqlite3.Database(path.join(DATA_DIR, 'database.sqlite'));
 
+function addColumn(table, column, type) {
+  try {
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, (err) => {
+      if (err && !String(err.message || '').includes('duplicate column')) {
+        console.log('ADD COLUMN warning:', table, column, err.message);
+      }
+    });
+  } catch (e) {
+    console.log('ADD COLUMN skipped:', table, column, e.message);
+  }
+}
+
+
 function run(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
@@ -109,11 +94,47 @@ function all(sql, params = []) {
     db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows || []));
   });
 }
-function addColumn(table, column, type) {
-  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, () => {});
-}
+
 
 db.serialize(() => {
+
+
+  addColumn('prenotazioni','cargos_pagamento_tipo','TEXT DEFAULT "0"');
+  
+  addColumn('prenotazioni','cargos_checkout_indirizzo','TEXT');
+  
+  addColumn('prenotazioni','cargos_checkin_indirizzo','TEXT');
+  
+  addColumn('prenotazioni','cargos_agenzia_id','TEXT');
+  
+  addColumn('prenotazioni','cargos_agenzia_luogo_cod','TEXT');
+  
+  addColumn('prenotazioni','cargos_agenzia_tel','TEXT');
+  
+  addColumn('prenotazioni','cargos_veicolo_colore','TEXT');
+  
+  addColumn('prenotazioni','cargos_veicolo_bloccom','INTEGER DEFAULT 0');
+  
+  addColumn('prenotazioni','cargos_nascita_luogo_cod','TEXT');
+  
+  addColumn('prenotazioni','cargos_doc_tipo_cod','TEXT DEFAULT "CI"');
+  
+  addColumn('prenotazioni','cargos_patente_luogoril_cod','TEXT');
+  
+  addColumn('prenotazioni','conducente2_cognome','TEXT');
+  
+  addColumn('prenotazioni','conducente2_nascita_luogo_cod','TEXT');
+  
+  addColumn('prenotazioni','conducente2_doc_tipo_cod','TEXT');
+  
+  addColumn('prenotazioni','conducente2_doc_luogoril_cod','TEXT');
+  
+  addColumn('prenotazioni','conducente2_patente_luogoril_cod','TEXT');
+  
+  addColumn('mezzi','cargos_veicolo_tipo','TEXT DEFAULT "1"');
+  
+  addColumn('mezzi','gps','INTEGER DEFAULT 0');
+  
   db.run(`
     CREATE TABLE IF NOT EXISTS mezzi (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -350,7 +371,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V34B RENDER PORT FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V35 DEFINITIVA STABILE</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -964,7 +985,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V34B RENDER PORT FIX'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V35 DEFINITIVA STABILE'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1013,7 +1034,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V34B RENDER PORT FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V35 DEFINITIVA STABILE</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2640,46 +2661,9 @@ app.use((err, req, res, next) => {
   res.status(500).send(page('Errore server', `<div class="box"><h2 class="bad">Errore server</h2><pre>${esc(err.message)}</pre></div>`));
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log('DP RENT APP COMPLETA ONLINE su porta ' + PORT));
 // =========================
-// CARGOS V34 - TRACCIATO 1505
-// =========================
-const CARGOS_PAYMENTS = {'0':'Carta di Credito','1':'Contanti','2':'Carta di Debito','3':'Bonifico','4':'RID Bancario','9':'Altro'};
-const CARGOS_DOC_TYPES = {'CI':'Carta identita','PA':'Passaporto','PT':'Patente','AT':'Altro'};
-const CARGOS_VEHICLE_TYPES = {'1':'Autovettura','2':'Autocarro','3':'Motoveicolo','4':'Rimorchio','9':'Altro'};
-const CARGOS_FIELDS = [
-['CONTRATTO_ID',50],['CONTRATTO_DATA',16],['CONTRATTO_TIPOP',1],['CONTRATTO_CHECKOUT_DATA',16],['CONTRATTO_CHECKOUT_LUOGO_COD',9],['CONTRATTO_CHECKOUT_INDIRIZZO',150],
-['CONTRATTO_CHECKIN_DATA',16],['CONTRATTO_CHECKIN_LUOGO_COD',9],['CONTRATTO_CHECKIN_INDIRIZZO',150],['OPERATORE_ID',50],['AGENZIA_ID',30],['AGENZIA_NOME',70],['AGENZIA_LUOGO_COD',9],['AGENZIA_INDIRIZZO',150],['AGENZIA_RECAPITO_TEL',20],
-['VEICOLO_TIPO',1],['VEICOLO_MARCA',50],['VEICOLO_MODELLO',100],['VEICOLO_TARGA',15],['VEICOLO_COLORE',50],['VEICOLO_GPS',1],['VEICOLO_BLOCCOM',1],
-['CONDUCENTE_CONTRAENTE_COGNOME',50],['CONDUCENTE_CONTRAENTE_NOME',30],['CONDUCENTE_CONTRAENTE_NASCITA_DATA',10],['CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD',9],['CONDUCENTE_CONTRAENTE_CITTADINANZA_COD',9],['CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD',9],['CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO',150],
-['CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD',5],['CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO',20],['CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD',9],['CONDUCENTE_CONTRAENTE_PATENTE_NUMERO',20],['CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD',9],['CONDUCENTE_CONTRAENTE_RECAPITO',20],
-['CONDUCENTE2_COGNOME',50],['CONDUCENTE2_NOME',30],['CONDUCENTE2_NASCITA_DATA',10],['CONDUCENTE2_NASCITA_LUOGO_COD',9],['CONDUCENTE2_CITTADINANZA_COD',9],['CONDUCENTE2_DOCIDE_TIPO_COD',5],['CONDUCENTE2_DOCIDE_NUMERO',20],['CONDUCENTE2_DOCIDE_LUOGORIL_COD',9],['CONDUCENTE2_PATENTE_NUMERO',20],['CONDUCENTE2_PATENTE_LUOGORIL_COD',9],['CONDUCENTE2_RECAPITO',20]
-];
-function cleanCargosText(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^\x20-\x7E]/g,' ').replace(/\s+/g,' ').trim().toUpperCase();}
-function cargosPad(v,len){return cleanCargosText(v).slice(0,len).padEnd(len,' ');}
-function cargosDateTime(data,ora){if(!data)return ''; const d=String(data).slice(0,10).split('-'); if(d.length!==3)return ''; return `${d[2]}/${d[1]}/${d[0]} ${String(ora||'00:00').slice(0,5)}`;}
-function cargosDateOnly(data){if(!data)return ''; const d=String(data).slice(0,10).split('-'); if(d.length!==3)return ''; return `${d[2]}/${d[1]}/${d[0]}`;}
-function envC(k,f){return process.env[k]||f||'';}
-function cargosRecordData(p){
- const agNome=p.cargos_agenzia_nome||envC('CARGOS_AGENZIA_NOME',AZIENDA.nome), agTel=p.cargos_agenzia_tel||envC('CARGOS_AGENZIA_TEL',AZIENDA.telefono), agInd=p.cargos_agenzia_indirizzo||envC('CARGOS_AGENZIA_INDIRIZZO',AZIENDA.indirizzo), agCod=p.cargos_agenzia_luogo_cod||envC('CARGOS_AGENZIA_LUOGO_COD','');
- return {
- CONTRATTO_ID:p.codice||`DPR-${p.id}`, CONTRATTO_DATA:cargosDateTime(String(p.created_at||'').slice(0,10),String(p.created_at||'').slice(11,16)||'00:00'), CONTRATTO_TIPOP:p.cargos_pagamento_tipo||'0',
- CONTRATTO_CHECKOUT_DATA:cargosDateTime(p.data_inizio,p.ora_inizio||'08:30'), CONTRATTO_CHECKOUT_LUOGO_COD:p.cargos_checkout_luogo_cod||agCod, CONTRATTO_CHECKOUT_INDIRIZZO:p.cargos_checkout_indirizzo||agInd,
- CONTRATTO_CHECKIN_DATA:cargosDateTime(p.data_fine,p.ora_fine||'18:00'), CONTRATTO_CHECKIN_LUOGO_COD:p.cargos_checkin_luogo_cod||agCod, CONTRATTO_CHECKIN_INDIRIZZO:p.cargos_checkin_indirizzo||agInd,
- OPERATORE_ID:p.cargos_operatore_id||envC('CARGOS_OPERATORE_ID','DPRENT'), AGENZIA_ID:p.cargos_agenzia_id||envC('CARGOS_AGENZIA_ID','DPR'), AGENZIA_NOME:agNome, AGENZIA_LUOGO_COD:agCod, AGENZIA_INDIRIZZO:agInd, AGENZIA_RECAPITO_TEL:agTel,
- VEICOLO_TIPO:p.cargos_veicolo_tipo||p.m_cargos_veicolo_tipo||'1', VEICOLO_MARCA:p.marca||'', VEICOLO_MODELLO:p.modello||'', VEICOLO_TARGA:p.targa||'', VEICOLO_COLORE:p.cargos_veicolo_colore||p.colore||'', VEICOLO_GPS:String(p.cargos_veicolo_gps??p.gps??0), VEICOLO_BLOCCOM:String(p.cargos_veicolo_bloccom??p.blocco_motore??0),
- CONDUCENTE_CONTRAENTE_COGNOME:p.cognome||'', CONDUCENTE_CONTRAENTE_NOME:p.nome||'', CONDUCENTE_CONTRAENTE_NASCITA_DATA:cargosDateOnly(p.data_nascita||''), CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD:p.cargos_nascita_luogo_cod||'', CONDUCENTE_CONTRAENTE_CITTADINANZA_COD:p.cargos_cittadinanza_cod||envC('CARGOS_CITTADINANZA_DEFAULT','100000100'), CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD:p.cargos_residenza_luogo_cod||'', CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO:p.indirizzo||'',
- CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD:p.cargos_doc_tipo_cod||'CI', CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO:p.documento_numero||'', CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD:p.cargos_doc_luogoril_cod||p.cargos_residenza_luogo_cod||'', CONDUCENTE_CONTRAENTE_PATENTE_NUMERO:p.patente1||p.patente_numero||'', CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD:p.cargos_patente_luogoril_cod||p.cargos_doc_luogoril_cod||'', CONDUCENTE_CONTRAENTE_RECAPITO:p.telefono||'',
- CONDUCENTE2_COGNOME:p.conducente2_cognome||'', CONDUCENTE2_NOME:p.conducente2_nome||'', CONDUCENTE2_NASCITA_DATA:cargosDateOnly(p.conducente2_data_nascita||''), CONDUCENTE2_NASCITA_LUOGO_COD:p.conducente2_nascita_luogo_cod||'', CONDUCENTE2_CITTADINANZA_COD:p.conducente2_cittadinanza_cod||'', CONDUCENTE2_DOCIDE_TIPO_COD:p.conducente2_doc_tipo_cod||'', CONDUCENTE2_DOCIDE_NUMERO:p.conducente2_doc_numero||'', CONDUCENTE2_DOCIDE_LUOGORIL_COD:p.conducente2_doc_luogoril_cod||'', CONDUCENTE2_PATENTE_NUMERO:p.conducente2_patente_numero||'', CONDUCENTE2_PATENTE_LUOGORIL_COD:p.conducente2_patente_luogoril_cod||'', CONDUCENTE2_RECAPITO:p.conducente2_recapito||''
- };}
-function buildCargosRecord(p){const d=cargosRecordData(p); return CARGOS_FIELDS.map(([n,l])=>cargosPad(d[n],l)).join('');}
-function validateCargos(p){const d=cargosRecordData(p); const req=['CONTRATTO_ID','CONTRATTO_DATA','CONTRATTO_TIPOP','CONTRATTO_CHECKOUT_DATA','CONTRATTO_CHECKOUT_LUOGO_COD','CONTRATTO_CHECKOUT_INDIRIZZO','CONTRATTO_CHECKIN_DATA','CONTRATTO_CHECKIN_LUOGO_COD','CONTRATTO_CHECKIN_INDIRIZZO','OPERATORE_ID','AGENZIA_ID','AGENZIA_NOME','AGENZIA_LUOGO_COD','AGENZIA_INDIRIZZO','AGENZIA_RECAPITO_TEL','VEICOLO_TIPO','VEICOLO_MARCA','VEICOLO_MODELLO','VEICOLO_TARGA','CONDUCENTE_CONTRAENTE_COGNOME','CONDUCENTE_CONTRAENTE_NOME','CONDUCENTE_CONTRAENTE_NASCITA_DATA','CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD','CONDUCENTE_CONTRAENTE_CITTADINANZA_COD','CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD','CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO','CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD','CONDUCENTE_CONTRAENTE_PATENTE_NUMERO','CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD']; const miss=req.filter(k=>!String(d[k]||'').trim()); const second=['CONDUCENTE2_COGNOME','CONDUCENTE2_NOME','CONDUCENTE2_NASCITA_DATA','CONDUCENTE2_NASCITA_LUOGO_COD','CONDUCENTE2_CITTADINANZA_COD','CONDUCENTE2_DOCIDE_TIPO_COD','CONDUCENTE2_DOCIDE_NUMERO','CONDUCENTE2_DOCIDE_LUOGORIL_COD','CONDUCENTE2_PATENTE_NUMERO','CONDUCENTE2_PATENTE_LUOGORIL_COD','CONDUCENTE2_RECAPITO']; if(second.some(k=>String(d[k]||'').trim())) second.slice(0,10).forEach(k=>{if(!String(d[k]||'').trim()) miss.push(k)}); return {ok:miss.length===0,missing:miss,length:buildCargosRecord(p).length,data:d};}
-function cargosSelect(name,selected,map){return `<select name="${name}">`+Object.entries(map).map(([id,desc])=>`<option value="${esc(id)}" ${String(selected||'')===String(id)?'selected':''}>${esc(id)} - ${esc(desc)}</option>`).join('')+`</select>`;}
-function getPrenotazioneCompleta(id,cb){db.get(`SELECT p.*, m.targa, m.marca, m.modello, m.cargos_veicolo_tipo as m_cargos_veicolo_tipo, m.colore, m.gps, m.blocco_motore FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`,[id],cb);}
-
-// =========================
-// RENDER PORT BINDING FIX
+// RENDER PORT BINDING - VERSIONE DEFINITIVA
 // =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V34B RENDER PORT FIX ONLINE su porta ' + PORT);
+  console.log('DP RENT APP V35 DEFINITIVA STABILE ONLINE su porta ' + PORT);
 });
