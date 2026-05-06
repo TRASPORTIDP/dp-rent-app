@@ -562,7 +562,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V45 FIX ON CONFLICT</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V48 IMPORT DEFINITIVO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1309,7 +1309,108 @@ function runV44DbMigration() {
 }
 runV44DbMigration();
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V45 FIX ON CONFLICT'));
+
+// =========================
+// V48 IMPORT MEZZI DEFINITIVO - NO ON CONFLICT
+// =========================
+const importUploadV48 = multer({ dest: (typeof uploadDir !== 'undefined' ? uploadDir : path.join(__dirname, 'uploads')) });
+
+function v48Cell(row, names) {
+  for (const n of names) {
+    if (Object.prototype.hasOwnProperty.call(row, n) && row[n] !== undefined && row[n] !== null && String(row[n]).trim() !== '') {
+      return String(row[n]).trim();
+    }
+  }
+  return '';
+}
+
+function v48ParseImportFile(filePath) {
+  const wb = XLSX.readFile(filePath, { raw: false });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  return XLSX.utils.sheet_to_json(ws, { defval: '' });
+}
+
+function v48EnsureImportDb(done) {
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS mezzi (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT,
+      targa TEXT,
+      marca TEXT,
+      modello TEXT,
+      tipo TEXT,
+      descrizione TEXT,
+      km TEXT,
+      stato TEXT DEFAULT 'attivo'
+    )`);
+    const cols = {
+      uid:'TEXT', targa:'TEXT', marca:'TEXT', modello:'TEXT', tipo:'TEXT', descrizione:'TEXT',
+      cilindrata:'TEXT', alimentazione:'TEXT', codice_tipo:'TEXT', codice_marca:'TEXT', codice_modello:'TEXT',
+      categoria:'TEXT', posti:'TEXT', km:'TEXT', km_attuali:'TEXT', telaio:'TEXT', colore:'TEXT',
+      stazione:'TEXT', soccorso_stradale:'TEXT', immagini_consegna:'TEXT', prezzo_giorno:'TEXT',
+      km_inclusi:'TEXT', cauzione:'TEXT', deposito:'TEXT', gps:'TEXT', blocco_motore:'TEXT',
+      cargos_veicolo_tipo:'TEXT', anno:'TEXT', note:'TEXT'
+    };
+    const keys = Object.keys(cols);
+    let remaining = keys.length;
+    keys.forEach((c) => {
+      db.run(`ALTER TABLE mezzi ADD COLUMN ${c} ${cols[c]}`, () => {
+        remaining -= 1;
+        if (remaining === 0 && done) done();
+      });
+    });
+  });
+}
+
+function v48TipoFromCodice(codice) {
+  const c = String(codice || '').toUpperCase();
+  if (c.startsWith('F')) return 'furgone';
+  if (c.startsWith('P')) return 'pulmino';
+  if (c.startsWith('A')) return 'auto';
+  if (c.startsWith('X')) return 'attrezzatura';
+  return 'mezzo';
+}
+
+function v48InsertOrUpdateMezzo(row) {
+  const uid = v48Cell(row, ['uid', 'UID', 'Uid']);
+  const targa = v48Cell(row, ['targa', 'Targa']).toUpperCase();
+  const marca = v48Cell(row, ['marca', 'Marca']).toUpperCase();
+  const modello = v48Cell(row, ['modello', 'Modello']).toUpperCase();
+  const km = v48Cell(row, ['km', 'Km percorsi', 'km_attuali', 'KM']);
+  const codice_tipo = v48Cell(row, ['codice_tipo', 'Codice Tipologia Mezzo', 'Codice Tipo', 'codice tipo']);
+  const descrizione = v48Cell(row, ['descrizione', 'Descrizione Tipologia', 'Descrizione']);
+  const cilindrata = v48Cell(row, ['cilindrata', 'Cilindrata']);
+  const alimentazione = v48Cell(row, ['alimentazione', 'Alimentazione']);
+  const tipo = v48Cell(row, ['tipo', 'Tipo']) || v48TipoFromCodice(codice_tipo);
+  const categoria = v48Cell(row, ['categoria', 'Categoria']);
+  const posti = v48Cell(row, ['posti', 'Posti']);
+  const prezzo_giorno = v48Cell(row, ['prezzo_giorno', 'Prezzo giorno']) || (tipo === 'auto' ? '60' : '70');
+  const km_inclusi = v48Cell(row, ['km_inclusi', 'Km inclusi']) || '150';
+  const cauzione = v48Cell(row, ['cauzione', 'Cauzione']) || '500';
+  const gps = v48Cell(row, ['gps', 'GPS']) || '0';
+  const blocco_motore = v48Cell(row, ['blocco_motore', 'Blocco motore']) || '0';
+  const stazione = v48Cell(row, ['stazione', 'Stazione']) || 'Narni';
+  const soccorso = v48Cell(row, ['soccorso_stradale', 'Soccorso stradale']);
+  const immagini = v48Cell(row, ['immagini_consegna', 'Immagini consegna']);
+  const stato = v48Cell(row, ['stato', 'Stato']) || 'attivo';
+
+  return new Promise((resolve, reject) => {
+    if (!targa) return resolve({ skipped: 1 });
+    db.get(`SELECT id FROM mezzi WHERE targa = ? OR (uid <> '' AND uid = ?) LIMIT 1`, [targa, uid], (err, old) => {
+      if (err) return reject(err);
+      const vals = [uid, targa, marca, modello, tipo, descrizione, km, km, codice_tipo, cilindrata, alimentazione, categoria, posti, prezzo_giorno, km_inclusi, cauzione, gps, blocco_motore, stazione, soccorso, immagini, stato];
+      if (old && old.id) {
+        db.run(`UPDATE mezzi SET uid=?, targa=?, marca=?, modello=?, tipo=?, descrizione=?, km=?, km_attuali=?, codice_tipo=?, cilindrata=?, alimentazione=?, categoria=?, posti=?, prezzo_giorno=?, km_inclusi=?, cauzione=?, gps=?, blocco_motore=?, stazione=?, soccorso_stradale=?, immagini_consegna=?, stato=? WHERE id=?`,
+          vals.concat([old.id]), (e) => e ? reject(e) : resolve({ updated: 1 }));
+      } else {
+        db.run(`INSERT INTO mezzi (uid,targa,marca,modello,tipo,descrizione,km,km_attuali,codice_tipo,cilindrata,alimentazione,categoria,posti,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stazione,soccorso_stradale,immagini_consegna,stato) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          vals, (e) => e ? reject(e) : resolve({ inserted: 1 }));
+      }
+    });
+  });
+}
+
+app.get('/versione', (req, res) => res.send('DP RENT APP V48 IMPORT DEFINITIVO'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1358,7 +1459,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V45 FIX ON CONFLICT</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V48 IMPORT DEFINITIVO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1408,58 +1509,59 @@ app.get('/admin/migra-db-v44', (req, res) => {
   }
 });
 
-app.get('/import-mezzi', (req, res) => {
-  res.send(page('Import Excel', `
-    <div class="box">
-      <h2>Import mezzi da Excel</h2>
-      <p>Legge colonne: UID, Targa, Marca, Modello, Km percor, Codice Tipo, Descrizione.</p>
-      <form method="POST" action="/import-mezzi" enctype="multipart/form-data">
-        <input type="file" name="file" accept=".xlsx,.xls,.csv" required>
-        <button>Carica e importa</button>
-      </form>
-    </div>
-  `));
+
+
+
+app.get('/admin/fix-mezzi-db', (req, res) => {
+  v48EnsureImportDb(() => {
+    res.send(page('Fix mezzi DB', '<div class="box"><h2>DB mezzi sistemato V48</h2><p>Ora rifai Import Excel.</p><a class="btn" href="/import-excel">Vai a Import Excel</a></div>'));
+  });
 });
-app.post('/import-mezzi', upload.single('file'), async (req, res) => {
+
+app.get('/admin/rebuild-mezzi', (req, res) => {
+  v48EnsureImportDb(() => {
+    res.send(page('Rebuild mezzi', '<div class="box"><h2>Tabella mezzi pronta V48</h2><p>Non ho cancellato i dati. Ho assicurato tabella e colonne.</p><a class="btn" href="/import-excel">Vai a Import Excel</a></div>'));
+  });
+});
+
+app.get('/import-excel', (req, res) => {
+  res.send(page('Import Excel', `<div class="box">
+    <h2>Import mezzi da Excel/CSV</h2>
+    <p>Versione V48: non usa ON CONFLICT, aggiorna per targa/UID.</p>
+    <form method="post" action="/import-excel" enctype="multipart/form-data">
+      <input type="file" name="file" accept=".xlsx,.xls,.csv" required>
+      <button class="btn" type="submit">Carica e importa</button>
+    </form>
+  </div>`));
+});
+
+app.post('/import-excel', importUploadV48.single('file'), async (req, res) => {
   try {
-    if (!req.file) return res.send('File mancante');
-    const wb = XLSX.readFile(req.file.path);
-    const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]]);
-    let imported = 0;
-
-    for (const r of rows) {
-      const targa = normalize(r['Targa'] || r['targa']);
-      if (!targa) continue;
-      const cat = categoriaFromRow(r);
-      const marca = normalize(r['Marca']);
-      const modello = normalize(r['Modello']);
-      const descPub = descrizionePubblica({ marca, modello, categoria: cat });
-      const km = Number(r['Km percor'] || r['Km percorsi'] || r['Km'] || 0);
-
-      await run(`
-        INSERT INTO mezzi
-        (uid,targa,km,km_attuali,marca,modello,cilindrata,alimentazione,codice_tipo,categoria,descrizione,descrizione_pubblica,posti,stazione,prezzo_giorno,km_inclusi,stato)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,COALESCE((SELECT stato FROM mezzi WHERE targa=?),'disponibile'))
-        ON CONFLICT(targa) DO UPDATE SET
-          uid=excluded.uid, km=excluded.km, km_attuali=excluded.km_attuali, marca=excluded.marca,
-          modello=excluded.modello, cilindrata=excluded.cilindrata, alimentazione=excluded.alimentazione,
-          codice_tipo=excluded.codice_tipo, categoria=excluded.categoria, descrizione=excluded.descrizione,
-          descrizione_pubblica=COALESCE(mezzi.descrizione_pubblica, excluded.descrizione_pubblica),
-          posti=excluded.posti, stazione=excluded.stazione, prezzo_giorno=COALESCE(mezzi.prezzo_giorno, excluded.prezzo_giorno),
-          km_inclusi=COALESCE(mezzi.km_inclusi, excluded.km_inclusi)
-      `, [
-        normalize(r['UID']), targa, km, km, marca, modello, normalize(r['Cilindrata']),
-        normalize(r['Alimentaz'] || r['Alimentazione']), normalize(r['Codice Tip'] || r['Codice Tipo']),
-        cat, normalize(r['Descrizion'] || r['Descrizione'] || r['Immagini consegna']),
-        descPub, cat === '9_POSTI' ? 9 : null, normalize(r['Stazione']),
-        prezzoCategoria(cat), kmCategoria(cat), targa
-      ]);
-      imported++;
-    }
-    try { fs.unlinkSync(req.file.path); } catch {}
-    res.send(page('Import completato', '<div class="box"><h2 class="ok">Import completato</h2></div>'));
+    if (!req.file) throw new Error('Nessun file caricato');
+    v48EnsureImportDb(async () => {
+      try {
+        const rows = v48ParseImportFile(req.file.path);
+        let inserted = 0, updated = 0, skipped = 0;
+        for (const row of rows) {
+          const r = await v48InsertOrUpdateMezzo(row);
+          inserted += r.inserted || 0;
+          updated += r.updated || 0;
+          skipped += r.skipped || 0;
+        }
+        res.send(page('Import completato', `<div class="box">
+          <h2 class="ok">Import completato</h2>
+          <p><b>Inseriti:</b> ${inserted}</p>
+          <p><b>Aggiornati:</b> ${updated}</p>
+          <p><b>Saltati:</b> ${skipped}</p>
+          <a class="btn" href="/mezzi">Vai ai mezzi</a>
+          <a class="btn btn2" href="/import-excel">Nuovo import</a>
+        </div>`));
+      } catch (e) {
+        res.send(page('Errore import', `<div class="box"><h2 class="bad">Errore import</h2><pre>${esc(e.message)}</pre></div>`));
+      }
+    });
   } catch (e) {
-    res.status(500).send(page('Errore import', `<div class="box"><h2 class="bad">Errore import</h2><pre>${esc(e.message)}</pre></div>`));
+    res.send(page('Errore import', `<div class="box"><h2 class="bad">Errore import</h2><pre>${esc(e.message)}</pre></div>`));
   }
 });
 
@@ -2253,7 +2355,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V45 FIX ON CONFLICT / DRIVE / BRAND
+// V48 IMPORT DEFINITIVO / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3552,5 +3654,5 @@ app.use((err, req, res, next) => {
 // RENDER PORT BINDING - V44
 // =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V47 FINAL');
+  console.log('DP RENT APP V48 IMPORT DEFINITIVO ONLINE porta ' + PORT);
 });
