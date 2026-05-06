@@ -3552,4 +3552,5 @@ app.use((err, req, res, next) => {
 // RENDER PORT BINDING - V44
 // =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V45 
+  console.log('DP RENT APP V46 SYNTAX FIX');
+});
