@@ -562,7 +562,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V44 MIGRAZIONE DB MEZZI</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V45 FIX ON CONFLICT</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1180,6 +1180,34 @@ function ocrValue(v) { return esc(v || ''); }
 // =========================
 // V44 MIGRAZIONE FORZATA DB MEZZI / PRENOTAZIONI
 // =========================
+
+// =========================
+// V45 SAFE IMPORT MEZZI
+// =========================
+function insertMezzoSafe(m) {
+  return new Promise((resolve, reject) => {
+    db.run(`
+      INSERT INTO mezzi (
+        uid,targa,marca,modello,km,codice_tipo,descrizione
+      ) VALUES (?,?,?,?,?,?,?)
+    `, [
+      m.uid || '',
+      m.targa || '',
+      m.marca || '',
+      m.modello || '',
+      m.km || '',
+      m.codice_tipo || '',
+      m.descrizione || ''
+    ], function(err){
+      if(err){
+        console.log('V45 insert mezzo error:', err.message);
+        return reject(err);
+      }
+      resolve(this.lastID);
+    });
+  });
+}
+
 function runV44DbMigration() {
   db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS mezzi (
@@ -1281,7 +1309,7 @@ function runV44DbMigration() {
 }
 runV44DbMigration();
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V44 MIGRAZIONE DB MEZZI'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V45 FIX ON CONFLICT'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1330,7 +1358,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V44 MIGRAZIONE DB MEZZI</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V45 FIX ON CONFLICT</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2225,7 +2253,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V44 MIGRAZIONE DB MEZZI / DRIVE / BRAND
+// V45 FIX ON CONFLICT / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3524,5 +3552,4 @@ app.use((err, req, res, next) => {
 // RENDER PORT BINDING - V44
 // =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V44 MIGRAZIONE DB MEZZI ONLINE porta ' + PORT);
-});
+  console.log('DP RENT APP V45 
