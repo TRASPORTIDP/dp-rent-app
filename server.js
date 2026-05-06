@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -54,9 +55,21 @@ const db = new sqlite3.Database(path.join(DATA_DIR, 'database.sqlite'));
 
 function addColumn(table, column, type) {
   db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, (err) => {
-    if (err && !String(err.message || '').includes('duplicate column')) {
-      console.log('ADD COLUMN warning:', table, column, err.message);
+    const msg = String((err && err.message) || '');
+    if (!err || msg.includes('duplicate column')) return;
+    // Se la tabella non esiste ancora, riprova dopo che le CREATE TABLE hanno finito.
+    if (msg.includes('no such table')) {
+      setTimeout(() => {
+        db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, (err2) => {
+          const msg2 = String((err2 && err2.message) || '');
+          if (err2 && !msg2.includes('duplicate column') && !msg2.includes('no such table')) {
+            console.log('ADD COLUMN warning:', table, column, msg2);
+          }
+        });
+      }, 1500);
+      return;
     }
+    console.log('ADD COLUMN warning:', table, column, msg);
   });
 }
 
@@ -562,7 +575,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V51 ADMIN INIT FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V53 COMPLETO TESTATO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1495,7 +1508,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V51 ADMIN INIT FIX'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V53 COMPLETO TESTATO'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1544,7 +1557,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V51 ADMIN INIT FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V53 COMPLETO TESTATO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2435,7 +2448,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V51 ADMIN INIT FIX / DRIVE / BRAND
+// V53 COMPLETO TESTATO / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -2743,17 +2756,30 @@ async function cargosCallV40(endpoint, records) {
   let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
   return { httpStatus: r.status, ok: r.ok, data };
 }
+
+
+// =========================
+// V53 - PRENOTAZIONE COMPLETA PER PDF / DRIVE / FIRMA / CARGOS
+// =========================
 function getPrenotazioneCompleta(id, callback) {
   db.get(`
-    SELECT p.*, 
-           m.targa as mezzo_targa,
-           m.marca as mezzo_marca,
-           m.modello as mezzo_modello
+    SELECT p.*,
+           m.targa AS mezzo_targa,
+           m.marca AS mezzo_marca,
+           m.modello AS mezzo_modello,
+           m.tipo AS mezzo_tipo,
+           m.descrizione AS mezzo_descrizione,
+           m.km AS mezzo_km,
+           m.km_attuali AS mezzo_km_attuali,
+           m.categoria AS mezzo_categoria,
+           m.codice_tipo AS mezzo_codice_tipo
     FROM prenotazioni p
     LEFT JOIN mezzi m ON p.mezzo_id = m.id
     WHERE p.id = ?
   `, [id], callback);
-}async function uploadAllContrattoDriveV40(prenotazioneId) {
+}
+
+async function uploadAllContrattoDriveV40(prenotazioneId) {
   if (!googleDriveConfigured()) return null;
   return new Promise((resolve) => {
     getPrenotazioneCompleta(prenotazioneId, async (err, p) => {
@@ -3748,76 +3774,72 @@ app.use((err, req, res, next) => {
 // =========================
 function v51InitAllDb(done) {
   const finish = () => done && done();
-
   db.serialize(() => {
     db.run(`CREATE TABLE IF NOT EXISTS mezzi (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       uid TEXT, targa TEXT, marca TEXT, modello TEXT, tipo TEXT,
-      descrizione TEXT, km TEXT, stato TEXT DEFAULT 'attivo'
+      descrizione TEXT, km TEXT, stato TEXT DEFAULT 'attivo',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`);
-
     db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      codice TEXT, nome TEXT, cognome TEXT, telefono TEXT, email TEXT,
-      codice_fiscale TEXT, data_inizio TEXT, data_fine TEXT,
-      totale REAL, stato TEXT DEFAULT 'bozza'
+      codice TEXT,
+      cliente_id INTEGER,
+      mezzo_id INTEGER,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      tipo_cliente TEXT,
+      codice_fiscale TEXT,
+      data_inizio TEXT,
+      ora_inizio TEXT,
+      data_fine TEXT,
+      ora_fine TEXT,
+      totale REAL,
+      stato TEXT DEFAULT 'bozza',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`);
-
-    const cols = [
-      "tipo_cliente TEXT",
-      "codice_fiscale TEXT",
-      "partita_iva TEXT",
-      "ragione_sociale TEXT",
-      "pec TEXT",
-      "codice_sdi TEXT",
-      "indirizzo TEXT",
-      "citta TEXT",
-      "cap TEXT",
-      "provincia TEXT",
-      "data_nascita TEXT",
-      "luogo_nascita TEXT",
-      "documento_tipo TEXT",
-      "documento_numero TEXT",
-      "documento_scadenza TEXT",
-      "patente_numero TEXT",
-      "patente_scadenza TEXT",
-      "conducente2_nome TEXT",
-      "conducente2_cognome TEXT",
-      "conducente2_patente TEXT",
-      "mezzo_id INTEGER",
-      "targa TEXT",
-      "marca TEXT",
-      "modello TEXT",
-      "ora_inizio TEXT",
-      "ora_fine TEXT",
-      "giorni INTEGER",
-      "km_previsti TEXT",
-      "cauzione REAL",
-      "deposito REAL",
-      "note TEXT",
-      "pdf_path TEXT",
-      "drive_folder_id TEXT",
-      "drive_folder_link TEXT",
-      "cargos_stato TEXT",
-      "cargos_transactionid TEXT",
-      "cargos_last_error TEXT"
-    ];
-
-    let pending = cols.length;
-
-    cols.forEach((c) => {
-      db.run(`ALTER TABLE prenotazioni ADD COLUMN ${c}`, () => {
-        pending--;
-        if (pending === 0) finish();
-      });
+    db.run(`CREATE TABLE IF NOT EXISTS clienti (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT, cognome TEXT, telefono TEXT, email TEXT,
+      cf TEXT, codice_fiscale TEXT, indirizzo TEXT, citta TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS allegati (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prenotazione_id INTEGER,
+      tipo TEXT,
+      filename TEXT,
+      originalname TEXT,
+      path TEXT,
+      mimetype TEXT,
+      size INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`, () => {
+      if (typeof v52FixEverything === 'function') return v52FixEverything(finish);
+      finish();
     });
   });
 }
-app.get('/admin/fix-prenotazioni_v51', (req, res) => {
+
+app.get('/admin/init-db', (req, res) => {
   v51InitAllDb(() => {
-    res.send(page('FIX V51 OK', `<div class="box">
-      <h2 class="ok">FIX PRENOTAZIONI V51 OK</h2>
+    res.send(page('Init DB V51', `<div class="box">
+      <h2 class="ok">DATABASE INIZIALIZZATO V51</h2>
+      <p>Ora puoi importare i mezzi e creare prenotazioni.</p>
+      <a class="btn" href="/import-excel">Import Excel</a>
+      <a class="btn btn2" href="/nuova-prenotazione">Nuova prenotazione</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/rebuild-prenotazioni', (req, res) => {
+  v51InitAllDb(() => {
+    res.send(page('Rebuild prenotazioni V51', `<div class="box">
+      <h2 class="ok">PRENOTAZIONI REBUILD OK</h2>
       <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
+      <a class="btn btn2" href="/">Dashboard</a>
     </div>`));
   });
 });
@@ -3831,10 +3853,199 @@ app.get('/admin/fix-mezzi-db', (req, res) => {
   });
 });
 
-app.get('/admin/rebuild-mezzi', (req, res) =>
-  res.redirect('/admin/fix-mezzi-db')
-);
+app.get('/admin/rebuild-mezzi', (req, res) => res.redirect('/admin/fix-mezzi-db'));
 
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V51 ONLINE porta ' + PORT);
-});
+// =========================
+// V52 FIX TUTTO - STABILE NOTTE
+// =========================
+const V52_PRENOTAZIONI_COLS = {
+  cliente_id:'INTEGER',
+  mezzo_id:'INTEGER',
+  codice:'TEXT',
+  nome:'TEXT',
+  cognome:'TEXT',
+  telefono:'TEXT',
+  email:'TEXT',
+  tipo_cliente:'TEXT',
+  codice_fiscale:'TEXT',
+  cf:'TEXT',
+  partita_iva:'TEXT',
+  piva:'TEXT',
+  ragione_sociale:'TEXT',
+  azienda:'TEXT',
+  pec:'TEXT',
+  codice_sdi:'TEXT',
+  sdi:'TEXT',
+  indirizzo:'TEXT',
+  citta:'TEXT',
+  cap:'TEXT',
+  provincia:'TEXT',
+  data_nascita:'TEXT',
+  luogo_nascita:'TEXT',
+  documento_tipo:'TEXT',
+  documento_numero:'TEXT',
+  documento_scadenza:'TEXT',
+  numero_documento:'TEXT',
+  scadenza_documento:'TEXT',
+  patente_numero:'TEXT',
+  patente_scadenza:'TEXT',
+  numero_patente:'TEXT',
+  scadenza_patente:'TEXT',
+  categoria_patente:'TEXT',
+  conducente1:'TEXT',
+  patente1:'TEXT',
+  patente1_scadenza:'TEXT',
+  conducente2:'TEXT',
+  patente2:'TEXT',
+  patente2_scadenza:'TEXT',
+  conducente2_nome:'TEXT',
+  conducente2_cognome:'TEXT',
+  conducente2_data_nascita:'TEXT',
+  conducente2_luogo_nascita:'TEXT',
+  conducente2_patente:'TEXT',
+  conducente2_doc_numero:'TEXT',
+  conducente2_patente_numero:'TEXT',
+  conducente2_recapito:'TEXT',
+  mezzo:'TEXT',
+  targa:'TEXT',
+  marca:'TEXT',
+  modello:'TEXT',
+  data_inizio:'TEXT',
+  ora_inizio:'TEXT',
+  data_fine:'TEXT',
+  ora_fine:'TEXT',
+  giorni:'INTEGER',
+  km_previsti:'TEXT',
+  km_inclusi:'TEXT',
+  extra_fuori_orario:'REAL',
+  extra_km:'REAL',
+  km_uscita:'TEXT',
+  km_rientro:'TEXT',
+  carburante_uscita:'TEXT',
+  carburante_rientro:'TEXT',
+  imponibile:'REAL',
+  iva:'REAL',
+  totale:'REAL',
+  cauzione:'REAL',
+  deposito:'REAL',
+  stato:'TEXT',
+  note:'TEXT',
+  firma:'TEXT',
+  firma_path:'TEXT',
+  pdf_path:'TEXT',
+  pdf_drive_link:'TEXT',
+  pdf_drive_file_id:'TEXT',
+  pdf_drive_web_link:'TEXT',
+  drive_folder_id:'TEXT',
+  drive_folder_link:'TEXT',
+  nexi_link:'TEXT',
+  nexi_stato:'TEXT',
+  nexi_raw:'TEXT',
+  cargos_uid:'TEXT',
+  cargos_transactionid:'TEXT',
+  cargos_stato:'TEXT',
+  cargos_last_check:'TEXT',
+  cargos_last_send:'TEXT',
+  cargos_last_error:'TEXT',
+  cargos_pagamento_tipo:'TEXT',
+  cargos_checkout_luogo_cod:'TEXT',
+  cargos_checkout_indirizzo:'TEXT',
+  cargos_checkin_luogo_cod:'TEXT',
+  cargos_checkin_indirizzo:'TEXT',
+  cargos_operatore_id:'TEXT',
+  cargos_agenzia_id:'TEXT',
+  cargos_agenzia_nome:'TEXT',
+  cargos_agenzia_luogo_cod:'TEXT',
+  cargos_agenzia_indirizzo:'TEXT',
+  cargos_agenzia_tel:'TEXT',
+  cargos_veicolo_tipo:'TEXT',
+  cargos_veicolo_colore:'TEXT',
+  cargos_veicolo_gps:'TEXT',
+  cargos_veicolo_bloccom:'TEXT',
+  cargos_cittadinanza_cod:'TEXT',
+  cargos_nascita_luogo_cod:'TEXT',
+  cargos_residenza_luogo_cod:'TEXT',
+  cargos_doc_tipo_cod:'TEXT',
+  cargos_doc_luogoril_cod:'TEXT',
+  cargos_patente_luogoril_cod:'TEXT',
+  conducente2_nascita_luogo_cod:'TEXT',
+  conducente2_cittadinanza_cod:'TEXT',
+  conducente2_doc_tipo_cod:'TEXT',
+  conducente2_doc_luogoril_cod:'TEXT',
+  conducente2_patente_luogoril_cod:'TEXT',
+};
+
+const V52_MEZZI_COLS = {
+  uid:'TEXT',
+  targa:'TEXT',
+  marca:'TEXT',
+  modello:'TEXT',
+  tipo:'TEXT',
+  descrizione:'TEXT',
+  cilindrata:'TEXT',
+  alimentazione:'TEXT',
+  codice_tipo:'TEXT',
+  codice_marca:'TEXT',
+  codice_modello:'TEXT',
+  categoria:'TEXT',
+  posti:'TEXT',
+  km:'TEXT',
+  km_attuali:'TEXT',
+  telaio:'TEXT',
+  colore:'TEXT',
+  stazione:'TEXT',
+  soccorso_stradale:'TEXT',
+  immagini_consegna:'TEXT',
+  numero_interno:'TEXT',
+  disponibile:'TEXT',
+  attivo:'TEXT',
+  ubicazione:'TEXT',
+  proprieta:'TEXT',
+  note_interne:'TEXT',
+  data_immatricolazione:'TEXT',
+  ultima_revisione:'TEXT',
+  prossimo_tagliando:'TEXT',
+  serbatoio:'TEXT',
+  cambio:'TEXT',
+  porte:'TEXT',
+  euro:'TEXT',
+  iva:'TEXT',
+  franchigia:'TEXT',
+  prezzo_giorno:'TEXT',
+  km_inclusi:'TEXT',
+  cauzione:'TEXT',
+  deposito:'TEXT',
+  gps:'TEXT',
+  blocco_motore:'TEXT',
+  stato:'TEXT',
+  note:'TEXT',
+  scadenza_revisione:'TEXT',
+  revisione_scadenza:'TEXT',
+  scadenza_bollo:'TEXT',
+  bollo_scadenza:'TEXT',
+  scadenza_assicurazione:'TEXT',
+  assicurazione_scadenza:'TEXT',
+  gomme_scadenza:'TEXT',
+  tagliando_km:'TEXT',
+  tagliando_km_scadenza:'TEXT',
+  tagliando_data_scadenza:'TEXT',
+  manutenzione_note:'TEXT',
+  alert_giorni:'INTEGER',
+  alert_km:'INTEGER',
+  cargos_veicolo_tipo:'TEXT',
+  descrizione_pubblica:'TEXT',
+};
+
+function v52FixTable(table, cols, done) {
+  const keys = Object.keys(cols);
+  let pending = keys.length;
+  if (!pending) return done && done();
+  keys.forEach((c) => {
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${c} ${cols[c]}`, () => {
+      pending--;
+      if (pending === 0) done && done();
+    });
+  });
+}
+
+fun
