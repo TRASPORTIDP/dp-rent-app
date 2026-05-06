@@ -562,7 +562,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V43 COMPLETE MEZZI</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V44 MIGRAZIONE DB MEZZI</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1176,7 +1176,112 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V43 COMPLETE MEZZI'));
+
+// =========================
+// V44 MIGRAZIONE FORZATA DB MEZZI / PRENOTAZIONI
+// =========================
+function runV44DbMigration() {
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS mezzi (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT,
+      targa TEXT,
+      marca TEXT,
+      modello TEXT,
+      tipo TEXT,
+      descrizione TEXT,
+      km TEXT,
+      stato TEXT DEFAULT 'attivo'
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      codice TEXT,
+      cliente_id INTEGER,
+      mezzo_id INTEGER,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      cf TEXT,
+      data_inizio TEXT,
+      ora_inizio TEXT,
+      data_fine TEXT,
+      ora_fine TEXT,
+      totale REAL,
+      stato TEXT DEFAULT 'bozza'
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS clienti (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      cf TEXT,
+      indirizzo TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS allegati (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prenotazione_id INTEGER,
+      tipo TEXT,
+      filename TEXT,
+      originalname TEXT,
+      path TEXT,
+      mimetype TEXT,
+      size INTEGER,
+      drive_file_id TEXT,
+      drive_web_link TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    const mezziCols = {
+      uid:'TEXT', targa:'TEXT', marca:'TEXT', modello:'TEXT', tipo:'TEXT', descrizione:'TEXT',
+      cilindrata:'TEXT', alimentazione:'TEXT', codice_tipo:'TEXT', codice_marca:'TEXT', codice_modello:'TEXT',
+      categoria:'TEXT', posti:'TEXT', km:'TEXT', km_attuali:'TEXT', telaio:'TEXT', colore:'TEXT',
+      stazione:'TEXT', soccorso_stradale:'TEXT', immagini_consegna:'TEXT', prezzo_giorno:'TEXT',
+      km_inclusi:'TEXT', cauzione:'TEXT', deposito:'TEXT', gps:'TEXT', blocco_motore:'TEXT',
+      cargos_veicolo_tipo:'TEXT', anno:'TEXT', numero_interno:'TEXT', disponibile:'TEXT',
+      attivo:'TEXT', ubicazione:'TEXT', proprieta:'TEXT', note:'TEXT', note_interne:'TEXT',
+      data_immatricolazione:'TEXT', ultima_revisione:'TEXT', scadenza_revisione:'TEXT',
+      scadenza_bollo:'TEXT', scadenza_assicurazione:'TEXT', prossimo_tagliando:'TEXT',
+      tagliando_km:'TEXT', serbatoio:'TEXT', cambio:'TEXT', porte:'TEXT', euro:'TEXT',
+      iva:'TEXT', franchigia:'TEXT'
+    };
+
+    for (const [c,t] of Object.entries(mezziCols)) {
+      db.run(`ALTER TABLE mezzi ADD COLUMN ${c} ${t}`, (err) => {
+        if (err && !String(err.message || '').includes('duplicate column')) {
+          console.log('V44 ADD COLUMN mezzi warning:', c, err.message);
+        }
+      });
+    }
+
+    const prenCols = {
+      cargos_uid:'TEXT', cargos_transactionid:'TEXT', cargos_stato:'TEXT',
+      cargos_last_check:'TEXT', cargos_last_send:'TEXT', cargos_last_error:'TEXT',
+      drive_folder_id:'TEXT', drive_folder_link:'TEXT', pdf_drive_link:'TEXT',
+      indirizzo:'TEXT', citta:'TEXT', cap:'TEXT', provincia:'TEXT',
+      numero_documento:'TEXT', numero_patente:'TEXT', data_nascita:'TEXT',
+      luogo_nascita:'TEXT', fatturazione:'TEXT', azienda:'TEXT', piva:'TEXT',
+      pec:'TEXT', sdi:'TEXT'
+    };
+
+    for (const [c,t] of Object.entries(prenCols)) {
+      db.run(`ALTER TABLE prenotazioni ADD COLUMN ${c} ${t}`, (err) => {
+        if (err && !String(err.message || '').includes('duplicate column')) {
+          console.log('V44 ADD COLUMN prenotazioni warning:', c, err.message);
+        }
+      });
+    }
+  });
+  console.log('V44 migrazione DB eseguita');
+}
+runV44DbMigration();
+
+app.get('/versione', (req, res) => res.send('DP RENT APP V44 MIGRAZIONE DB MEZZI'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1225,7 +1330,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V43 COMPLETE MEZZI</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V44 MIGRAZIONE DB MEZZI</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1264,6 +1369,16 @@ app.post('/logo', multer({
     filename: (req,file,cb)=>cb(null,'logo.png')
   })
 }).single('logo'), (req, res) => res.redirect('/logo'));
+
+
+app.get('/admin/migra-db-v44', (req, res) => {
+  try {
+    runV44DbMigration();
+    res.send(page('Migrazione DB V44', '<div class="box"><h2>Migrazione DB V44 eseguita</h2><p>Ora riprova Import Excel.</p><a class="btn" href="/import-excel">Torna import</a><a class="btn btn2" href="/mezzi">Mezzi</a></div>'));
+  } catch(e) {
+    res.status(500).send('Errore migrazione: ' + e.message);
+  }
+});
 
 app.get('/import-mezzi', (req, res) => {
   res.send(page('Import Excel', `
@@ -2110,7 +2225,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V43 COMPLETE MEZZI / DRIVE / BRAND
+// V44 MIGRAZIONE DB MEZZI / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3405,6 +3520,9 @@ app.use((err, req, res, next) => {
 // =========================
 // RENDER PORT BINDING - V42
 // =========================
+// =========================
+// RENDER PORT BINDING - V44
+// =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V43 COMPLETE MEZZI ONLINE porta ' + PORT);
+  console.log('DP RENT APP V44 MIGRAZIONE DB MEZZI ONLINE porta ' + PORT);
 });
