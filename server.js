@@ -2743,8 +2743,17 @@ async function cargosCallV40(endpoint, records) {
   let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
   return { httpStatus: r.status, ok: r.ok, data };
 }
-
-async function uploadAllContrattoDriveV40(prenotazioneId) {
+function getPrenotazioneCompleta(id, callback) {
+  db.get(`
+    SELECT p.*, 
+           m.targa as mezzo_targa,
+           m.marca as mezzo_marca,
+           m.modello as mezzo_modello
+    FROM prenotazioni p
+    LEFT JOIN mezzi m ON p.mezzo_id = m.id
+    WHERE p.id = ?
+  `, [id], callback);
+}async function uploadAllContrattoDriveV40(prenotazioneId) {
   if (!googleDriveConfigured()) return null;
   return new Promise((resolve) => {
     getPrenotazioneCompleta(prenotazioneId, async (err, p) => {
