@@ -3777,8 +3777,32 @@ app.get('/admin/rebuild-prenotazioni', (req, res) => {
     </div>`));
   });
 });
+app.get('/admin/fix-prenotazioni_v51', (req, res) => {
+  v51InitAllDb(() => {
+    const cols = [
+      "tipo_cliente TEXT",
+      "codice_fiscale TEXT",
+      "partita_iva TEXT",
+      "ragione_sociale TEXT",
+      "pec TEXT",
+      "codice_sdi TEXT"
+    ];
 
-app.get('/admin/fix-mezzi-db', (req, res) => {
+    let done = 0;
+
+    cols.forEach((c) => {
+      db.run(`ALTER TABLE prenotazioni ADD COLUMN ${c}`, () => {
+        done++;
+        if (done === cols.length) {
+          res.send(page('FIX V51 OK', `<div class="box">
+            <h2 class="ok">FIX PRENOTAZIONI V51 OK</h2>
+            <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
+          </div>`));
+        }
+      });
+    });
+  });
+});app.get('/admin/fix-mezzi-db', (req, res) => {
   v51InitAllDb(() => {
     res.send(page('Fix mezzi DB V51', `<div class="box">
       <h2 class="ok">MEZZI DB OK</h2>
