@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -1457,7 +1458,7 @@ app.post('/import-mezzi', upload.single('file'), async (req, res) => {
       imported++;
     }
     try { fs.unlinkSync(req.file.path); } catch {}
-    res.send(page('Import completato', `<div class="box"><h2 class="ok">Import completato</h2><p>Mezzi importati/aggiornati: <b>${imported}</b></p><a class="btn" href="/mezzi-web">Vai ai mezzi</a></div>`));
+    res.send(page('Import completato', '<div class="box"><h2 class="ok">Import completato</h2></div>'));
   } catch (e) {
     res.status(500).send(page('Errore import', `<div class="box"><h2 class="bad">Errore import</h2><pre>${esc(e.message)}</pre></div>`));
   }
@@ -3552,5 +3553,5 @@ app.use((err, req, res, next) => {
 // RENDER PORT BINDING - V44
 // =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V46 SYNTAX FIX');
+  console.log('DP RENT APP V47 FINAL');
 });
