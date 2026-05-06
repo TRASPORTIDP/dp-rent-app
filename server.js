@@ -562,7 +562,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V49 IMPORT LINK FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V50 PRENOTAZIONI FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1410,7 +1410,92 @@ function v48InsertOrUpdateMezzo(row) {
   });
 }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V49 IMPORT LINK FIX'));
+
+// =========================
+// V50 MIGRAZIONE PRENOTAZIONI DEFINITIVA
+// =========================
+function v50EnsurePrenotazioniDb(done) {
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      codice TEXT,
+      cliente_id INTEGER,
+      mezzo_id INTEGER,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      codice_fiscale TEXT,
+      cf TEXT,
+      data_inizio TEXT,
+      ora_inizio TEXT,
+      data_fine TEXT,
+      ora_fine TEXT,
+      totale REAL,
+      stato TEXT DEFAULT 'bozza',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    const cols = {
+      codice:'TEXT', cliente_id:'INTEGER', mezzo_id:'INTEGER',
+      nome:'TEXT', cognome:'TEXT', telefono:'TEXT', email:'TEXT',
+      codice_fiscale:'TEXT', cf:'TEXT', indirizzo:'TEXT', citta:'TEXT',
+      cap:'TEXT', provincia:'TEXT', data_nascita:'TEXT', luogo_nascita:'TEXT',
+      numero_documento:'TEXT', scadenza_documento:'TEXT',
+      numero_patente:'TEXT', scadenza_patente:'TEXT', categoria_patente:'TEXT',
+      conducente2_nome:'TEXT', conducente2_cognome:'TEXT',
+      conducente2_data_nascita:'TEXT', conducente2_luogo_nascita:'TEXT',
+      conducente2_doc_numero:'TEXT', conducente2_patente_numero:'TEXT',
+      conducente2_recapito:'TEXT',
+      fatturazione:'TEXT', azienda:'TEXT', piva:'TEXT', pec:'TEXT', sdi:'TEXT',
+      mezzo:'TEXT', targa:'TEXT', marca:'TEXT', modello:'TEXT',
+      data_inizio:'TEXT', ora_inizio:'TEXT', data_fine:'TEXT', ora_fine:'TEXT',
+      giorni:'INTEGER', km_previsti:'TEXT', km_inclusi:'TEXT',
+      km_uscita:'TEXT', km_rientro:'TEXT',
+      carburante_uscita:'TEXT', carburante_rientro:'TEXT',
+      totale:'REAL', imponibile:'REAL', iva:'REAL', cauzione:'REAL', deposito:'REAL',
+      firma:'TEXT', pdf_path:'TEXT', pdf_drive_link:'TEXT',
+      drive_folder_id:'TEXT', drive_folder_link:'TEXT',
+      note:'TEXT', created_at:'TEXT',
+      cargos_uid:'TEXT', cargos_transactionid:'TEXT', cargos_stato:'TEXT',
+      cargos_last_check:'TEXT', cargos_last_send:'TEXT', cargos_last_error:'TEXT',
+      cargos_pagamento_tipo:'TEXT', cargos_checkout_luogo_cod:'TEXT',
+      cargos_checkout_indirizzo:'TEXT', cargos_checkin_luogo_cod:'TEXT',
+      cargos_checkin_indirizzo:'TEXT', cargos_agenzia_id:'TEXT',
+      cargos_operatore_id:'TEXT', cargos_luogo_cod:'TEXT',
+      cargos_nascita_luogo_cod:'TEXT', cargos_cittadinanza_cod:'TEXT',
+      cargos_residenza_luogo_cod:'TEXT', cargos_doc_tipo_cod:'TEXT',
+      cargos_doc_luogoril_cod:'TEXT', cargos_patente_luogoril_cod:'TEXT'
+    };
+
+    const keys = Object.keys(cols);
+    let pending = keys.length;
+    keys.forEach((c) => {
+      db.run(`ALTER TABLE prenotazioni ADD COLUMN ${c} ${cols[c]}`, () => {
+        pending--;
+        if (pending === 0 && done) done();
+      });
+    });
+  });
+}
+
+function v50EnsureAllDb(done) {
+  v50EnsurePrenotazioniDb(() => {
+    if (typeof v48EnsureImportDb === 'function') {
+      v48EnsureImportDb(() => done && done());
+    } else if (typeof runV44DbMigration === 'function') {
+      runV44DbMigration();
+      done && done();
+    } else {
+      done && done();
+    }
+  });
+}
+
+// esegue all'avvio
+v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
+
+app.get('/versione', (req, res) => res.send('DP RENT APP V50 PRENOTAZIONI FIX'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1459,7 +1544,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V49 IMPORT LINK FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V50 PRENOTAZIONI FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1926,6 +2011,29 @@ app.get('/cliente/:id', (req, res) => {
   });
 });
 
+
+app.get('/admin/rebuild-prenotazioni', (req, res) => {
+  v50EnsureAllDb(() => {
+    res.send(page('Rebuild prenotazioni V50', `<div class="box">
+      <h2 class="ok">PRENOTAZIONI REBUILD OK</h2>
+      <p>Tabella prenotazioni aggiornata con codice_fiscale, documenti, patente, privacy, Drive e Ca.R.G.O.S.</p>
+      <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
+      <a class="btn btn2" href="/">Dashboard</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/init-db', (req, res) => {
+  v50EnsureAllDb(() => {
+    res.send(page('Init DB V50', `<div class="box">
+      <h2 class="ok">DATABASE DP RENT V50 OK</h2>
+      <p>Mezzi e prenotazioni inizializzati.</p>
+      <a class="btn" href="/import-excel">Import Excel</a>
+      <a class="btn btn2" href="/nuova-prenotazione">Nuova prenotazione</a>
+    </div>`));
+  });
+});
+
 app.get('/nuova-da-cliente/:id', (req, res) => {
   db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err, c) => {
     if (!c) return res.redirect('/clienti');
@@ -2360,7 +2468,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V49 IMPORT LINK FIX / DRIVE / BRAND
+// V50 PRENOTAZIONI FIX / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3657,7 +3765,3 @@ app.use((err, req, res, next) => {
 // =========================
 // =========================
 // RENDER PORT BINDING - V44
-// =========================
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V49 IMPORT LINK FIX ONLINE porta ' + PORT);
-});
