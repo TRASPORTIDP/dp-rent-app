@@ -562,7 +562,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V50 PRENOTAZIONI FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V51 ADMIN INIT FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1495,7 +1495,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V50 PRENOTAZIONI FIX'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V51 ADMIN INIT FIX'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1544,7 +1544,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V50 PRENOTAZIONI FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V51 ADMIN INIT FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1597,20 +1597,8 @@ app.get('/admin/migra-db-v44', (req, res) => {
 
 
 
-app.get('/admin/fix-mezzi-db', (req, res) => {
-  v48EnsureImportDb(() => {
-    res.send(page('Fix mezzi DB', '<div class="box"><h2>DB mezzi sistemato V48</h2><p>Ora rifai Import Excel.</p><a class="btn" href="/import-excel">Vai a Import Excel</a></div>'));
-  });
-});
-
-app.get('/admin/rebuild-mezzi', (req, res) => {
-  v48EnsureImportDb(() => {
-    res.send(page('Rebuild mezzi', '<div class="box"><h2>Tabella mezzi pronta V48</h2><p>Non ho cancellato i dati. Ho assicurato tabella e colonne.</p><a class="btn" href="/import-excel">Vai a Import Excel</a></div>'));
-  });
-});
 
 
-// V49 alias vecchio link import mezzi
 app.get('/import-mezzi', (req, res) => res.redirect('/import-excel'));
 app.post('/import-mezzi', (req, res) => res.redirect(307, '/import-excel'));
 
@@ -2012,27 +2000,6 @@ app.get('/cliente/:id', (req, res) => {
 });
 
 
-app.get('/admin/rebuild-prenotazioni', (req, res) => {
-  v50EnsureAllDb(() => {
-    res.send(page('Rebuild prenotazioni V50', `<div class="box">
-      <h2 class="ok">PRENOTAZIONI REBUILD OK</h2>
-      <p>Tabella prenotazioni aggiornata con codice_fiscale, documenti, patente, privacy, Drive e Ca.R.G.O.S.</p>
-      <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
-      <a class="btn btn2" href="/">Dashboard</a>
-    </div>`));
-  });
-});
-
-app.get('/admin/init-db', (req, res) => {
-  v50EnsureAllDb(() => {
-    res.send(page('Init DB V50', `<div class="box">
-      <h2 class="ok">DATABASE DP RENT V50 OK</h2>
-      <p>Mezzi e prenotazioni inizializzati.</p>
-      <a class="btn" href="/import-excel">Import Excel</a>
-      <a class="btn btn2" href="/nuova-prenotazione">Nuova prenotazione</a>
-    </div>`));
-  });
-});
 
 app.get('/nuova-da-cliente/:id', (req, res) => {
   db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err, c) => {
@@ -2468,7 +2435,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V50 PRENOTAZIONI FIX / DRIVE / BRAND
+// V51 ADMIN INIT FIX / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3765,3 +3732,62 @@ app.use((err, req, res, next) => {
 // =========================
 // =========================
 // RENDER PORT BINDING - V44
+// =========================
+
+// =========================
+// V51 ADMIN INIT ROUTES GARANTITE
+// =========================
+function v51InitAllDb(done) {
+  const finish = () => done && done();
+  try {
+    if (typeof v50EnsureAllDb === 'function') return v50EnsureAllDb(finish);
+    if (typeof v50EnsurePrenotazioniDb === 'function') return v50EnsurePrenotazioniDb(() => {
+      if (typeof v48EnsureImportDb === 'function') return v48EnsureImportDb(finish);
+      finish();
+    });
+    if (typeof v48EnsureImportDb === 'function') return v48EnsureImportDb(finish);
+    if (typeof runV44DbMigration === 'function') { runV44DbMigration(); return finish(); }
+    db.serialize(() => {
+      db.run(`CREATE TABLE IF NOT EXISTS mezzi (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT, targa TEXT, marca TEXT, modello TEXT, tipo TEXT, descrizione TEXT, km TEXT, stato TEXT DEFAULT 'attivo')`);
+      db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (id INTEGER PRIMARY KEY AUTOINCREMENT, codice TEXT, nome TEXT, cognome TEXT, telefono TEXT, email TEXT, codice_fiscale TEXT, data_inizio TEXT, data_fine TEXT, totale REAL, stato TEXT DEFAULT 'bozza')`, finish);
+    });
+  } catch(e) {
+    console.log('V51 init db error:', e.message);
+    finish();
+  }
+}
+
+app.get('/admin/init-db', (req, res) => {
+  v51InitAllDb(() => {
+    res.send(page('Init DB V51', `<div class="box">
+      <h2 class="ok">DATABASE INIZIALIZZATO V51</h2>
+      <p>Ora puoi importare i mezzi e creare prenotazioni.</p>
+      <a class="btn" href="/import-excel">Import Excel</a>
+      <a class="btn btn2" href="/nuova-prenotazione">Nuova prenotazione</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/rebuild-prenotazioni', (req, res) => {
+  v51InitAllDb(() => {
+    res.send(page('Rebuild prenotazioni V51', `<div class="box">
+      <h2 class="ok">PRENOTAZIONI REBUILD OK</h2>
+      <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
+      <a class="btn btn2" href="/">Dashboard</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/fix-mezzi-db', (req, res) => {
+  v51InitAllDb(() => {
+    res.send(page('Fix mezzi DB V51', `<div class="box">
+      <h2 class="ok">MEZZI DB OK</h2>
+      <a class="btn" href="/import-excel">Import Excel</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/rebuild-mezzi', (req, res) => res.redirect('/admin/fix-mezzi-db'));
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V51 ADMIN INIT FIX ONLINE porta ' + PORT);
+});
