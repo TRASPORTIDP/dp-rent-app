@@ -3739,79 +3739,68 @@ app.use((err, req, res, next) => {
 // =========================
 function v51InitAllDb(done) {
   const finish = () => done && done();
-  try {
-    if (typeof v50EnsureAllDb === 'function') return v50EnsureAllDb(finish);
-    if (typeof v50EnsurePrenotazioniDb === 'function') return v50EnsurePrenotazioniDb(() => {
-      if (typeof v48EnsureImportDb === 'function') return v48EnsureImportDb(finish);
-      finish();
-    });
-    if (typeof v48EnsureImportDb === 'function') return v48EnsureImportDb(finish);
-    if (typeof runV44DbMigration === 'function') { runV44DbMigration(); return finish(); }
-    db.serialize(() => {
-      db.run(`CREATE TABLE IF NOT EXISTS mezzi (id INTEGER PRIMARY KEY AUTOINCREMENT, uid TEXT, targa TEXT, marca TEXT, modello TEXT, tipo TEXT, descrizione TEXT, km TEXT, stato TEXT DEFAULT 'attivo')`);
-      db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (id INTEGER PRIMARY KEY AUTOINCREMENT, codice TEXT, nome TEXT, cognome TEXT, telefono TEXT, email TEXT, codice_fiscale TEXT, data_inizio TEXT, data_fine TEXT, totale REAL, stato TEXT DEFAULT 'bozza')`, finish);
-    });
-  } catch(e) {
-    console.log('V51 init db error:', e.message);
-    finish();
-  }
-}
 
-app.get('/admin/init-db', (req, res) => {
-  v51InitAllDb(() => {
-    res.send(page('Init DB V51', `<div class="box">
-      <h2 class="ok">DATABASE INIZIALIZZATO V51</h2>
-      <p>Ora puoi importare i mezzi e creare prenotazioni.</p>
-      <a class="btn" href="/import-excel">Import Excel</a>
-      <a class="btn btn2" href="/nuova-prenotazione">Nuova prenotazione</a>
-    </div>`));
-  });
-});
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS mezzi (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT, targa TEXT, marca TEXT, modello TEXT, tipo TEXT,
+      descrizione TEXT, km TEXT, stato TEXT DEFAULT 'attivo'
+    )`);
 
-app.get('/admin/rebuild-prenotazioni', (req, res) => {
-  v51InitAllDb(() => {
-    res.send(page('Rebuild prenotazioni V51', `<div class="box">
-      <h2 class="ok">PRENOTAZIONI REBUILD OK</h2>
-      <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
-      <a class="btn btn2" href="/">Dashboard</a>
-    </div>`));
-  });
-});
-app.get('/admin/fix-prenotazioni_v51', (req, res) => {
-  v51InitAllDb(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      codice TEXT, nome TEXT, cognome TEXT, telefono TEXT, email TEXT,
+      codice_fiscale TEXT, data_inizio TEXT, data_fine TEXT,
+      totale REAL, stato TEXT DEFAULT 'bozza'
+    )`);
+
     const cols = [
       "tipo_cliente TEXT",
       "codice_fiscale TEXT",
       "partita_iva TEXT",
       "ragione_sociale TEXT",
       "pec TEXT",
-      "codice_sdi TEXT"
+      "codice_sdi TEXT",
+      "indirizzo TEXT",
+      "citta TEXT",
+      "cap TEXT",
+      "provincia TEXT",
+      "data_nascita TEXT",
+      "luogo_nascita TEXT",
+      "documento_tipo TEXT",
+      "documento_numero TEXT",
+      "documento_scadenza TEXT",
+      "patente_numero TEXT",
+      "patente_scadenza TEXT",
+      "conducente2_nome TEXT",
+      "conducente2_cognome TEXT",
+      "conducente2_patente TEXT",
+      "mezzo_id INTEGER",
+      "targa TEXT",
+      "marca TEXT",
+      "modello TEXT",
+      "ora_inizio TEXT",
+      "ora_fine TEXT",
+      "giorni INTEGER",
+      "km_previsti TEXT",
+      "cauzione REAL",
+      "deposito REAL",
+      "note TEXT",
+      "pdf_path TEXT",
+      "drive_folder_id TEXT",
+      "drive_folder_link TEXT",
+      "cargos_stato TEXT",
+      "cargos_transactionid TEXT",
+      "cargos_last_error TEXT"
     ];
 
-    let done = 0;
+    let pending = cols.length;
 
     cols.forEach((c) => {
       db.run(`ALTER TABLE prenotazioni ADD COLUMN ${c}`, () => {
-        done++;
-        if (done === cols.length) {
-          res.send(page('FIX V51 OK', `<div class="box">
-            <h2 class="ok">FIX PRENOTAZIONI V51 OK</h2>
-            <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
-          </div>`));
-        }
+        pending--;
+        if (pending === 0) finish();
       });
     });
   });
-});app.get('/admin/fix-mezzi-db', (req, res) => {
-  v51InitAllDb(() => {
-    res.send(page('Fix mezzi DB V51', `<div class="box">
-      <h2 class="ok">MEZZI DB OK</h2>
-      <a class="btn" href="/import-excel">Import Excel</a>
-    </div>`));
-  });
-});
-
-app.get('/admin/rebuild-mezzi', (req, res) => res.redirect('/admin/fix-mezzi-db'));
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V51 ADMIN INIT FIX ONLINE porta ' + PORT);
-});
+}
