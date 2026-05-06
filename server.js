@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -4048,4 +4047,94 @@ function v52FixTable(table, cols, done) {
   });
 }
 
-fun
+function v52FixEverything(done) {
+  db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS mezzi (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      uid TEXT,
+      targa TEXT,
+      marca TEXT,
+      modello TEXT,
+      tipo TEXT,
+      descrizione TEXT,
+      km TEXT,
+      stato TEXT DEFAULT 'attivo',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      codice TEXT,
+      cliente_id INTEGER,
+      mezzo_id INTEGER,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      tipo_cliente TEXT,
+      codice_fiscale TEXT,
+      data_inizio TEXT,
+      ora_inizio TEXT,
+      data_fine TEXT,
+      ora_fine TEXT,
+      totale REAL,
+      stato TEXT DEFAULT 'bozza',
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS clienti (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT,
+      cognome TEXT,
+      telefono TEXT,
+      email TEXT,
+      cf TEXT,
+      codice_fiscale TEXT,
+      indirizzo TEXT,
+      citta TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+    db.run(`CREATE TABLE IF NOT EXISTS allegati (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prenotazione_id INTEGER,
+      tipo TEXT,
+      filename TEXT,
+      originalname TEXT,
+      path TEXT,
+      mimetype TEXT,
+      size INTEGER,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    )`);
+    v52FixTable('mezzi', V52_MEZZI_COLS, () => {
+      v52FixTable('prenotazioni', V52_PRENOTAZIONI_COLS, () => {
+        console.log('V53 FIX TUTTO OK');
+        done && done();
+      });
+    });
+  });
+}
+
+// Esegue il fix automatico dopo l'avvio senza bloccare il server.
+setTimeout(() => v52FixEverything(() => {}), 1200);
+
+app.get('/admin/fix-tutto', (req, res) => {
+  v52FixEverything(() => {
+    res.send(page('FIX TUTTO V53', `<div class="box">
+      <h2 class="ok">FIX TUTTO V53 OK</h2>
+      <p>Database aggiornato: mezzi, prenotazioni, clienti, allegati.</p>
+      <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
+      <a class="btn btn2" href="/mezzi">Mezzi</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/fix-prenotazioni_v51', (req, res) => {
+  v52FixEverything(() => {
+    res.send(page('FIX PRENOTAZIONI', `<div class="box">
+      <h2 class="ok">FIX PRENOTAZIONI OK</h2>
+      <p>Colonna tipo_cliente e campi azienda/documenti aggiunti.</p>
+      <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
+    </div>`));
+  });
+});
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V53 COMPLETO TESTATO ONLINE porta ' + PORT);
+});
