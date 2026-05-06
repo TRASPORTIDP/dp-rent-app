@@ -3804,3 +3804,28 @@ function v51InitAllDb(done) {
     });
   });
 }
+app.get('/admin/fix-prenotazioni_v51', (req, res) => {
+  v51InitAllDb(() => {
+    res.send(page('FIX V51 OK', `<div class="box">
+      <h2 class="ok">FIX PRENOTAZIONI V51 OK</h2>
+      <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/fix-mezzi-db', (req, res) => {
+  v51InitAllDb(() => {
+    res.send(page('Fix mezzi DB V51', `<div class="box">
+      <h2 class="ok">MEZZI DB OK</h2>
+      <a class="btn" href="/import-excel">Import Excel</a>
+    </div>`));
+  });
+});
+
+app.get('/admin/rebuild-mezzi', (req, res) =>
+  res.redirect('/admin/fix-mezzi-db')
+);
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V51 ONLINE porta ' + PORT);
+});
