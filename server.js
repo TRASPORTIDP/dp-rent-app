@@ -88,6 +88,27 @@ db.serialize(() => {
   // V40 CARGOS / DRIVE columns
   addColumn('prenotazioni','cargos_uid','TEXT');
 addColumn('mezzi','uid','TEXT');
+addColumn('mezzi','uid','TEXT');
+addColumn('mezzi','cilindrata','TEXT');
+addColumn('mezzi','alimentazione','TEXT');
+addColumn('mezzi','anno','TEXT');
+addColumn('mezzi','colore','TEXT');
+addColumn('mezzi','posti','TEXT');
+addColumn('mezzi','km','TEXT');
+addColumn('mezzi','km_attuali','TEXT');
+addColumn('mezzi','telaio','TEXT');
+addColumn('mezzi','categoria','TEXT');
+addColumn('mezzi','cauzione','TEXT');
+addColumn('mezzi','prezzo_giorno','TEXT');
+addColumn('mezzi','km_inclusi','TEXT');
+addColumn('mezzi','note','TEXT');
+addColumn('mezzi','scadenza_revisione','TEXT');
+addColumn('mezzi','scadenza_bollo','TEXT');
+addColumn('mezzi','scadenza_assicurazione','TEXT');
+addColumn('mezzi','tagliando_km','TEXT');
+addColumn('mezzi','gps','TEXT');
+addColumn('mezzi','blocco_motore','TEXT');
+addColumn('mezzi','cargos_veicolo_tipo','TEXT');
   addColumn('prenotazioni','cargos_transactionid','TEXT');
   addColumn('prenotazioni','cargos_stato','TEXT');
   addColumn('prenotazioni','cargos_last_check','TEXT');
@@ -239,6 +260,27 @@ addColumn('mezzi','uid','TEXT');
   // CARGOS PRO V38 columns
   addColumn('prenotazioni','cargos_uid','TEXT');
 addColumn('mezzi','uid','TEXT');
+addColumn('mezzi','uid','TEXT');
+addColumn('mezzi','cilindrata','TEXT');
+addColumn('mezzi','alimentazione','TEXT');
+addColumn('mezzi','anno','TEXT');
+addColumn('mezzi','colore','TEXT');
+addColumn('mezzi','posti','TEXT');
+addColumn('mezzi','km','TEXT');
+addColumn('mezzi','km_attuali','TEXT');
+addColumn('mezzi','telaio','TEXT');
+addColumn('mezzi','categoria','TEXT');
+addColumn('mezzi','cauzione','TEXT');
+addColumn('mezzi','prezzo_giorno','TEXT');
+addColumn('mezzi','km_inclusi','TEXT');
+addColumn('mezzi','note','TEXT');
+addColumn('mezzi','scadenza_revisione','TEXT');
+addColumn('mezzi','scadenza_bollo','TEXT');
+addColumn('mezzi','scadenza_assicurazione','TEXT');
+addColumn('mezzi','tagliando_km','TEXT');
+addColumn('mezzi','gps','TEXT');
+addColumn('mezzi','blocco_motore','TEXT');
+addColumn('mezzi','cargos_veicolo_tipo','TEXT');
   addColumn('prenotazioni','cargos_stato','TEXT');
   addColumn('prenotazioni','cargos_last_check','TEXT');
   addColumn('prenotazioni','cargos_last_send','TEXT');
@@ -520,7 +562,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V41 FIX UID</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V42 FIX IMPORT MEZZI</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1134,7 +1176,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V41 FIX UID'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V42 FIX IMPORT MEZZI'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1183,7 +1225,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V41 FIX UID</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V42 FIX IMPORT MEZZI</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2068,7 +2110,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V41 FIX UID / DRIVE / BRAND
+// V42 FIX IMPORT MEZZI / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3360,6 +3402,9 @@ app.use((err, req, res, next) => {
 // =========================
 // RENDER PORT BINDING - V40
 // =========================
+// =========================
+// RENDER PORT BINDING - V42
+// =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V41 FIX UID ONLINE su porta ' + PORT);
+  console.log('DP RENT APP V42 FIX IMPORT MEZZI ONLINE su porta ' + PORT);
 });
