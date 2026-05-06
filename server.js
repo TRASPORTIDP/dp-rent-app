@@ -562,7 +562,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V48 IMPORT DEFINITIVO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V49 IMPORT LINK FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1410,7 +1410,7 @@ function v48InsertOrUpdateMezzo(row) {
   });
 }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V48 IMPORT DEFINITIVO'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V49 IMPORT LINK FIX'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1459,7 +1459,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V48 IMPORT DEFINITIVO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V49 IMPORT LINK FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -1523,6 +1523,11 @@ app.get('/admin/rebuild-mezzi', (req, res) => {
     res.send(page('Rebuild mezzi', '<div class="box"><h2>Tabella mezzi pronta V48</h2><p>Non ho cancellato i dati. Ho assicurato tabella e colonne.</p><a class="btn" href="/import-excel">Vai a Import Excel</a></div>'));
   });
 });
+
+
+// V49 alias vecchio link import mezzi
+app.get('/import-mezzi', (req, res) => res.redirect('/import-excel'));
+app.post('/import-mezzi', (req, res) => res.redirect(307, '/import-excel'));
 
 app.get('/import-excel', (req, res) => {
   res.send(page('Import Excel', `<div class="box">
@@ -2355,7 +2360,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V48 IMPORT DEFINITIVO / DRIVE / BRAND
+// V49 IMPORT LINK FIX / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3654,5 +3659,5 @@ app.use((err, req, res, next) => {
 // RENDER PORT BINDING - V44
 // =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V48 IMPORT DEFINITIVO ONLINE porta ' + PORT);
+  console.log('DP RENT APP V49 IMPORT LINK FIX ONLINE porta ' + PORT);
 });
