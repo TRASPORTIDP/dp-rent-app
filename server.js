@@ -87,6 +87,7 @@ function all(sql, params = []) {
 db.serialize(() => {
   // V40 CARGOS / DRIVE columns
   addColumn('prenotazioni','cargos_uid','TEXT');
+addColumn('mezzi','uid','TEXT');
   addColumn('prenotazioni','cargos_transactionid','TEXT');
   addColumn('prenotazioni','cargos_stato','TEXT');
   addColumn('prenotazioni','cargos_last_check','TEXT');
@@ -237,6 +238,7 @@ db.serialize(() => {
 
   // CARGOS PRO V38 columns
   addColumn('prenotazioni','cargos_uid','TEXT');
+addColumn('mezzi','uid','TEXT');
   addColumn('prenotazioni','cargos_stato','TEXT');
   addColumn('prenotazioni','cargos_last_check','TEXT');
   addColumn('prenotazioni','cargos_last_send','TEXT');
@@ -518,7 +520,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V40 CARGOS REALE DRIVE PRIVACY</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V41 FIX UID</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1132,7 +1134,7 @@ Se un campo non Ã¨ visibile lascia vuoto.`;
 
 function ocrValue(v) { return esc(v || ''); }
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V40 CARGOS REALE DRIVE PRIVACY'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V41 FIX UID'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1181,7 +1183,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V40 CARGOS REALE DRIVE PRIVACY</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V41 FIX UID</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2066,7 +2068,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V40 CARGOS REALE DRIVE PRIVACY / DRIVE / BRAND
+// V41 FIX UID / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3359,5 +3361,5 @@ app.use((err, req, res, next) => {
 // RENDER PORT BINDING - V40
 // =========================
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V40 CARGOS REALE DRIVE PRIVACY ONLINE su porta ' + PORT);
+  console.log('DP RENT APP V41 FIX UID ONLINE su porta ' + PORT);
 });
