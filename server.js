@@ -499,7 +499,7 @@ function euro(v) { return Number(v || 0).toFixed(2); }
 
 
 const DP_PRIVACY_URL = process.env.DP_PRIVACY_URL || '/privacy';
-const DP_TERMS_URL = process.env.DP_TERMS_URL || '/termini-noleggio';
+const DP_TERMS_URL = process.env.DP_TERMS_URL || '/condizioni-noleggio';
 
 function privacyCheckboxHtml() {
   return `
@@ -574,7 +574,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V53 COMPLETO TESTATO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V54 CARGOS PRIVACY FOTO PDF</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -930,8 +930,8 @@ function row(doc, label, value, x, y, w) {
 
 function pdfFileNameForContract(p) {
   const safe = String(p.codice || p.id).replace(/[^a-zA-Z0-9_-]/g, '');
-  const signed = p.firma_path && fs.existsSync(p.firma_path) ? '_firmato' : '';
-  return `contratto_${safe}${signed}.pdf`;
+  // V54: un solo PDF per contratto. Se firmi, viene rigenerato lo stesso file.
+  return `contratto_${safe}.pdf`;
 }
 
 function shouldUploadPdfToDrive(p, forceDrive) {
@@ -1150,6 +1150,27 @@ async function cargosSendRecords(records, method='Check') {
   if (!r.ok) throw new Error(`HTTP Ca.R.G.O.S. ${r.status}: ${text}`);
   return data;
 }
+
+
+// V54 - test veloce configurazione CARGOS senza toccare prenotazioni
+app.get('/admin/cargos-test-token', async (req, res) => {
+  try {
+    const token = await cargosGetToken();
+    const encrypted = cargosEncryptAes(token);
+    res.send(page('CARGOS TOKEN OK', `<div class="box">
+      <h2 class="ok">CARGOS TOKEN/AES OK</h2>
+      <p>Token ricevuto e cifrato AES correttamente.</p>
+      <p>Token cifrato: ${esc(encrypted).slice(0,80)}...</p>
+      <a class="btn" href="/cargos">Ca.R.G.O.S.</a>
+    </div>`));
+  } catch (e) {
+    res.status(500).send(page('CARGOS TOKEN KO', `<div class="box">
+      <h2 class="bad">CARGOS TOKEN/AES KO</h2>
+      <pre>${esc(e.message)}</pre>
+      <p>Controlla CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_BASE_URL.</p>
+    </div>`));
+  }
+});
 
 async function estraiDatiDocumentoConAI(localPath, mimetype) {
   if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY mancante su Render.');
@@ -1507,7 +1528,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V53 COMPLETO TESTATO'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V54 CARGOS PRIVACY FOTO PDF'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1556,7 +1577,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V53 COMPLETO TESTATO</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V54 CARGOS PRIVACY FOTO PDF</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2436,18 +2457,17 @@ async function cargosRealCall(action, p) {
       message:'Servono CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_BASE_URL.'
     };
   }
-  return {
-    ok:false,
-    action,
-    error:'API_AES_DA_ATTIVARE',
-    message:'Record CARGOS pronto e valido. Prima dellâinvio reale serve confermare endpoint Token/Check/Send AES dal portale.',
-    length:validation.length
-  };
+  try {
+    const data = await cargosSendRecords([buildCargosFixedRecord(p)], action === 'send' ? 'Send' : 'Check');
+    return { ok:true, action, data, length:validation.length };
+  } catch (e) {
+    return { ok:false, action, error:'API_ERRORE', message:e.message, length:validation.length };
+  }
 }
 
 
 // =========================
-// V53 COMPLETO TESTATO / DRIVE / BRAND
+// V54 CARGOS PRIVACY FOTO PDF / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -2731,12 +2751,14 @@ async function cargosGetTokenV40() {
 }
 
 function cargosEncryptTokenV40(accessToken) {
-  const keySource = String(process.env.CARGOS_APIKEY || '');
-  if (keySource.length < 24) throw new Error('CARGOS_APIKEY deve avere almeno 24 caratteri');
-  const key = Buffer.from(keySource.slice(0, 24), 'utf8');
-  const cipher = crypto.createCipheriv('des-ede3', key, null); // 3DES ECB PKCS7
+  // V54: AES ufficiale Ca.R.G.O.S. - primi 32 caratteri APIKEY = Key, successivi 16 = IV.
+  const apiKey = String(process.env.CARGOS_APIKEY || '');
+  if (apiKey.length < 48) throw new Error('CARGOS_APIKEY deve avere almeno 48 caratteri per cifratura AES');
+  const key = Buffer.from(apiKey.substring(0, 32), 'utf8');
+  const iv = Buffer.from(apiKey.substring(32, 48), 'utf8');
+  const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
   cipher.setAutoPadding(true);
-  return Buffer.concat([cipher.update(Buffer.from(accessToken, 'utf8')), cipher.final()]).toString('base64');
+  return Buffer.concat([cipher.update(String(accessToken), 'utf8'), cipher.final()]).toString('base64');
 }
 
 async function cargosCallV40(endpoint, records) {
@@ -2758,7 +2780,7 @@ async function cargosCallV40(endpoint, records) {
 
 
 // =========================
-// V53 - PRENOTAZIONE COMPLETA PER PDF / DRIVE / FIRMA / CARGOS
+// V54 - PRENOTAZIONE COMPLETA PER PDF / DRIVE / FIRMA / CARGOS
 // =========================
 function getPrenotazioneCompleta(id, callback) {
   db.get(`
@@ -2830,6 +2852,8 @@ function condizioniHtmlV40() {
 
 app.get('/privacy', (req, res) => res.send(privacyHtmlV40()));
 app.get('/condizioni', (req, res) => res.send(condizioniHtmlV40()));
+app.get('/condizioni-noleggio', (req, res) => res.send(condizioniHtmlV40()));
+app.get('/termini-noleggio', (req, res) => res.redirect('/condizioni-noleggio'));
 
 app.get('/cargos/:id/txt', (req, res) => {
   getPrenotazioneCompleta(req.params.id, (err, p) => {
@@ -3375,9 +3399,21 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   let driveRes = null;
 
+  // V54: salva sempre anche in cartella locale del contratto: contratti/DPR-.../documenti/
+  let finalPath = req.file.path;
+  try {
+    const folder = path.join(contractsDir, safeFileName(p?.codice || ('contratto_' + req.params.id)), 'documenti');
+    fs.mkdirSync(folder, { recursive: true });
+    const finalName = safeFileName(`${Date.now()}_${req.body.tipo || 'file'}_${req.file.originalname || req.file.filename}`);
+    finalPath = path.join(folder, finalName);
+    fs.copyFileSync(req.file.path, finalPath);
+  } catch (e) {
+    console.log('Errore copia documento in cartella contratto:', e.message);
+  }
+
   try {
     driveRes = await uploadFileToDrive(
-      req.file.path,
+      finalPath,
       `${Date.now()}_${req.body.tipo}_${req.file.originalname}`,
       req.file.mimetype,
       `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`
@@ -3391,16 +3427,17 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     [
       req.params.id,
       req.body.tipo,
-      req.file.filename,
+      path.basename(finalPath),
       req.file.originalname,
-      req.file.path,
+      finalPath,
       req.file.mimetype,
       driveRes?.id || null,
       driveRes?.webViewLink || null
     ]
   );
 
-  await uploadAllContrattoDriveV40(req.params.id); res.redirect(`/documenti/${req.params.id}`);
+  // V54: non rigenera/uploada il PDF ogni volta che carichi una foto, cosÃ¬ non crea 3 copie contratto.
+  res.redirect(`/documenti/${req.params.id}`);
 });
 
 app.get('/checkout/:id', async (req, res) => {
@@ -3428,7 +3465,7 @@ app.post('/checkin/:id', async (req, res) => {
 
 app.get('/contratto/:id', async (req, res) => {
   try {
-    const file = await generaPdfContratto(req.params.id, { forceDrive: true });
+    const file = await generaPdfContratto(req.params.id, { forceDrive: false });
     res.download(file);
   } catch (e) {
     res.status(500).send(page('Errore PDF', `<div class="box"><h2 class="bad">Errore PDF</h2><pre>${esc(e.message)}</pre></div>`));
@@ -3496,7 +3533,7 @@ app.post('/firma/:id', async (req, res) => {
     const file = path.join(firmeDir, `firma_${req.params.id}.png`);
     fs.writeFileSync(file, base64, 'base64');
     await run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id]);
-    await generaPdfContratto(req.params.id, { forceDrive: true });
+    await generaPdfContratto(req.params.id, { forceDrive: false });
     res.send('OK');
   } catch (e) {
     res.status(500).send(e.message);
@@ -3554,7 +3591,7 @@ app.get('/email/:id', async (req,res)=>{
 });
 app.post('/email/:id', async (req,res)=>{
   try {
-    const file = await generaPdfContratto(req.params.id, { forceDrive: true });
+    const file = await generaPdfContratto(req.params.id, { forceDrive: false });
     await sendEmail(req.body.email, 'Contratto DP RENT', req.body.messaggio || 'In allegato contratto DP RENT.', [{filename:path.basename(file),path:file}]);
     await run(`UPDATE prenotazioni SET stato='inviato_email' WHERE id=?`,[req.params.id]);
     res.send(actionScreen(req.params.id,'Email inviata','Contratto inviato correttamente.'));
@@ -4101,11 +4138,14 @@ function v52FixEverything(done) {
       path TEXT,
       mimetype TEXT,
       size INTEGER,
+      drive_file_id TEXT,
+      drive_web_link TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )`);
+    v52FixTable('allegati', { drive_file_id:'TEXT', drive_web_link:'TEXT', size:'INTEGER' }, () => {});
     v52FixTable('mezzi', V52_MEZZI_COLS, () => {
       v52FixTable('prenotazioni', V52_PRENOTAZIONI_COLS, () => {
-        console.log('V53 FIX TUTTO OK');
+        console.log('V54 FIX TUTTO OK');
         done && done();
       });
     });
@@ -4117,8 +4157,8 @@ setTimeout(() => v52FixEverything(() => {}), 1200);
 
 app.get('/admin/fix-tutto', (req, res) => {
   v52FixEverything(() => {
-    res.send(page('FIX TUTTO V53', `<div class="box">
-      <h2 class="ok">FIX TUTTO V53 OK</h2>
+    res.send(page('FIX TUTTO V54', `<div class="box">
+      <h2 class="ok">FIX TUTTO V54 OK</h2>
       <p>Database aggiornato: mezzi, prenotazioni, clienti, allegati.</p>
       <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
       <a class="btn btn2" href="/mezzi">Mezzi</a>
@@ -4136,5 +4176,5 @@ app.get('/admin/fix-prenotazioni_v51', (req, res) => {
   });
 });
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V53 COMPLETO TESTATO ONLINE porta ' + PORT);
+  console.log('DP RENT APP V54 CARGOS PRIVACY FOTO PDF ONLINE porta ' + PORT);
 });
