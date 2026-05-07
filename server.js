@@ -13,6 +13,26 @@ const nodemailer = require('nodemailer');
 const crypto = require('crypto');
 
 const app = express();
+
+
+// =========================
+// V58 PRIVACY / CLAUSOLE STATICHE
+// =========================
+const appPublicDir = path.join(__dirname, 'public');
+try { fs.mkdirSync(appPublicDir, { recursive: true }); } catch(e) {}
+app.use('/public', express.static(appPublicDir));
+app.use(express.static(appPublicDir));
+app.get('/privacy.pdf', (req, res) => {
+  const p1 = path.join(publicDir, 'privacy.pdf');
+  const p2 = path.join(appPublicDir, 'privacy.pdf');
+  res.sendFile(fs.existsSync(p1) ? p1 : p2);
+});
+app.get('/clausole.pdf', (req, res) => {
+  const p1 = path.join(publicDir, 'clausole.pdf');
+  const p2 = path.join(appPublicDir, 'clausole.pdf');
+  res.sendFile(fs.existsSync(p1) ? p1 : p2);
+});
+
 const PORT = process.env.PORT || 10000;
 
 app.use(bodyParser.urlencoded({ extended: true, limit: '80mb' }));
@@ -38,7 +58,7 @@ const PRIVACY_URL = process.env.PRIVACY_URL || '';
 
 
 // =========================
-// V57 PERSISTENT DATA RENDER
+// V58 PERSISTENT DATA RENDER
 // =========================
 const PERSISTENT_DATA_DIR = process.env.DATA_DIR || '/var/data';
 try { fs.mkdirSync(PERSISTENT_DATA_DIR, { recursive: true }); } catch(e) {}
@@ -58,7 +78,7 @@ const tempDir = path.join(DATA_DIR, 'tmp');
   try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch(e) {}
 });
 
-// V57: migra il vecchio database una sola volta se esiste nel percorso non persistente.
+// V58: migra il vecchio database una sola volta se esiste nel percorso non persistente.
 try {
   const oldDbCandidates = [
     path.join(__dirname, 'data', 'database.sqlite'),
@@ -68,23 +88,23 @@ try {
     for (const oldDb of oldDbCandidates) {
       if (oldDb !== DB_PATH && fs.existsSync(oldDb)) {
         fs.copyFileSync(oldDb, DB_PATH);
-        console.log('V57 DB migrato su disco persistente da ' + oldDb + ' a ' + DB_PATH);
+        console.log('V58 DB migrato su disco persistente da ' + oldDb + ' a ' + DB_PATH);
         break;
       }
     }
   }
 } catch(e) {
-  console.log('V57 DB migration skip:', e.message);
+  console.log('V58 DB migration skip:', e.message);
 }
 
 
-// DATA_DIR gestito da V57 persistent block
-// uploadDir gestito da V57 persistent block
-// contractsDir gestito da V57 persistent block
-// firmeDir gestito da V57 persistent block
-// publicDir gestito da V57 persistent block
+// DATA_DIR gestito da V58 persistent block
+// uploadDir gestito da V58 persistent block
+// contractsDir gestito da V58 persistent block
+// firmeDir gestito da V58 persistent block
+// publicDir gestito da V58 persistent block
 
-// directory create gestito da V57 persistent block
+// directory create gestito da V58 persistent block
 
 app.use('/public', express.static(publicDir));
 app.use('/uploads', express.static(uploadDir));
@@ -562,6 +582,11 @@ function privacyCheckboxHtml() {
 const OCR_PREFILL = {};
 function makeOcrId(){ return 'OCR' + Date.now() + Math.floor(Math.random()*10000); }
 
+
+function publicBaseUrl(req) {
+  return process.env.APP_BASE_URL || process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+}
+
 function page(title, content) {
   const logoPath = path.join(publicDir, 'logo.png');
   const logoHtml = fs.existsSync(logoPath)
@@ -615,7 +640,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V57 PERSISTENT FIXED</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V58 PRIVACY CLAUSOLE FINAL</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -750,7 +775,7 @@ function googleDriveConfigured() {
   return !!(process.env.DRIVE_WEBAPP_URL && process.env.GOOGLE_DRIVE_FOLDER_ID);
 }
 
-async function getOrCreateDriveContractFolderV57(p) {
+async function getOrCreateDriveContractFolderV58(p) {
   if (!drive) return null;
   const folderName = `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`.trim();
   const parent = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || null;
@@ -765,7 +790,7 @@ async function getOrCreateDriveContractFolderV57(p) {
   return created.data;
 }
 
-async function deleteDriveFilesByNameV57(folderId, name) {
+async function deleteDriveFilesByNameV58(folderId, name) {
   if (!drive || !folderId || !name) return;
   const safeName = String(name).replace(/'/g, "\\'");
   const found = await drive.files.list({
@@ -778,7 +803,7 @@ async function deleteDriveFilesByNameV57(folderId, name) {
   }
 }
 
-async function uploadFileToDriveFolderV57(localPath, fileName, mimeType, folderId) {
+async function uploadFileToDriveFolderV58(localPath, fileName, mimeType, folderId) {
   if (!drive || !folderId) return null;
   const media = { mimeType: mimeType || 'application/octet-stream', body: fs.createReadStream(localPath) };
   const uploaded = await drive.files.create({
@@ -1010,7 +1035,7 @@ function row(doc, label, value, x, y, w) {
 }
 
 function pdfFileNameForContract(p) {
-  const safe = String(p.codice || p.id).replace(/[^a-zA-Z0-9_-]/g, '');
+  const safe = String((p && (p.codice || p.id)) || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '');
   return `contratto_${safe}.pdf`;
 }
 
@@ -1097,7 +1122,16 @@ async function generaPdfContratto(id, opts = {}) {
   }
   doc.text('Firma DP RENT:', 330, y);
   doc.text('______________________________', 330, y+25);
-  doc.end();
+  
+  const baseUrl = process.env.APP_BASE_URL || process.env.PUBLIC_URL || '';
+  doc.moveDown(0.8);
+  doc.fontSize(10).fillColor('blue')
+    .text('Privacy Policy', { link: baseUrl ? `${baseUrl}/privacy.pdf` : '/privacy.pdf', underline: true });
+  doc.moveDown(0.3);
+  doc.text('Condizioni Generali di Noleggio', { link: baseUrl ? `${baseUrl}/clausole.pdf` : '/clausole.pdf', underline: true });
+  doc.fillColor('black');
+
+doc.end();
 
   await new Promise((resolve, reject) => {
     stream.on('finish', resolve);
@@ -1232,7 +1266,7 @@ async function cargosSendRecords(records, method='Check') {
 }
 
 
-// V57 - test veloce configurazione CARGOS senza toccare prenotazioni
+// V58 - test veloce configurazione CARGOS senza toccare prenotazioni
 app.get('/admin/cargos-test-token', async (req, res) => {
   try {
     const token = await cargosGetToken();
@@ -1608,7 +1642,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V57 PERSISTENT FIXED'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V58 PRIVACY CLAUSOLE FINAL'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1657,7 +1691,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V57 PERSISTENT FIXED</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V58 PRIVACY CLAUSOLE FINAL</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2547,7 +2581,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V57 PERSISTENT FIXED / DRIVE / BRAND
+// V58 PRIVACY CLAUSOLE FINAL / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -2831,7 +2865,7 @@ async function cargosGetTokenV40() {
 }
 
 function cargosEncryptTokenV40(accessToken) {
-  // V57: AES ufficiale Ca.R.G.O.S. - primi 32 caratteri APIKEY = Key, successivi 16 = IV.
+  // V58: AES ufficiale Ca.R.G.O.S. - primi 32 caratteri APIKEY = Key, successivi 16 = IV.
   const apiKey = String(process.env.CARGOS_APIKEY || '');
   if (apiKey.length < 48) throw new Error('CARGOS_APIKEY deve avere almeno 48 caratteri per cifratura AES');
   const key = Buffer.from(apiKey.substring(0, 32), 'utf8');
@@ -2860,7 +2894,7 @@ async function cargosCallV40(endpoint, records) {
 
 
 // =========================
-// V57 - PRENOTAZIONE COMPLETA PER PDF / DRIVE / FIRMA / CARGOS
+// V58 - PRENOTAZIONE COMPLETA PER PDF / DRIVE / FIRMA / CARGOS
 // =========================
 function getPrenotazioneCompleta(id, callback) {
   db.get(`
@@ -2881,12 +2915,12 @@ function getPrenotazioneCompleta(id, callback) {
 }
 
 async function uploadAllContrattoDriveV40(prenotazioneId) {
-  // V57: una sola cartella Drive per contratto, un solo PDF. Le foto vanno nella stessa cartella.
+  // V58: una sola cartella Drive per contratto, un solo PDF. Le foto vanno nella stessa cartella.
   try {
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
     if (!p) return null;
 
-    const folder = await getOrCreateDriveContractFolderV57(p);
+    const folder = await getOrCreateDriveContractFolderV58(p);
     if (!folder) return null;
 
     await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`,
@@ -2895,8 +2929,8 @@ async function uploadAllContrattoDriveV40(prenotazioneId) {
     const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false });
     const pdfName = path.basename(pdf);
 
-    await deleteDriveFilesByNameV57(folder.id, pdfName);
-    const uploadedPdf = await uploadFileToDriveFolderV57(pdf, pdfName, 'application/pdf', folder.id);
+    await deleteDriveFilesByNameV58(folder.id, pdfName);
+    const uploadedPdf = await uploadFileToDriveFolderV58(pdf, pdfName, 'application/pdf', folder.id);
 
     await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=? WHERE id=?`,
       [pdf, uploadedPdf?.webViewLink || null, prenotazioneId]);
@@ -2905,7 +2939,7 @@ async function uploadAllContrattoDriveV40(prenotazioneId) {
     for (const a of (allegati || [])) {
       if (a.drive_file_id) continue;
       if (!a.path || !fs.existsSync(a.path)) continue;
-      const up = await uploadFileToDriveFolderV57(
+      const up = await uploadFileToDriveFolderV58(
         a.path,
         a.originalname || a.filename || path.basename(a.path),
         a.mimetype || 'application/octet-stream',
@@ -2919,7 +2953,7 @@ async function uploadAllContrattoDriveV40(prenotazioneId) {
 
     return { folder, pdf: uploadedPdf };
   } catch (e) {
-    console.log('uploadAllContrattoDriveV40 V57 error:', e.message);
+    console.log('uploadAllContrattoDriveV40 V58 error:', e.message);
     return null;
   }
 }
@@ -3498,7 +3532,7 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   let driveRes = null;
 
-  // V57: salva sempre anche in cartella locale del contratto: contratti/DPR-.../documenti/
+  // V58: salva sempre anche in cartella locale del contratto: contratti/DPR-.../documenti/
   let finalPath = req.file.path;
   try {
     const folder = path.join(contractsDir, safeFileName(p?.codice || ('contratto_' + req.params.id)), 'documenti');
@@ -3535,8 +3569,8 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     ]
   );
 
-  // V57: sincronizza foto nella stessa cartella Drive e sostituisce una sola copia PDF.
-  try { await uploadAllContrattoDriveV40(req.params.id); } catch(e) { console.log('Drive sync V57:', e.message); }
+  // V58: sincronizza foto nella stessa cartella Drive e sostituisce una sola copia PDF.
+  try { await uploadAllContrattoDriveV40(req.params.id); } catch(e) { console.log('Drive sync V58:', e.message); }
   res.redirect(`/documenti/${req.params.id}`);
 });
 
@@ -4245,7 +4279,7 @@ function v52FixEverything(done) {
     v52FixTable('allegati', { drive_file_id:'TEXT', drive_web_link:'TEXT', size:'INTEGER' }, () => {});
     v52FixTable('mezzi', V52_MEZZI_COLS, () => {
       v52FixTable('prenotazioni', V52_PRENOTAZIONI_COLS, () => {
-        console.log('V57 FIX TUTTO OK');
+        console.log('V58 FIX TUTTO OK');
         done && done();
       });
     });
@@ -4265,12 +4299,12 @@ app.get('/admin/pulisci-pdf-drive/:id', async (req, res) => {
   try {
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
     if (!p) return res.send('Contratto non trovato');
-    const folder = await getOrCreateDriveContractFolderV57(p);
+    const folder = await getOrCreateDriveContractFolderV58(p);
     if (!folder) return res.send('Drive non configurato');
     const pdfName = pdfFileNameForContract(p);
-    await deleteDriveFilesByNameV57(folder.id, pdfName);
+    await deleteDriveFilesByNameV58(folder.id, pdfName);
     const pdf = await generaPdfContratto(req.params.id, { forceDrive:false });
-    await uploadFileToDriveFolderV57(pdf, pdfName, 'application/pdf', folder.id);
+    await uploadFileToDriveFolderV58(pdf, pdfName, 'application/pdf', folder.id);
     res.send(page('PDF DRIVE PULITO', `<div class="box"><h2 class="ok">PDF DRIVE PULITO</h2><a class="btn" href="/documenti/${req.params.id}">Documenti</a></div>`));
   } catch(e) {
     res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
@@ -4279,8 +4313,8 @@ app.get('/admin/pulisci-pdf-drive/:id', async (req, res) => {
 
 app.get('/admin/fix-tutto', (req, res) => {
   v52FixEverything(() => {
-    res.send(page('FIX TUTTO V57', `<div class="box">
-      <h2 class="ok">FIX TUTTO V57 OK</h2>
+    res.send(page('FIX TUTTO V58', `<div class="box">
+      <h2 class="ok">FIX TUTTO V58 OK</h2>
       <p>Database aggiornato: mezzi, prenotazioni, clienti, allegati.</p>
       <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
       <a class="btn btn2" href="/mezzi">Mezzi</a>
@@ -4298,14 +4332,14 @@ app.get('/admin/fix-prenotazioni_v51', (req, res) => {
   });
 });
 
-// V57 blocco download cargos: CARGOS non scarica file, usa pagina verifica/invia.
+// V58 blocco download cargos: CARGOS non scarica file, usa pagina verifica/invia.
 app.get('/cargos/download/:id', (req, res) => res.redirect('/cargos/' + req.params.id));
 app.get('/download-cargos/:id', (req, res) => res.redirect('/cargos/' + req.params.id));
 app.get('/record-cargos/:id', (req, res) => res.redirect('/cargos/' + req.params.id));
 
 
 // =========================
-// V57 ADMIN FIX PERSISTENTE
+// V58 ADMIN FIX PERSISTENTE
 // =========================
 app.get('/admin/persistent-check', async (req, res) => {
   try {
@@ -4321,10 +4355,10 @@ app.get('/admin/persistent-check', async (req, res) => {
       exists_uploads: fs.existsSync(uploadDir),
       exists_contracts: fs.existsSync(contractsDir)
     };
-    res.send(page('Persistent check V57', `<div class="box">
-      <h2 class="ok">PERSISTENT DATA V57 OK</h2>
+    res.send(page('Persistent check V58', `<div class="box">
+      <h2 class="ok">PERSISTENT DATA V58 OK</h2>
       <pre>${esc(JSON.stringify(info, null, 2))}</pre>
-      <a class="btn" href="/admin/fix-tutto-v57">Fix tutto V57</a>
+      <a class="btn" href="/admin/fix-tutto-v57">Fix tutto V58</a>
       <a class="btn btn2" href="/">Dashboard</a>
     </div>`));
   } catch(e) {
@@ -4368,7 +4402,7 @@ app.get('/admin/fix-tutto-v57', (req, res) => {
       note_interne:'TEXT'
     };
     const allegatiCols = {
-      prenotazione_id:'INTEGER', tipo:'TEXT', filename:'TEXT', originalname:'TEXT',
+      prenotazione_id:'INTEGER', mezzo_id:'INTEGER', tipo:'TEXT', filename:'TEXT', originalname:'TEXT',
       path:'TEXT', mimetype:'TEXT', size:'INTEGER',
       drive_file_id:'TEXT', drive_web_link:'TEXT'
     };
@@ -4384,8 +4418,8 @@ app.get('/admin/fix-tutto-v57', (req, res) => {
       v52FixTable(table, cols, () => {
         pendingTables--;
         if (pendingTables === 0) {
-          res.send(page('FIX TUTTO V57 OK', `<div class="box">
-            <h2 class="ok">FIX TUTTO V57 OK</h2>
+          res.send(page('FIX TUTTO V58 OK', `<div class="box">
+            <h2 class="ok">FIX TUTTO V58 OK</h2>
             <p>DB: ${esc(DB_PATH)}</p>
             <p>Dati: ${esc(DATA_DIR)}</p>
             <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
@@ -4400,6 +4434,30 @@ app.get('/admin/fix-tutto-v57', (req, res) => {
 app.get('/admin/fix-tutto-v56', (req, res) => res.redirect('/admin/fix-tutto-v57'));
 app.get('/admin/fix-tutto-final', (req, res) => res.redirect('/admin/fix-tutto-v57'));
 
+
+app.get('/admin/fix-allegati-v58', (req, res) => {
+  v51InitAllDb(() => {
+    v52FixTable('allegati', {
+      prenotazione_id:'INTEGER',
+      mezzo_id:'INTEGER',
+      tipo:'TEXT',
+      filename:'TEXT',
+      originalname:'TEXT',
+      path:'TEXT',
+      mimetype:'TEXT',
+      size:'INTEGER',
+      drive_file_id:'TEXT',
+      drive_web_link:'TEXT'
+    }, () => {
+      res.send(page('FIX ALLEGATI V58', `<div class="box">
+        <h2 class="ok">FIX ALLEGATI V58 OK</h2>
+        <a class="btn" href="/admin/fix-tutto-v58">Fix tutto</a>
+        <a class="btn btn2" href="/">Dashboard</a>
+      </div>`));
+    });
+  });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V57 PERSISTENT FIXED ONLINE porta ' + PORT);
+  console.log('DP RENT APP V58 PRIVACY CLAUSOLE FINAL ONLINE porta ' + PORT);
 });
