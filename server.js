@@ -98,7 +98,7 @@ function all(sql, params = []) {
 
 db.serialize(() => {
   // V40 CARGOS / DRIVE columns
-  addColumn('prenotazioni','cargos_uid','TEXT');
+  addColumn('prenotazioni','record_cargos_uid','TEXT');
 addColumn('mezzi','uid','TEXT');
 addColumn('mezzi','uid','TEXT');
 addColumn('mezzi','cilindrata','TEXT');
@@ -120,12 +120,12 @@ addColumn('mezzi','scadenza_assicurazione','TEXT');
 addColumn('mezzi','tagliando_km','TEXT');
 addColumn('mezzi','gps','TEXT');
 addColumn('mezzi','blocco_motore','TEXT');
-addColumn('mezzi','cargos_veicolo_tipo','TEXT');
-  addColumn('prenotazioni','cargos_transactionid','TEXT');
-  addColumn('prenotazioni','cargos_stato','TEXT');
-  addColumn('prenotazioni','cargos_last_check','TEXT');
-  addColumn('prenotazioni','cargos_last_send','TEXT');
-  addColumn('prenotazioni','cargos_last_error','TEXT');
+addColumn('mezzi','record_cargos_veicolo_tipo','TEXT');
+  addColumn('prenotazioni','record_cargos_transactionid','TEXT');
+  addColumn('prenotazioni','record_cargos_stato','TEXT');
+  addColumn('prenotazioni','record_cargos_last_check','TEXT');
+  addColumn('prenotazioni','record_cargos_last_send','TEXT');
+  addColumn('prenotazioni','record_cargos_last_error','TEXT');
   addColumn('prenotazioni','drive_folder_id','TEXT');
   addColumn('prenotazioni','drive_folder_link','TEXT');
 
@@ -250,7 +250,7 @@ addColumn('mezzi','cargos_veicolo_tipo','TEXT');
   `);
 
   db.run(`
-    CREATE TABLE IF NOT EXISTS cargos_invii (
+    CREATE TABLE IF NOT EXISTS record_cargos_invii (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       prenotazione_id INTEGER,
       uid TEXT,
@@ -270,7 +270,7 @@ addColumn('mezzi','cargos_veicolo_tipo','TEXT');
   `);
 
   // CARGOS PRO V38 columns
-  addColumn('prenotazioni','cargos_uid','TEXT');
+  addColumn('prenotazioni','record_cargos_uid','TEXT');
 addColumn('mezzi','uid','TEXT');
 addColumn('mezzi','uid','TEXT');
 addColumn('mezzi','cilindrata','TEXT');
@@ -292,36 +292,36 @@ addColumn('mezzi','scadenza_assicurazione','TEXT');
 addColumn('mezzi','tagliando_km','TEXT');
 addColumn('mezzi','gps','TEXT');
 addColumn('mezzi','blocco_motore','TEXT');
-addColumn('mezzi','cargos_veicolo_tipo','TEXT');
-  addColumn('prenotazioni','cargos_stato','TEXT');
-  addColumn('prenotazioni','cargos_last_check','TEXT');
-  addColumn('prenotazioni','cargos_last_send','TEXT');
-  addColumn('prenotazioni','cargos_last_error','TEXT');
+addColumn('mezzi','record_cargos_veicolo_tipo','TEXT');
+  addColumn('prenotazioni','record_cargos_stato','TEXT');
+  addColumn('prenotazioni','record_cargos_last_check','TEXT');
+  addColumn('prenotazioni','record_cargos_last_send','TEXT');
+  addColumn('prenotazioni','record_cargos_last_error','TEXT');
   addColumn('prenotazioni','drive_folder_id','TEXT');
   addColumn('prenotazioni','drive_folder_link','TEXT');
 
   // CARGOS V36 columns
-  addColumn('prenotazioni','cargos_pagamento_tipo','TEXT DEFAULT "0"');
-  addColumn('prenotazioni','cargos_checkout_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_checkout_indirizzo','TEXT');
-  addColumn('prenotazioni','cargos_checkin_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_checkin_indirizzo','TEXT');
-  addColumn('prenotazioni','cargos_operatore_id','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_id','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_nome','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_indirizzo','TEXT');
-  addColumn('prenotazioni','cargos_agenzia_tel','TEXT');
-  addColumn('prenotazioni','cargos_veicolo_tipo','TEXT DEFAULT "1"');
-  addColumn('prenotazioni','cargos_veicolo_colore','TEXT');
-  addColumn('prenotazioni','cargos_veicolo_gps','INTEGER DEFAULT 0');
-  addColumn('prenotazioni','cargos_veicolo_bloccom','INTEGER DEFAULT 0');
-  addColumn('prenotazioni','cargos_cittadinanza_cod','TEXT');
-  addColumn('prenotazioni','cargos_nascita_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_residenza_luogo_cod','TEXT');
-  addColumn('prenotazioni','cargos_doc_tipo_cod','TEXT DEFAULT "CI"');
-  addColumn('prenotazioni','cargos_doc_luogoril_cod','TEXT');
-  addColumn('prenotazioni','cargos_patente_luogoril_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_pagamento_tipo','TEXT DEFAULT "0"');
+  addColumn('prenotazioni','record_cargos_checkout_luogo_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_checkout_indirizzo','TEXT');
+  addColumn('prenotazioni','record_cargos_checkin_luogo_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_checkin_indirizzo','TEXT');
+  addColumn('prenotazioni','record_cargos_operatore_id','TEXT');
+  addColumn('prenotazioni','record_cargos_agenzia_id','TEXT');
+  addColumn('prenotazioni','record_cargos_agenzia_nome','TEXT');
+  addColumn('prenotazioni','record_cargos_agenzia_luogo_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_agenzia_indirizzo','TEXT');
+  addColumn('prenotazioni','record_cargos_agenzia_tel','TEXT');
+  addColumn('prenotazioni','record_cargos_veicolo_tipo','TEXT DEFAULT "1"');
+  addColumn('prenotazioni','record_cargos_veicolo_colore','TEXT');
+  addColumn('prenotazioni','record_cargos_veicolo_gps','INTEGER DEFAULT 0');
+  addColumn('prenotazioni','record_cargos_veicolo_bloccom','INTEGER DEFAULT 0');
+  addColumn('prenotazioni','record_cargos_cittadinanza_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_nascita_luogo_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_residenza_luogo_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_doc_tipo_cod','TEXT DEFAULT "CI"');
+  addColumn('prenotazioni','record_cargos_doc_luogoril_cod','TEXT');
+  addColumn('prenotazioni','record_cargos_patente_luogoril_cod','TEXT');
   addColumn('prenotazioni','conducente2_nome','TEXT');
   addColumn('prenotazioni','conducente2_cognome','TEXT');
   addColumn('prenotazioni','conducente2_data_nascita','TEXT');
@@ -333,7 +333,7 @@ addColumn('mezzi','cargos_veicolo_tipo','TEXT');
   addColumn('prenotazioni','conducente2_patente_numero','TEXT');
   addColumn('prenotazioni','conducente2_patente_luogoril_cod','TEXT');
   addColumn('prenotazioni','conducente2_recapito','TEXT');
-  addColumn('mezzi','cargos_veicolo_tipo','TEXT DEFAULT "1"');
+  addColumn('mezzi','record_cargos_veicolo_tipo','TEXT DEFAULT "1"');
   addColumn('mezzi','colore','TEXT');
   addColumn('mezzi','gps','INTEGER DEFAULT 0');
   addColumn('mezzi','blocco_motore','INTEGER DEFAULT 0');
@@ -425,7 +425,7 @@ db.run(`
       nexi_link TEXT,
       nexi_stato TEXT,
       nexi_raw TEXT,
-      cargos_stato TEXT,
+      record_cargos_stato TEXT,
       note TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
@@ -435,7 +435,7 @@ db.run(`
     ['pec','TEXT'], ['sdi','TEXT'], ['conducente1','TEXT'], ['patente1','TEXT'], ['patente1_scadenza','TEXT'],
     ['conducente2','TEXT'], ['patente2','TEXT'], ['patente2_scadenza','TEXT'],
     ['firma_path','TEXT'], ['pdf_path','TEXT'], ['pdf_drive_file_id','TEXT'], ['pdf_drive_web_link','TEXT'],
-    ['nexi_link','TEXT'], ['nexi_stato','TEXT'], ['nexi_raw','TEXT'], ['cargos_stato','TEXT'],
+    ['nexi_link','TEXT'], ['nexi_stato','TEXT'], ['nexi_raw','TEXT'], ['record_cargos_stato','TEXT'],
     ['extra_km','REAL DEFAULT 0'], ['extra_fuori_orario','REAL DEFAULT 0'],
     ['carburante_uscita','TEXT DEFAULT "4/4 pieno"'], ['carburante_rientro','TEXT DEFAULT "4/4 pieno"'],
     ['km_uscita','INTEGER'], ['km_rientro','INTEGER'], ['note','TEXT']
@@ -574,7 +574,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V54 CARGOS PRIVACY FOTO PDF</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V55 DRIVE PDF CARGOS FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -708,6 +708,46 @@ function alertBadge(m) {
 function googleDriveConfigured() {
   return !!(process.env.DRIVE_WEBAPP_URL && process.env.GOOGLE_DRIVE_FOLDER_ID);
 }
+
+async function getOrCreateDriveContractFolderV55(p) {
+  if (!drive) return null;
+  const folderName = `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`.trim();
+  const parent = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || null;
+  const safeName = folderName.replace(/'/g, "\\'");
+  let q = `mimeType='application/vnd.google-apps.folder' and name='${safeName}' and trashed=false`;
+  if (parent) q += ` and '${parent}' in parents`;
+  const found = await drive.files.list({ q, fields:'files(id,name,webViewLink)', spaces:'drive' });
+  if (found.data.files && found.data.files[0]) return found.data.files[0];
+  const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
+  if (parent) requestBody.parents = [parent];
+  const created = await drive.files.create({ requestBody, fields:'id,name,webViewLink' });
+  return created.data;
+}
+
+async function deleteDriveFilesByNameV55(folderId, name) {
+  if (!drive || !folderId || !name) return;
+  const safeName = String(name).replace(/'/g, "\\'");
+  const found = await drive.files.list({
+    q: `'${folderId}' in parents and name='${safeName}' and trashed=false`,
+    fields:'files(id,name)',
+    spaces:'drive'
+  });
+  for (const f of (found.data.files || [])) {
+    try { await drive.files.delete({ fileId:f.id }); } catch(e) { console.log('Drive delete skip:', e.message); }
+  }
+}
+
+async function uploadFileToDriveFolderV55(localPath, fileName, mimeType, folderId) {
+  if (!drive || !folderId) return null;
+  const media = { mimeType: mimeType || 'application/octet-stream', body: fs.createReadStream(localPath) };
+  const uploaded = await drive.files.create({
+    requestBody:{ name:fileName, parents:[folderId] },
+    media,
+    fields:'id,name,webViewLink'
+  });
+  return uploaded.data;
+}
+
 async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
   if (!process.env.DRIVE_WEBAPP_URL || !process.env.GOOGLE_DRIVE_FOLDER_ID) return null;
   if (!fs.existsSync(localPath)) return null;
@@ -930,7 +970,6 @@ function row(doc, label, value, x, y, w) {
 
 function pdfFileNameForContract(p) {
   const safe = String(p.codice || p.id).replace(/[^a-zA-Z0-9_-]/g, '');
-  // V54: un solo PDF per contratto. Se firmi, viene rigenerato lo stesso file.
   return `contratto_${safe}.pdf`;
 }
 
@@ -1152,7 +1191,7 @@ async function cargosSendRecords(records, method='Check') {
 }
 
 
-// V54 - test veloce configurazione CARGOS senza toccare prenotazioni
+// V55 - test veloce configurazione CARGOS senza toccare prenotazioni
 app.get('/admin/cargos-test-token', async (req, res) => {
   try {
     const token = await cargosGetToken();
@@ -1304,7 +1343,7 @@ function runV44DbMigration() {
       categoria:'TEXT', posti:'TEXT', km:'TEXT', km_attuali:'TEXT', telaio:'TEXT', colore:'TEXT',
       stazione:'TEXT', soccorso_stradale:'TEXT', immagini_consegna:'TEXT', prezzo_giorno:'TEXT',
       km_inclusi:'TEXT', cauzione:'TEXT', deposito:'TEXT', gps:'TEXT', blocco_motore:'TEXT',
-      cargos_veicolo_tipo:'TEXT', anno:'TEXT', numero_interno:'TEXT', disponibile:'TEXT',
+      record_cargos_veicolo_tipo:'TEXT', anno:'TEXT', numero_interno:'TEXT', disponibile:'TEXT',
       attivo:'TEXT', ubicazione:'TEXT', proprieta:'TEXT', note:'TEXT', note_interne:'TEXT',
       data_immatricolazione:'TEXT', ultima_revisione:'TEXT', scadenza_revisione:'TEXT',
       scadenza_bollo:'TEXT', scadenza_assicurazione:'TEXT', prossimo_tagliando:'TEXT',
@@ -1321,8 +1360,8 @@ function runV44DbMigration() {
     }
 
     const prenCols = {
-      cargos_uid:'TEXT', cargos_transactionid:'TEXT', cargos_stato:'TEXT',
-      cargos_last_check:'TEXT', cargos_last_send:'TEXT', cargos_last_error:'TEXT',
+      record_cargos_uid:'TEXT', record_cargos_transactionid:'TEXT', record_cargos_stato:'TEXT',
+      record_cargos_last_check:'TEXT', record_cargos_last_send:'TEXT', record_cargos_last_error:'TEXT',
       drive_folder_id:'TEXT', drive_folder_link:'TEXT', pdf_drive_link:'TEXT',
       indirizzo:'TEXT', citta:'TEXT', cap:'TEXT', provincia:'TEXT',
       numero_documento:'TEXT', numero_patente:'TEXT', data_nascita:'TEXT',
@@ -1382,7 +1421,7 @@ function v48EnsureImportDb(done) {
       categoria:'TEXT', posti:'TEXT', km:'TEXT', km_attuali:'TEXT', telaio:'TEXT', colore:'TEXT',
       stazione:'TEXT', soccorso_stradale:'TEXT', immagini_consegna:'TEXT', prezzo_giorno:'TEXT',
       km_inclusi:'TEXT', cauzione:'TEXT', deposito:'TEXT', gps:'TEXT', blocco_motore:'TEXT',
-      cargos_veicolo_tipo:'TEXT', anno:'TEXT', note:'TEXT'
+      record_cargos_veicolo_tipo:'TEXT', anno:'TEXT', note:'TEXT'
     };
     const keys = Object.keys(cols);
     let remaining = keys.length;
@@ -1490,15 +1529,15 @@ function v50EnsurePrenotazioniDb(done) {
       firma:'TEXT', pdf_path:'TEXT', pdf_drive_link:'TEXT',
       drive_folder_id:'TEXT', drive_folder_link:'TEXT',
       note:'TEXT', created_at:'TEXT',
-      cargos_uid:'TEXT', cargos_transactionid:'TEXT', cargos_stato:'TEXT',
-      cargos_last_check:'TEXT', cargos_last_send:'TEXT', cargos_last_error:'TEXT',
-      cargos_pagamento_tipo:'TEXT', cargos_checkout_luogo_cod:'TEXT',
-      cargos_checkout_indirizzo:'TEXT', cargos_checkin_luogo_cod:'TEXT',
-      cargos_checkin_indirizzo:'TEXT', cargos_agenzia_id:'TEXT',
-      cargos_operatore_id:'TEXT', cargos_luogo_cod:'TEXT',
-      cargos_nascita_luogo_cod:'TEXT', cargos_cittadinanza_cod:'TEXT',
-      cargos_residenza_luogo_cod:'TEXT', cargos_doc_tipo_cod:'TEXT',
-      cargos_doc_luogoril_cod:'TEXT', cargos_patente_luogoril_cod:'TEXT'
+      record_cargos_uid:'TEXT', record_cargos_transactionid:'TEXT', record_cargos_stato:'TEXT',
+      record_cargos_last_check:'TEXT', record_cargos_last_send:'TEXT', record_cargos_last_error:'TEXT',
+      record_cargos_pagamento_tipo:'TEXT', record_cargos_checkout_luogo_cod:'TEXT',
+      record_cargos_checkout_indirizzo:'TEXT', record_cargos_checkin_luogo_cod:'TEXT',
+      record_cargos_checkin_indirizzo:'TEXT', record_cargos_agenzia_id:'TEXT',
+      record_cargos_operatore_id:'TEXT', record_cargos_luogo_cod:'TEXT',
+      record_cargos_nascita_luogo_cod:'TEXT', record_cargos_cittadinanza_cod:'TEXT',
+      record_cargos_residenza_luogo_cod:'TEXT', record_cargos_doc_tipo_cod:'TEXT',
+      record_cargos_doc_luogoril_cod:'TEXT', record_cargos_patente_luogoril_cod:'TEXT'
     };
 
     const keys = Object.keys(cols);
@@ -1528,7 +1567,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V54 CARGOS PRIVACY FOTO PDF'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V55 DRIVE PDF CARGOS FIX'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1577,7 +1616,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V54 CARGOS PRIVACY FOTO PDF</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V55 DRIVE PDF CARGOS FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2467,14 +2506,14 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V54 CARGOS PRIVACY FOTO PDF / DRIVE / BRAND
+// V55 DRIVE PDF CARGOS FIX / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
 }
 function cargosVisibleStatus(p) {
-  if (p.cargos_uid) return `<span class="badge badge-green">INVIATO UID ${esc(p.cargos_uid)}</span>`;
-  if (p.cargos_stato === 'verificato') return `<span class="badge badge-orange">VERIFICATO</span>`;
+  if (p.record_cargos_uid) return `<span class="badge badge-green">INVIATO UID ${esc(p.record_cargos_uid)}</span>`;
+  if (p.record_cargos_stato === 'verificato') return `<span class="badge badge-orange">VERIFICATO</span>`;
   return `<span class="badge">DA VERIFICARE</span>`;
 }
 function cargosProPayload(p) {
@@ -2646,45 +2685,45 @@ function cargosRecordDataV40(p) {
   const agenziaNome = process.env.CARGOS_AGENZIA_NOME || 'TRASPORTI DP S.R.L. - DP RENT';
   const agenziaInd = process.env.CARGOS_AGENZIA_INDIRIZZO || 'VIA TUDERTE 466, NARNI (TR)';
   const tel = process.env.CARGOS_AGENZIA_TEL || '0744817108';
-  const luogo = process.env.CARGOS_LUOGO_COD || p.cargos_luogo_cod || '055023';
-  const tipoPagamento = process.env.CARGOS_TIPO_PAGAMENTO || p.cargos_pagamento_tipo || '1';
-  const tipoVeicolo = p.cargos_veicolo_tipo || process.env.CARGOS_VEICOLO_TIPO || '1';
+  const luogo = process.env.CARGOS_LUOGO_COD || p.record_cargos_luogo_cod || '055023';
+  const tipoPagamento = process.env.CARGOS_TIPO_PAGAMENTO || p.record_cargos_pagamento_tipo || '1';
+  const tipoVeicolo = p.record_cargos_veicolo_tipo || process.env.CARGOS_VEICOLO_TIPO || '1';
 
   return {
     CONTRATTO_ID: p.codice || `DPR-${p.id}`,
     CONTRATTO_DATA: cargosDateTime(p.created_at || new Date().toISOString(), ''),
     CONTRATTO_TIPOP: tipoPagamento,
     CONTRATTO_CHECKOUT_DATA: cargosDateTime(p.data_inizio, p.ora_inizio || '08:30'),
-    CONTRATTO_CHECKOUT_LUOGO_COD: p.cargos_checkout_luogo_cod || luogo,
-    CONTRATTO_CHECKOUT_INDIRIZZO: p.cargos_checkout_indirizzo || agenziaInd,
+    CONTRATTO_CHECKOUT_LUOGO_COD: p.record_cargos_checkout_luogo_cod || luogo,
+    CONTRATTO_CHECKOUT_INDIRIZZO: p.record_cargos_checkout_indirizzo || agenziaInd,
     CONTRATTO_CHECKIN_DATA: cargosDateTime(p.data_fine, p.ora_fine || '18:00'),
-    CONTRATTO_CHECKIN_LUOGO_COD: p.cargos_checkin_luogo_cod || luogo,
-    CONTRATTO_CHECKIN_INDIRIZZO: p.cargos_checkin_indirizzo || agenziaInd,
-    OPERATORE_ID: process.env.CARGOS_OPERATORE_ID || p.cargos_operatore_id || '1',
-    AGENZIA_ID: process.env.CARGOS_AGENZIA_ID || p.cargos_agenzia_id || '001',
-    AGENZIA_NOME: p.cargos_agenzia_nome || agenziaNome,
-    AGENZIA_LUOGO_COD: p.cargos_agenzia_luogo_cod || luogo,
-    AGENZIA_INDIRIZZO: p.cargos_agenzia_indirizzo || agenziaInd,
-    AGENZIA_RECAPITO_TEL: p.cargos_agenzia_tel || tel,
+    CONTRATTO_CHECKIN_LUOGO_COD: p.record_cargos_checkin_luogo_cod || luogo,
+    CONTRATTO_CHECKIN_INDIRIZZO: p.record_cargos_checkin_indirizzo || agenziaInd,
+    OPERATORE_ID: process.env.CARGOS_OPERATORE_ID || p.record_cargos_operatore_id || '1',
+    AGENZIA_ID: process.env.CARGOS_AGENZIA_ID || p.record_cargos_agenzia_id || '001',
+    AGENZIA_NOME: p.record_cargos_agenzia_nome || agenziaNome,
+    AGENZIA_LUOGO_COD: p.record_cargos_agenzia_luogo_cod || luogo,
+    AGENZIA_INDIRIZZO: p.record_cargos_agenzia_indirizzo || agenziaInd,
+    AGENZIA_RECAPITO_TEL: p.record_cargos_agenzia_tel || tel,
     VEICOLO_TIPO: tipoVeicolo,
     VEICOLO_MARCA: p.marca || (String(p.mezzo || '').split(' ')[0] || ''),
     VEICOLO_MODELLO: p.modello || p.mezzo || '',
     VEICOLO_TARGA: p.targa || '',
-    VEICOLO_COLORE: p.colore || p.cargos_veicolo_colore || '',
-    VEICOLO_GPS: String(p.gps ?? p.cargos_veicolo_gps ?? process.env.CARGOS_VEICOLO_GPS ?? '0'),
-    VEICOLO_BLOCCOM: String(p.blocco_motore ?? p.cargos_veicolo_bloccom ?? process.env.CARGOS_VEICOLO_BLOCCOM ?? '0'),
+    VEICOLO_COLORE: p.colore || p.record_cargos_veicolo_colore || '',
+    VEICOLO_GPS: String(p.gps ?? p.record_cargos_veicolo_gps ?? process.env.CARGOS_VEICOLO_GPS ?? '0'),
+    VEICOLO_BLOCCOM: String(p.blocco_motore ?? p.record_cargos_veicolo_bloccom ?? process.env.CARGOS_VEICOLO_BLOCCOM ?? '0'),
     CONDUCENTE_CONTRAENTE_COGNOME: n.cognome,
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
     CONDUCENTE_CONTRAENTE_NASCITA_DATA: cargosDateOnly(p.data_nascita || p.nascita_data),
-    CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.cargos_nascita_luogo_cod || luogo,
-    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: p.cargos_cittadinanza_cod || process.env.CARGOS_CITTADINANZA_COD || '100000100',
-    CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.cargos_residenza_luogo_cod || luogo,
+    CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: p.record_cargos_cittadinanza_cod || process.env.CARGOS_CITTADINANZA_COD || '100000100',
+    CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
     CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
-    CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: p.cargos_doc_tipo_cod || 'CI',
+    CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: p.record_cargos_doc_tipo_cod || 'CI',
     CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO: p.numero_documento || p.doc_numero || p.documento_numero || '',
-    CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD: p.cargos_doc_luogoril_cod || luogo,
+    CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD: p.record_cargos_doc_luogoril_cod || luogo,
     CONDUCENTE_CONTRAENTE_PATENTE_NUMERO: p.numero_patente || p.patente_numero || '',
-    CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD: p.cargos_patente_luogoril_cod || luogo,
+    CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD: p.record_cargos_patente_luogoril_cod || luogo,
     CONDUCENTE_CONTRAENTE_RECAPITO: p.telefono || '',
     CONDUCENTE2_COGNOME: p.conducente2_cognome || '',
     CONDUCENTE2_NOME: p.conducente2_nome || '',
@@ -2751,7 +2790,7 @@ async function cargosGetTokenV40() {
 }
 
 function cargosEncryptTokenV40(accessToken) {
-  // V54: AES ufficiale Ca.R.G.O.S. - primi 32 caratteri APIKEY = Key, successivi 16 = IV.
+  // V55: AES ufficiale Ca.R.G.O.S. - primi 32 caratteri APIKEY = Key, successivi 16 = IV.
   const apiKey = String(process.env.CARGOS_APIKEY || '');
   if (apiKey.length < 48) throw new Error('CARGOS_APIKEY deve avere almeno 48 caratteri per cifratura AES');
   const key = Buffer.from(apiKey.substring(0, 32), 'utf8');
@@ -2780,7 +2819,7 @@ async function cargosCallV40(endpoint, records) {
 
 
 // =========================
-// V54 - PRENOTAZIONE COMPLETA PER PDF / DRIVE / FIRMA / CARGOS
+// V55 - PRENOTAZIONE COMPLETA PER PDF / DRIVE / FIRMA / CARGOS
 // =========================
 function getPrenotazioneCompleta(id, callback) {
   db.get(`
@@ -2801,28 +2840,47 @@ function getPrenotazioneCompleta(id, callback) {
 }
 
 async function uploadAllContrattoDriveV40(prenotazioneId) {
-  if (!googleDriveConfigured()) return null;
-  return new Promise((resolve) => {
-    getPrenotazioneCompleta(prenotazioneId, async (err, p) => {
-      if (err || !p) return resolve(null);
-      const folderName = `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`.trim();
+  // V55: una sola cartella Drive per contratto, un solo PDF. Le foto vanno nella stessa cartella.
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+    if (!p) return null;
 
-      try {
-        db.all(`SELECT * FROM allegati WHERE prenotazione_id=?`, [prenotazioneId], async (e, files) => {
-          for (const f of (files || [])) {
-            try {
-              if (!f.path || !fs.existsSync(f.path)) continue;
-              if (f.drive_file_id) continue;
-              const name = `${String(f.tipo || 'allegato').replace(/\s+/g,'_')}_${f.originalname || f.filename || 'file'}`;
-              const dr = await uploadFileToDrive(f.path, name, f.mimetype || 'application/octet-stream', folderName);
-              if (dr) db.run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [dr.id, dr.webViewLink, f.id]);
-            } catch (e2) { console.log('Drive allegato V40 KO:', e2.message); }
-          }
-          resolve(true);
-        });
-      } catch(e) { console.log('Drive V40 KO:', e.message); resolve(null); }
-    });
-  });
+    const folder = await getOrCreateDriveContractFolderV55(p);
+    if (!folder) return null;
+
+    await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`,
+      [folder.id, folder.webViewLink || null, prenotazioneId]);
+
+    const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false });
+    const pdfName = path.basename(pdf);
+
+    await deleteDriveFilesByNameV55(folder.id, pdfName);
+    const uploadedPdf = await uploadFileToDriveFolderV55(pdf, pdfName, 'application/pdf', folder.id);
+
+    await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=? WHERE id=?`,
+      [pdf, uploadedPdf?.webViewLink || null, prenotazioneId]);
+
+    const allegati = await all(`SELECT * FROM allegati WHERE prenotazione_id=?`, [prenotazioneId]).catch(() => []);
+    for (const a of (allegati || [])) {
+      if (a.drive_file_id) continue;
+      if (!a.path || !fs.existsSync(a.path)) continue;
+      const up = await uploadFileToDriveFolderV55(
+        a.path,
+        a.originalname || a.filename || path.basename(a.path),
+        a.mimetype || 'application/octet-stream',
+        folder.id
+      );
+      if (up?.id) {
+        await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`,
+          [up.id, up.webViewLink || null, a.id]);
+      }
+    }
+
+    return { folder, pdf: uploadedPdf };
+  } catch (e) {
+    console.log('uploadAllContrattoDriveV40 V55 error:', e.message);
+    return null;
+  }
 }
 
 function privacyHtmlV40() {
@@ -2860,7 +2918,7 @@ app.get('/cargos/:id/txt', (req, res) => {
     if (!p) return res.status(404).send('Contratto non trovato');
     const rec = buildCargosFixedRecordV40(p);
     res.setHeader('Content-Type', 'text/plain; charset=ascii');
-    res.setHeader('Content-Disposition', `attachment; filename="cargos_${p.codice || p.id}.txt"`);
+    res.setHeader('Content-Disposition', `attachment; filename="record_cargos_${p.codice || p.id}.txt"`);
     res.end(rec + '\n');
   });
 });
@@ -2906,11 +2964,11 @@ app.get('/cargos/:id/check', async (req, res) => {
     }
     try {
       const result = await cargosCallV40('Check', [v.record]);
-      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_check=?, cargos_last_error=? WHERE id=?`,
+      db.run(`UPDATE prenotazioni SET record_cargos_stato=?, record_cargos_last_check=?, record_cargos_last_error=? WHERE id=?`,
         [result.ok ? 'check_ok' : 'check_ko', new Date().toISOString(), JSON.stringify(result).slice(0,1000), p.id]);
       res.send(page('CARGOS Check', `<div class="box"><h2>Risposta Check CaRGOS</h2><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/cargos/${p.id}/send">Invia report</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a></div>`));
     } catch(e) {
-      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_check=?, cargos_last_error=? WHERE id=?`, ['check_errore', new Date().toISOString(), e.message, p.id]);
+      db.run(`UPDATE prenotazioni SET record_cargos_stato=?, record_cargos_last_check=?, record_cargos_last_error=? WHERE id=?`, ['check_errore', new Date().toISOString(), e.message, p.id]);
       res.send(page('CARGOS Check Errore', `<div class="box"><h2 class="bad">Errore Check CaRGOS</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
     }
   });
@@ -2931,13 +2989,13 @@ app.get('/cargos/:id/send', async (req, res) => {
         if (Array.isArray(arr) && arr[0]) uid = arr[0].transactionid || arr[0].transactionId || '';
         uid = uid || result?.data?.transactionid || result?.data?.transactionId || '';
       } catch {}
-      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_send=?, cargos_last_error=?, cargos_transactionid=?, cargos_uid=? WHERE id=?`,
+      db.run(`UPDATE prenotazioni SET record_cargos_stato=?, record_cargos_last_send=?, record_cargos_last_error=?, record_cargos_transactionid=?, record_cargos_uid=? WHERE id=?`,
         [result.ok ? 'send_ok' : 'send_ko', new Date().toISOString(), JSON.stringify(result).slice(0,1000), uid, uid, p.id]);
-      db.run(`INSERT INTO cargos_invii (prenotazione_id, uid, stato, richiesta, risposta, errore) VALUES (?,?,?,?,?,?)`,
+      db.run(`INSERT INTO record_cargos_invii (prenotazione_id, uid, stato, richiesta, risposta, errore) VALUES (?,?,?,?,?,?)`,
         [p.id, uid, result.ok ? 'send_ok' : 'send_ko', v.record, JSON.stringify(result).slice(0,4000), result.ok ? '' : JSON.stringify(result).slice(0,1000)]);
       res.send(page('CARGOS Send', `<div class="box"><h2>Risposta Invio CaRGOS</h2><p><b>UID:</b> ${esc(uid || '-')}</p><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/prenotazione/${p.id}">Torna contratto</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a></div>`));
     } catch(e) {
-      db.run(`UPDATE prenotazioni SET cargos_stato=?, cargos_last_send=?, cargos_last_error=? WHERE id=?`, ['send_errore', new Date().toISOString(), e.message, p.id]);
+      db.run(`UPDATE prenotazioni SET record_cargos_stato=?, record_cargos_last_send=?, record_cargos_last_error=? WHERE id=?`, ['send_errore', new Date().toISOString(), e.message, p.id]);
       res.send(page('CARGOS Send Errore', `<div class="box"><h2 class="bad">Errore Invio CaRGOS</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
     }
   });
@@ -2949,30 +3007,30 @@ app.get('/cargos/:id', (req,res)=>{getPrenotazioneCompleta(req.params.id,(err,p)
 <div class="box"><h2>Ca.R.G.O.S. ${esc(p.codice)}</h2>${v.ok?`<p class="ok">Dati completi. Lunghezza riga: ${v.length}</p>`:`<div class="alert"><b>Mancano campi:</b><br>${v.missing.map(esc).join('<br>')}</div>`}
 <form method="POST" action="/cargos/${p.id}/save">
 <h3>Contratto / Agenzia</h3><div class="grid">
-<div><label>Metodo pagamento</label>${cargosSelect('cargos_pagamento_tipo',p.cargos_pagamento_tipo||'0',CARGOS_PAYMENTS)}</div>
-<div><label>Operatore ID</label><input name="cargos_operatore_id" value="${val('cargos_operatore_id')||esc(process.env.CARGOS_OPERATORE_ID||'DPRENT')}"></div>
-<div><label>Agenzia ID</label><input name="cargos_agenzia_id" value="${val('cargos_agenzia_id')||esc(process.env.CARGOS_AGENZIA_ID||'DPR')}"></div>
-<div><label>Agenzia nome</label><input name="cargos_agenzia_nome" value="${val('cargos_agenzia_nome')||esc(process.env.CARGOS_AGENZIA_NOME||AZIENDA.nome)}"></div>
-<div><label>Agenzia luogo COD</label><input name="cargos_agenzia_luogo_cod" value="${val('cargos_agenzia_luogo_cod')||esc(process.env.CARGOS_AGENZIA_LUOGO_COD||'')}"></div>
-<div><label>Agenzia telefono</label><input name="cargos_agenzia_tel" value="${val('cargos_agenzia_tel')||esc(process.env.CARGOS_AGENZIA_TEL||AZIENDA.telefono)}"></div></div>
-<label>Agenzia indirizzo</label><input name="cargos_agenzia_indirizzo" value="${val('cargos_agenzia_indirizzo')||esc(process.env.CARGOS_AGENZIA_INDIRIZZO||AZIENDA.indirizzo)}">
+<div><label>Metodo pagamento</label>${cargosSelect('record_cargos_pagamento_tipo',p.record_cargos_pagamento_tipo||'0',CARGOS_PAYMENTS)}</div>
+<div><label>Operatore ID</label><input name="record_cargos_operatore_id" value="${val('record_cargos_operatore_id')||esc(process.env.CARGOS_OPERATORE_ID||'DPRENT')}"></div>
+<div><label>Agenzia ID</label><input name="record_cargos_agenzia_id" value="${val('record_cargos_agenzia_id')||esc(process.env.CARGOS_AGENZIA_ID||'DPR')}"></div>
+<div><label>Agenzia nome</label><input name="record_cargos_agenzia_nome" value="${val('record_cargos_agenzia_nome')||esc(process.env.CARGOS_AGENZIA_NOME||AZIENDA.nome)}"></div>
+<div><label>Agenzia luogo COD</label><input name="record_cargos_agenzia_luogo_cod" value="${val('record_cargos_agenzia_luogo_cod')||esc(process.env.CARGOS_AGENZIA_LUOGO_COD||'')}"></div>
+<div><label>Agenzia telefono</label><input name="record_cargos_agenzia_tel" value="${val('record_cargos_agenzia_tel')||esc(process.env.CARGOS_AGENZIA_TEL||AZIENDA.telefono)}"></div></div>
+<label>Agenzia indirizzo</label><input name="record_cargos_agenzia_indirizzo" value="${val('record_cargos_agenzia_indirizzo')||esc(process.env.CARGOS_AGENZIA_INDIRIZZO||AZIENDA.indirizzo)}">
 <h3>Ritiro / consegna</h3><div class="grid">
-<div><label>Checkout luogo COD</label><input name="cargos_checkout_luogo_cod" value="${val('cargos_checkout_luogo_cod')||esc(process.env.CARGOS_AGENZIA_LUOGO_COD||'')}"></div>
-<div><label>Checkin luogo COD</label><input name="cargos_checkin_luogo_cod" value="${val('cargos_checkin_luogo_cod')||esc(process.env.CARGOS_AGENZIA_LUOGO_COD||'')}"></div></div>
-<label>Checkout indirizzo</label><input name="cargos_checkout_indirizzo" value="${val('cargos_checkout_indirizzo')||esc(process.env.CARGOS_AGENZIA_INDIRIZZO||AZIENDA.indirizzo)}">
-<label>Checkin indirizzo</label><input name="cargos_checkin_indirizzo" value="${val('cargos_checkin_indirizzo')||esc(process.env.CARGOS_AGENZIA_INDIRIZZO||AZIENDA.indirizzo)}">
+<div><label>Checkout luogo COD</label><input name="record_cargos_checkout_luogo_cod" value="${val('record_cargos_checkout_luogo_cod')||esc(process.env.CARGOS_AGENZIA_LUOGO_COD||'')}"></div>
+<div><label>Checkin luogo COD</label><input name="record_cargos_checkin_luogo_cod" value="${val('record_cargos_checkin_luogo_cod')||esc(process.env.CARGOS_AGENZIA_LUOGO_COD||'')}"></div></div>
+<label>Checkout indirizzo</label><input name="record_cargos_checkout_indirizzo" value="${val('record_cargos_checkout_indirizzo')||esc(process.env.CARGOS_AGENZIA_INDIRIZZO||AZIENDA.indirizzo)}">
+<label>Checkin indirizzo</label><input name="record_cargos_checkin_indirizzo" value="${val('record_cargos_checkin_indirizzo')||esc(process.env.CARGOS_AGENZIA_INDIRIZZO||AZIENDA.indirizzo)}">
 <h3>Veicolo</h3><div class="grid">
-<div><label>Tipo veicolo</label>${cargosSelect('cargos_veicolo_tipo',p.cargos_veicolo_tipo||p.m_cargos_veicolo_tipo||'1',CARGOS_VEHICLE_TYPES)}</div>
-<div><label>Colore</label><input name="cargos_veicolo_colore" value="${val('cargos_veicolo_colore')||esc(p.colore||'')}"></div>
-<div><label>GPS</label><select name="cargos_veicolo_gps"><option value="0" ${Number(p.cargos_veicolo_gps||p.gps||0)===0?'selected':''}>0 - No</option><option value="1" ${Number(p.cargos_veicolo_gps||p.gps||0)===1?'selected':''}>1 - Si</option></select></div>
-<div><label>Blocco motore</label><select name="cargos_veicolo_bloccom"><option value="0" ${Number(p.cargos_veicolo_bloccom||p.blocco_motore||0)===0?'selected':''}>0 - No</option><option value="1" ${Number(p.cargos_veicolo_bloccom||p.blocco_motore||0)===1?'selected':''}>1 - Si</option></select></div></div>
+<div><label>Tipo veicolo</label>${cargosSelect('record_cargos_veicolo_tipo',p.record_cargos_veicolo_tipo||p.m_record_cargos_veicolo_tipo||'1',CARGOS_VEHICLE_TYPES)}</div>
+<div><label>Colore</label><input name="record_cargos_veicolo_colore" value="${val('record_cargos_veicolo_colore')||esc(p.colore||'')}"></div>
+<div><label>GPS</label><select name="record_cargos_veicolo_gps"><option value="0" ${Number(p.record_cargos_veicolo_gps||p.gps||0)===0?'selected':''}>0 - No</option><option value="1" ${Number(p.record_cargos_veicolo_gps||p.gps||0)===1?'selected':''}>1 - Si</option></select></div>
+<div><label>Blocco motore</label><select name="record_cargos_veicolo_bloccom"><option value="0" ${Number(p.record_cargos_veicolo_bloccom||p.blocco_motore||0)===0?'selected':''}>0 - No</option><option value="1" ${Number(p.record_cargos_veicolo_bloccom||p.blocco_motore||0)===1?'selected':''}>1 - Si</option></select></div></div>
 <h3>Contraente</h3><div class="grid">
-<div><label>Luogo nascita COD</label><input name="cargos_nascita_luogo_cod" value="${val('cargos_nascita_luogo_cod')}"></div>
-<div><label>Cittadinanza COD</label><input name="cargos_cittadinanza_cod" value="${val('cargos_cittadinanza_cod')||esc(process.env.CARGOS_CITTADINANZA_DEFAULT||'100000100')}"></div>
-<div><label>Residenza luogo COD</label><input name="cargos_residenza_luogo_cod" value="${val('cargos_residenza_luogo_cod')}"></div>
-<div><label>Tipo documento</label>${cargosSelect('cargos_doc_tipo_cod',p.cargos_doc_tipo_cod||'CI',CARGOS_DOC_TYPES)}</div>
-<div><label>Luogo rilascio doc COD</label><input name="cargos_doc_luogoril_cod" value="${val('cargos_doc_luogoril_cod')}"></div>
-<div><label>Luogo rilascio patente COD</label><input name="cargos_patente_luogoril_cod" value="${val('cargos_patente_luogoril_cod')}"></div></div>
+<div><label>Luogo nascita COD</label><input name="record_cargos_nascita_luogo_cod" value="${val('record_cargos_nascita_luogo_cod')}"></div>
+<div><label>Cittadinanza COD</label><input name="record_cargos_cittadinanza_cod" value="${val('record_cargos_cittadinanza_cod')||esc(process.env.CARGOS_CITTADINANZA_DEFAULT||'100000100')}"></div>
+<div><label>Residenza luogo COD</label><input name="record_cargos_residenza_luogo_cod" value="${val('record_cargos_residenza_luogo_cod')}"></div>
+<div><label>Tipo documento</label>${cargosSelect('record_cargos_doc_tipo_cod',p.record_cargos_doc_tipo_cod||'CI',CARGOS_DOC_TYPES)}</div>
+<div><label>Luogo rilascio doc COD</label><input name="record_cargos_doc_luogoril_cod" value="${val('record_cargos_doc_luogoril_cod')}"></div>
+<div><label>Luogo rilascio patente COD</label><input name="record_cargos_patente_luogoril_cod" value="${val('record_cargos_patente_luogoril_cod')}"></div></div>
 <h3>Secondo conducente</h3><div class="grid">
 <div><label>Nome 2</label><input name="conducente2_nome" value="${val('conducente2_nome')}"></div><div><label>Cognome 2</label><input name="conducente2_cognome" value="${val('conducente2_cognome')}"></div>
 <div><label>Data nascita 2</label><input type="date" name="conducente2_data_nascita" value="${val('conducente2_data_nascita')}"></div><div><label>Luogo nascita COD 2</label><input name="conducente2_nascita_luogo_cod" value="${val('conducente2_nascita_luogo_cod')}"></div>
@@ -2982,7 +3040,7 @@ app.get('/cargos/:id', (req,res)=>{getPrenotazioneCompleta(req.params.id,(err,p)
 <div><label>Recapito 2</label><input name="conducente2_recapito" value="${val('conducente2_recapito')}"></div></div>
 <button>Salva CARGOS</button></form><hr><div class="actions">
 <a class="btn" href="/cargos/${p.id}/txt">Scarica TXT 1505</a><a class="btn btn2" href="/cargos/${p.id}/csv">Scarica CSV ;</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a><a class="btn btn3" href="/cargos/${p.id}/verifica">Verifica dati</a><a class="btn btn3" href="/cargos/${p.id}/invia">Invia report a CaRGOS</a><a class="btn btn2" href="/prenotazione/${p.id}">Torna</a></div></div>`));});});
-app.post('/cargos/:id/save',(req,res)=>{const b=req.body; db.run(`UPDATE prenotazioni SET cargos_pagamento_tipo=?,cargos_checkout_luogo_cod=?,cargos_checkout_indirizzo=?,cargos_checkin_luogo_cod=?,cargos_checkin_indirizzo=?,cargos_operatore_id=?,cargos_agenzia_id=?,cargos_agenzia_nome=?,cargos_agenzia_luogo_cod=?,cargos_agenzia_indirizzo=?,cargos_agenzia_tel=?,cargos_veicolo_tipo=?,cargos_veicolo_colore=?,cargos_veicolo_gps=?,cargos_veicolo_bloccom=?,cargos_cittadinanza_cod=?,cargos_nascita_luogo_cod=?,cargos_residenza_luogo_cod=?,cargos_doc_tipo_cod=?,cargos_doc_luogoril_cod=?,cargos_patente_luogoril_cod=?,conducente2_nome=?,conducente2_cognome=?,conducente2_data_nascita=?,conducente2_nascita_luogo_cod=?,conducente2_cittadinanza_cod=?,conducente2_doc_tipo_cod=?,conducente2_doc_numero=?,conducente2_doc_luogoril_cod=?,conducente2_patente_numero=?,conducente2_patente_luogoril_cod=?,conducente2_recapito=? WHERE id=?`,[b.cargos_pagamento_tipo,b.cargos_checkout_luogo_cod,b.cargos_checkout_indirizzo,b.cargos_checkin_luogo_cod,b.cargos_checkin_indirizzo,b.cargos_operatore_id,b.cargos_agenzia_id,b.cargos_agenzia_nome,b.cargos_agenzia_luogo_cod,b.cargos_agenzia_indirizzo,b.cargos_agenzia_tel,b.cargos_veicolo_tipo,b.cargos_veicolo_colore,b.cargos_veicolo_gps,b.cargos_veicolo_bloccom,b.cargos_cittadinanza_cod,b.cargos_nascita_luogo_cod,b.cargos_residenza_luogo_cod,b.cargos_doc_tipo_cod,b.cargos_doc_luogoril_cod,b.cargos_patente_luogoril_cod,b.conducente2_nome,b.conducente2_cognome,b.conducente2_data_nascita,b.conducente2_nascita_luogo_cod,b.conducente2_cittadinanza_cod,b.conducente2_doc_tipo_cod,b.conducente2_doc_numero,b.conducente2_doc_luogoril_cod,b.conducente2_patente_numero,b.conducente2_patente_luogoril_cod,b.conducente2_recapito,req.params.id],()=>res.redirect('/cargos/'+req.params.id));});
+app.post('/cargos/:id/save',(req,res)=>{const b=req.body; db.run(`UPDATE prenotazioni SET record_cargos_pagamento_tipo=?,record_cargos_checkout_luogo_cod=?,record_cargos_checkout_indirizzo=?,record_cargos_checkin_luogo_cod=?,record_cargos_checkin_indirizzo=?,record_cargos_operatore_id=?,record_cargos_agenzia_id=?,record_cargos_agenzia_nome=?,record_cargos_agenzia_luogo_cod=?,record_cargos_agenzia_indirizzo=?,record_cargos_agenzia_tel=?,record_cargos_veicolo_tipo=?,record_cargos_veicolo_colore=?,record_cargos_veicolo_gps=?,record_cargos_veicolo_bloccom=?,record_cargos_cittadinanza_cod=?,record_cargos_nascita_luogo_cod=?,record_cargos_residenza_luogo_cod=?,record_cargos_doc_tipo_cod=?,record_cargos_doc_luogoril_cod=?,record_cargos_patente_luogoril_cod=?,conducente2_nome=?,conducente2_cognome=?,conducente2_data_nascita=?,conducente2_nascita_luogo_cod=?,conducente2_cittadinanza_cod=?,conducente2_doc_tipo_cod=?,conducente2_doc_numero=?,conducente2_doc_luogoril_cod=?,conducente2_patente_numero=?,conducente2_patente_luogoril_cod=?,conducente2_recapito=? WHERE id=?`,[b.record_cargos_pagamento_tipo,b.record_cargos_checkout_luogo_cod,b.record_cargos_checkout_indirizzo,b.record_cargos_checkin_luogo_cod,b.record_cargos_checkin_indirizzo,b.record_cargos_operatore_id,b.record_cargos_agenzia_id,b.record_cargos_agenzia_nome,b.record_cargos_agenzia_luogo_cod,b.record_cargos_agenzia_indirizzo,b.record_cargos_agenzia_tel,b.record_cargos_veicolo_tipo,b.record_cargos_veicolo_colore,b.record_cargos_veicolo_gps,b.record_cargos_veicolo_bloccom,b.record_cargos_cittadinanza_cod,b.record_cargos_nascita_luogo_cod,b.record_cargos_residenza_luogo_cod,b.record_cargos_doc_tipo_cod,b.record_cargos_doc_luogoril_cod,b.record_cargos_patente_luogoril_cod,b.conducente2_nome,b.conducente2_cognome,b.conducente2_data_nascita,b.conducente2_nascita_luogo_cod,b.conducente2_cittadinanza_cod,b.conducente2_doc_tipo_cod,b.conducente2_doc_numero,b.conducente2_doc_luogoril_cod,b.conducente2_patente_numero,b.conducente2_patente_luogoril_cod,b.conducente2_recapito,req.params.id],()=>res.redirect('/cargos/'+req.params.id));});
 
 
 
@@ -3004,7 +3062,7 @@ app.get('/prenotazione/:id', async (req, res) => {
       <p><b>Mezzo:</b> <a href="/mezzo/${p.mezzo_id}">${esc(p.targa)} ${esc(descrizionePubblica(p))}</a></p>
       <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} â ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
       <p><b>Totale:</b> â¬ ${euro(p.totale)} | <b>Cauzione:</b> â¬ ${euro(p.cauzione || CAUZIONE)}</p>
-      <p><b>Stato:</b> ${esc(p.stato)} | <b>Nexi:</b> ${esc(p.nexi_stato || '')} | <b>Ca.R.G.O.S.:</b> ${esc(p.cargos_stato || '')}</p>
+      <p><b>Stato:</b> ${esc(p.stato)} | <b>Nexi:</b> ${esc(p.nexi_stato || '')} | <b>Ca.R.G.O.S.:</b> ${esc(p.record_cargos_stato || '')}</p>
       ${p.pdf_drive_web_link ? `<p><b>PDF Drive:</b> <a target="_blank" href="${esc(p.pdf_drive_web_link)}">Apri su Drive</a></p>` : ''}
       ${p.nexi_link ? `<p><b>Link Nexi:</b> <a target="_blank" href="${esc(p.nexi_link)}">${esc(p.nexi_link)}</a></p>` : ''}
       <div class="actions">
@@ -3399,7 +3457,7 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   let driveRes = null;
 
-  // V54: salva sempre anche in cartella locale del contratto: contratti/DPR-.../documenti/
+  // V55: salva sempre anche in cartella locale del contratto: contratti/DPR-.../documenti/
   let finalPath = req.file.path;
   try {
     const folder = path.join(contractsDir, safeFileName(p?.codice || ('contratto_' + req.params.id)), 'documenti');
@@ -3436,7 +3494,8 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     ]
   );
 
-  // V54: non rigenera/uploada il PDF ogni volta che carichi una foto, cosÃ¬ non crea 3 copie contratto.
+  // V55: sincronizza foto nella stessa cartella Drive e sostituisce una sola copia PDF.
+  try { await uploadAllContrattoDriveV40(req.params.id); } catch(e) { console.log('Drive sync V55:', e.message); }
   res.redirect(`/documenti/${req.params.id}`);
 });
 
@@ -3706,7 +3765,7 @@ CARGOS_BASE_URL=https://cargos.poliziadistato.it/CARGOS_API</pre>
 
 app.get('/cargos', async (req, res) => {
   const rows = await all(`SELECT p.*, m.targa FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id ORDER BY p.id DESC LIMIT 50`);
-  const trs = rows.map(p => `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/prenotazione/${p.id}">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.record_cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
   res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Ca.R.G.O.S.</h2><p>Modulo pronto. Quando hai username/password/APIKEY e codici tabelle, Check e Send diventano reali.</p><p><b>Configurato:</b> ${cargosConfigured() ? '<span class="ok">SI</span>' : '<span class="bad">NO</span>'}</p><p>Servono: CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_AGENZIA_ID, CARGOS_OPERATORE_ID, CARGOS_LUOGO_COD.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>Azione</th></tr>${trs}</table>`));
 });
 
@@ -3722,7 +3781,7 @@ app.get('/cargos/export/:id', async (req, res) => {
     const p = await get(`SELECT codice FROM prenotazioni WHERE id=?`, [req.params.id]);
     const record = await buildCargosRecordForContract(req.params.id);
     res.setHeader('Content-Type','text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="cargos_${p?.codice || req.params.id}.txt"`);
+    res.setHeader('Content-Disposition', `attachment; filename="record_cargos_${p?.codice || req.params.id}.txt"`);
     res.send(record + '\\n');
   } catch(e) { res.status(500).send('Errore export CARGOS: ' + e.message); }
 });
@@ -3730,7 +3789,7 @@ app.get('/cargos/export/:id', async (req, res) => {
 app.get('/cargos/check/:id', async (req, res) => {
   try {
     const result = await cargosSendRecords([await buildCargosRecordForContract(req.params.id)], 'Check');
-    await run(`UPDATE prenotazioni SET cargos_stato=? WHERE id=?`, ['check_ok', req.params.id]);
+    await run(`UPDATE prenotazioni SET record_cargos_stato=? WHERE id=?`, ['check_ok', req.params.id]);
     res.send(page('Check Ca.R.G.O.S.', `<div class="box"><h2>Esito Check</h2><pre>${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
   } catch(e) { res.status(500).send(page('Errore Check Ca.R.G.O.S.', `<div class="box"><h2 class="bad">Errore Check</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos">Torna</a></div>`)); }
 });
@@ -3738,7 +3797,7 @@ app.get('/cargos/check/:id', async (req, res) => {
 app.get('/cargos/send/:id', async (req, res) => {
   try {
     const result = await cargosSendRecords([await buildCargosRecordForContract(req.params.id)], 'Send');
-    await run(`UPDATE prenotazioni SET cargos_stato=? WHERE id=?`, ['send_ok', req.params.id]);
+    await run(`UPDATE prenotazioni SET record_cargos_stato=? WHERE id=?`, ['send_ok', req.params.id]);
     res.send(page('Send Ca.R.G.O.S.', `<div class="box"><h2>Esito Send</h2><pre>${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
   } catch(e) { res.status(500).send(page('Errore Send Ca.R.G.O.S.', `<div class="box"><h2 class="bad">Errore Send</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos">Torna</a></div>`)); }
 });
@@ -3977,33 +4036,33 @@ const V52_PRENOTAZIONI_COLS = {
   nexi_link:'TEXT',
   nexi_stato:'TEXT',
   nexi_raw:'TEXT',
-  cargos_uid:'TEXT',
-  cargos_transactionid:'TEXT',
-  cargos_stato:'TEXT',
-  cargos_last_check:'TEXT',
-  cargos_last_send:'TEXT',
-  cargos_last_error:'TEXT',
-  cargos_pagamento_tipo:'TEXT',
-  cargos_checkout_luogo_cod:'TEXT',
-  cargos_checkout_indirizzo:'TEXT',
-  cargos_checkin_luogo_cod:'TEXT',
-  cargos_checkin_indirizzo:'TEXT',
-  cargos_operatore_id:'TEXT',
-  cargos_agenzia_id:'TEXT',
-  cargos_agenzia_nome:'TEXT',
-  cargos_agenzia_luogo_cod:'TEXT',
-  cargos_agenzia_indirizzo:'TEXT',
-  cargos_agenzia_tel:'TEXT',
-  cargos_veicolo_tipo:'TEXT',
-  cargos_veicolo_colore:'TEXT',
-  cargos_veicolo_gps:'TEXT',
-  cargos_veicolo_bloccom:'TEXT',
-  cargos_cittadinanza_cod:'TEXT',
-  cargos_nascita_luogo_cod:'TEXT',
-  cargos_residenza_luogo_cod:'TEXT',
-  cargos_doc_tipo_cod:'TEXT',
-  cargos_doc_luogoril_cod:'TEXT',
-  cargos_patente_luogoril_cod:'TEXT',
+  record_cargos_uid:'TEXT',
+  record_cargos_transactionid:'TEXT',
+  record_cargos_stato:'TEXT',
+  record_cargos_last_check:'TEXT',
+  record_cargos_last_send:'TEXT',
+  record_cargos_last_error:'TEXT',
+  record_cargos_pagamento_tipo:'TEXT',
+  record_cargos_checkout_luogo_cod:'TEXT',
+  record_cargos_checkout_indirizzo:'TEXT',
+  record_cargos_checkin_luogo_cod:'TEXT',
+  record_cargos_checkin_indirizzo:'TEXT',
+  record_cargos_operatore_id:'TEXT',
+  record_cargos_agenzia_id:'TEXT',
+  record_cargos_agenzia_nome:'TEXT',
+  record_cargos_agenzia_luogo_cod:'TEXT',
+  record_cargos_agenzia_indirizzo:'TEXT',
+  record_cargos_agenzia_tel:'TEXT',
+  record_cargos_veicolo_tipo:'TEXT',
+  record_cargos_veicolo_colore:'TEXT',
+  record_cargos_veicolo_gps:'TEXT',
+  record_cargos_veicolo_bloccom:'TEXT',
+  record_cargos_cittadinanza_cod:'TEXT',
+  record_cargos_nascita_luogo_cod:'TEXT',
+  record_cargos_residenza_luogo_cod:'TEXT',
+  record_cargos_doc_tipo_cod:'TEXT',
+  record_cargos_doc_luogoril_cod:'TEXT',
+  record_cargos_patente_luogoril_cod:'TEXT',
   conducente2_nascita_luogo_cod:'TEXT',
   conducente2_cittadinanza_cod:'TEXT',
   conducente2_doc_tipo_cod:'TEXT',
@@ -4068,7 +4127,7 @@ const V52_MEZZI_COLS = {
   manutenzione_note:'TEXT',
   alert_giorni:'INTEGER',
   alert_km:'INTEGER',
-  cargos_veicolo_tipo:'TEXT',
+  record_cargos_veicolo_tipo:'TEXT',
   descrizione_pubblica:'TEXT',
 };
 
@@ -4145,7 +4204,7 @@ function v52FixEverything(done) {
     v52FixTable('allegati', { drive_file_id:'TEXT', drive_web_link:'TEXT', size:'INTEGER' }, () => {});
     v52FixTable('mezzi', V52_MEZZI_COLS, () => {
       v52FixTable('prenotazioni', V52_PRENOTAZIONI_COLS, () => {
-        console.log('V54 FIX TUTTO OK');
+        console.log('V55 FIX TUTTO OK');
         done && done();
       });
     });
@@ -4155,10 +4214,32 @@ function v52FixEverything(done) {
 // Esegue il fix automatico dopo l'avvio senza bloccare il server.
 setTimeout(() => v52FixEverything(() => {}), 1200);
 
+
+app.get('/drive-sync/:id', async (req, res) => {
+  await uploadAllContrattoDriveV40(req.params.id);
+  res.redirect('/documenti/' + req.params.id);
+});
+
+app.get('/admin/pulisci-pdf-drive/:id', async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+    const folder = await getOrCreateDriveContractFolderV55(p);
+    if (!folder) return res.send('Drive non configurato');
+    const pdfName = pdfFileNameForContract(p);
+    await deleteDriveFilesByNameV55(folder.id, pdfName);
+    const pdf = await generaPdfContratto(req.params.id, { forceDrive:false });
+    await uploadFileToDriveFolderV55(pdf, pdfName, 'application/pdf', folder.id);
+    res.send(page('PDF DRIVE PULITO', `<div class="box"><h2 class="ok">PDF DRIVE PULITO</h2><a class="btn" href="/documenti/${req.params.id}">Documenti</a></div>`));
+  } catch(e) {
+    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
+  }
+});
+
 app.get('/admin/fix-tutto', (req, res) => {
   v52FixEverything(() => {
-    res.send(page('FIX TUTTO V54', `<div class="box">
-      <h2 class="ok">FIX TUTTO V54 OK</h2>
+    res.send(page('FIX TUTTO V55', `<div class="box">
+      <h2 class="ok">FIX TUTTO V55 OK</h2>
       <p>Database aggiornato: mezzi, prenotazioni, clienti, allegati.</p>
       <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
       <a class="btn btn2" href="/mezzi">Mezzi</a>
@@ -4175,6 +4256,12 @@ app.get('/admin/fix-prenotazioni_v51', (req, res) => {
     </div>`));
   });
 });
+
+// V55 blocco download cargos: CARGOS non scarica file, usa pagina verifica/invia.
+app.get('/cargos/download/:id', (req, res) => res.redirect('/cargos/' + req.params.id));
+app.get('/download-cargos/:id', (req, res) => res.redirect('/cargos/' + req.params.id));
+app.get('/record-cargos/:id', (req, res) => res.redirect('/cargos/' + req.params.id));
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V54 CARGOS PRIVACY FOTO PDF ONLINE porta ' + PORT);
+  console.log('DP RENT APP V55 DRIVE PDF CARGOS FIX ONLINE porta ' + PORT);
 });
