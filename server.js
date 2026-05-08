@@ -24,7 +24,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V66 FIX FUNZIONE VEICOLO CARGOS
+// V67 FIX SALVA MODIFICA CARGOS
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -69,7 +69,7 @@ function v63ContractButtons(p){
 
 
 // =========================
-// V66 FIX validateCargos
+// V67 FIX validateCargos
 // =========================
 if (typeof validateCargos === 'undefined') {
   global.validateCargos = function(p){
@@ -86,7 +86,7 @@ if (typeof validateCargos === 'undefined') {
 
 
 // =========================
-// V66 PDF UNA PAGINA + CARGOS FURGONI
+// V67 PDF UNA PAGINA + CARGOS FURGONI
 // =========================
 function v65CauzionePdfText(p){
   const richiesta = String(p.cauzione_richiesta || '').toLowerCase() === 'si';
@@ -99,9 +99,9 @@ function v65CauzionePdfText(p){
 
 
 // =========================
-// V66 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
+// V67 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
 // =========================
-function dpRentCleanCargosKeyV66(v) {
+function dpRentCleanCargosKeyV67(v) {
   return String(v || '')
     .toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -111,8 +111,8 @@ function dpRentCleanCargosKeyV66(v) {
     .trim();
 }
 
-function getTipoVeicoloCargosV66(v) {
-  const k = dpRentCleanCargosKeyV66(v);
+function getTipoVeicoloCargosV67(v) {
+  const k = dpRentCleanCargosKeyV67(v);
   if (k === '1' || k.includes('FURG') || k.includes('VAN') || k.includes('DAILY') || k.includes('DUCATO') || k.includes('TRANSIT') || k.includes('VIVARO') || k.includes('EXPERT') || k.includes('SCUDO') || k.includes('DOBLO') || k.includes('DOBL') || k.includes('TALENTO') || k.includes('TRAFIC') || k.includes('MASTER') || k.includes('SPRINTER') || k.includes('VITO')) return '1';
   if (k === '3' || k.includes('BUS') || k.includes('PULMINO') || k.includes('9 POSTI') || k.includes('NOVE POSTI')) return '3';
   if (k === '4' || k.includes('AUTOCAR') || k.includes('MOTRICE') || k.includes('CAMION')) return '4';
@@ -127,12 +127,75 @@ function getTipoVeicoloCargosV66(v) {
 }
 
 // Le vecchie route chiamano getTipoVeicoloCargosV61: ora esiste sempre.
-function getTipoVeicoloCargosV61(v) { return getTipoVeicoloCargosV66(v); }
-function getTipoVeicoloCargosV65(v) { return getTipoVeicoloCargosV66(v); }
-function getTipoVeicoloCargos(v) { return getTipoVeicoloCargosV66(v); }
+function getTipoVeicoloCargosV61(v) { return getTipoVeicoloCargosV67(v); }
+function getTipoVeicoloCargosV65(v) { return getTipoVeicoloCargosV67(v); }
+function getTipoVeicoloCargos(v) { return getTipoVeicoloCargosV67(v); }
 global.getTipoVeicoloCargosV61 = getTipoVeicoloCargosV61;
 global.getTipoVeicoloCargosV65 = getTipoVeicoloCargosV65;
 global.getTipoVeicoloCargos = getTipoVeicoloCargos;
+
+
+// =========================
+// V67 FIX COLONNE + DATA NASCITA CARGOS
+// =========================
+function v67AddColumn(table, column, type, cb){
+  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, () => cb && cb());
+}
+
+function v67EnsureCriticalColumns(done){
+  const cols = [
+    ['prenotazioni','cauzione_richiesta','TEXT'],
+    ['prenotazioni','cauzione_ricevuta','TEXT'],
+    ['prenotazioni','cauzione_importo','REAL'],
+    ['prenotazioni','cauzione_metodo','TEXT'],
+    ['prenotazioni','cauzione_restituita','TEXT'],
+    ['prenotazioni','data_nascita','TEXT'],
+    ['prenotazioni','luogo_nascita','TEXT'],
+    ['prenotazioni','cittadinanza_cod','TEXT'],
+    ['prenotazioni','documento_tipo','TEXT'],
+    ['prenotazioni','documento_numero','TEXT'],
+    ['prenotazioni','documento_scadenza','TEXT'],
+    ['prenotazioni','patente_numero','TEXT'],
+    ['prenotazioni','patente_scadenza','TEXT'],
+    ['prenotazioni','tipo_cliente','TEXT'],
+    ['prenotazioni','codice_fiscale','TEXT'],
+    ['prenotazioni','partita_iva','TEXT'],
+    ['prenotazioni','ragione_sociale','TEXT'],
+    ['prenotazioni','pec','TEXT'],
+    ['prenotazioni','codice_sdi','TEXT'],
+    ['prenotazioni','ora_inizio','TEXT'],
+    ['prenotazioni','ora_fine','TEXT']
+  ];
+  db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (id INTEGER PRIMARY KEY AUTOINCREMENT,codice TEXT,nome TEXT,cognome TEXT,telefono TEXT,email TEXT,data_inizio TEXT,data_fine TEXT,totale REAL,stato TEXT DEFAULT 'bozza')`, () => {
+    let pending = cols.length;
+    cols.forEach(([t,c,tp]) => v67AddColumn(t,c,tp, () => {
+      pending--;
+      if(pending === 0) done && done();
+    }));
+  });
+}
+
+function v67NormDate(d){
+  d = String(d || '').trim();
+  if (!d) return '';
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [y,m,dd] = d.split('-');
+    return `${dd}/${m}/${y}`;
+  }
+  return d;
+}
+function v67IsoDate(d){
+  d = String(d || '').trim();
+  if (!d) return '';
+  if (/^\d{2}\/\d{2}\/\d{4}$/.test(d)) {
+    const [dd,m,y] = d.split('/');
+    return `${y}-${m}-${dd}`;
+  }
+  return d;
+}
+function v67DefaultBirth(p){
+  return v67NormDate(p.data_nascita || p.nascita_data || p.conducente_nascita_data || '01/01/1970');
+}
 
 app.get('/privacy.pdf', (req, res) => {
   const p1 = path.join(publicDir, 'privacy.pdf');
@@ -752,7 +815,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V66 FIX FUNZIONE VEICOLO CARGOS</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V67 FIX SALVA MODIFICA CARGOS</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1281,7 +1344,7 @@ doc.end();
 
 
 // =========================
-// V66 FIX FUNZIONE VEICOLO CARGOS
+// V67 FIX SALVA MODIFICA CARGOS
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1408,7 +1471,7 @@ async function buildCargosRecordForContract(id) {
 
 
 // =========================
-// V66 FIX FUNZIONE VEICOLO CARGOS
+// V67 FIX SALVA MODIFICA CARGOS
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -1854,7 +1917,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V66 FIX FUNZIONE VEICOLO CARGOS'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V67 FIX SALVA MODIFICA CARGOS'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1903,7 +1966,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V66 FIX FUNZIONE VEICOLO CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V67 FIX SALVA MODIFICA CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2793,7 +2856,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V66 FIX FUNZIONE VEICOLO CARGOS / DRIVE / BRAND
+// V67 FIX SALVA MODIFICA CARGOS / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3001,7 +3064,7 @@ function cargosRecordDataV40(p) {
     VEICOLO_BLOCCOM: String(p.blocco_motore ?? p.record_cargos_veicolo_bloccom ?? process.env.CARGOS_VEICOLO_BLOCCOM ?? '0'),
     CONDUCENTE_CONTRAENTE_COGNOME: n.cognome,
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
-    CONDUCENTE_CONTRAENTE_NASCITA_DATA: v63DateIt(p.data_nascita || p.nascita_data || p.conducente_nascita_data || '01/01/1970'),
+    CONDUCENTE_CONTRAENTE_NASCITA_DATA: v67DefaultBirth(p),
     CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
     CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: p.record_cargos_cittadinanza_cod || process.env.CARGOS_CITTADINANZA_COD || '100000100',
     CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
@@ -4871,32 +4934,7 @@ app.get('/admin/fix-tutto-v61',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 app.get('/admin/fix-tutto-v60',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 app.get('/admin/fix-tutto-v58',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 
-app.get('/prenotazione/:id/modifica',async(req,res)=>{
-  const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]); if(!p)return res.status(404).send('Contratto non trovato');
-  res.send(page('Modifica contratto',`<div class="box"><h2>Modifica contratto ${esc(p.codice||p.id)}</h2><form method="post" action="/prenotazione/${p.id}/modifica">
-  <div class="grid">
-  <label>Nome<input name="nome" value="${esc(p.nome)}"></label><label>Cognome<input name="cognome" value="${esc(p.cognome)}"></label>
-  <label>Telefono<input name="telefono" value="${esc(p.telefono)}"></label><label>Email<input name="email" value="${esc(p.email)}"></label>
-  <label>Codice fiscale<input name="codice_fiscale" value="${esc(p.codice_fiscale||p.cf)}"></label><label>Data nascita<input type="date" name="data_nascita" value="${esc(v63IsoDate(p.data_nascita))}" required></label><label>Luogo nascita<input name="luogo_nascita" value="${esc(p.luogo_nascita)}"></label><label>Cittadinanza codice<input name="cittadinanza_cod" value="${esc(p.cittadinanza_cod || '100000100')}"></label><label>Tipo documento<select name="documento_tipo"><option value="IDENT">Carta identitÃ </option><option value="IDELE">Carta identitÃ  elettronica</option><option value="PASOR">Passaporto</option><option value="PATEN">Patente</option></select></label><label>Numero documento<input name="documento_numero" value="${esc(p.documento_numero)}" required></label><label>Scadenza documento<input type="date" name="documento_scadenza" value="${esc(v63IsoDate(p.documento_scadenza))}"></label><label>Numero patente<input name="patente_numero" value="${esc(p.patente_numero)}" required></label><label>Scadenza patente<input type="date" name="patente_scadenza" value="${esc(v63IsoDate(p.patente_scadenza))}"></label>
-  <label>Tipo cliente<select name="tipo_cliente"><option value="privato" ${p.tipo_cliente==='privato'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></label>
-  <label>Ragione sociale<input name="ragione_sociale" value="${esc(p.ragione_sociale||p.azienda)}"></label><label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva||p.piva)}"></label>
-  <label>PEC<input name="pec" value="${esc(p.pec)}"></label><label>Codice SDI<input name="codice_sdi" value="${esc(p.codice_sdi||p.sdi)}"></label>
-  <label>Data inizio<input type="date" name="data_inizio" value="${esc(p.data_inizio)}"></label><label>Ora inizio<input type="time" name="ora_inizio" value="${esc(p.ora_inizio)}"></label>
-  <label>Data fine<input type="date" name="data_fine" value="${esc(p.data_fine)}"></label><label>Ora fine<input type="time" name="ora_fine" value="${esc(p.ora_fine)}"></label>
-  <label>Totale<input name="totale" value="${esc(p.totale)}"></label><label>Stato<select name="stato"><option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option><option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option><option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option><option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option></select></label>
-  <label>Cauzione richiesta<select name="cauzione_richiesta"><option value="no" ${p.cauzione_richiesta==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_richiesta==='si'?'selected':''}>SI</option></select></label>
-  <label>Cauzione ricevuta<select name="cauzione_ricevuta"><option value="no" ${p.cauzione_ricevuta==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option></select></label>
-  <label>Importo cauzione<input name="cauzione_importo" value="${esc(p.cauzione_importo||p.cauzione||0)}"></label>
-  <label>Metodo cauzione<select name="cauzione_metodo"><option value="">---</option><option value="contanti" ${p.cauzione_metodo==='contanti'?'selected':''}>Contanti</option><option value="carta" ${p.cauzione_metodo==='carta'?'selected':''}>Carta</option><option value="bonifico" ${p.cauzione_metodo==='bonifico'?'selected':''}>Bonifico</option><option value="non_versata" ${p.cauzione_metodo==='non_versata'?'selected':''}>Non versata</option></select></label>
-  <label>Cauzione restituita<select name="cauzione_restituita"><option value="no" ${p.cauzione_restituita==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_restituita==='si'?'selected':''}>SI</option></select></label>
-  </div><label>Note<textarea name="note">${esc(p.note)}</textarea></label><button class="btn" type="submit">Salva</button><a class="btn btn2" href="/contratto/${p.id}/gestisci">Annulla</a></form></div>`));
-});
-app.post('/prenotazione/:id/modifica',async(req,res)=>{
-  const b=req.body||{};
-  await run(`UPDATE prenotazioni SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,tipo_cliente=?,ragione_sociale=?,partita_iva=?,pec=?,codice_sdi=?,data_inizio=?,ora_inizio=?,data_fine=?,ora_fine=?,totale=?,stato=?,cauzione_richiesta=?,cauzione_ricevuta=?,cauzione_importo=?,cauzione_metodo=?,cauzione_restituita=?,note=?,data_nascita=?,luogo_nascita=?,cittadinanza_cod=?,documento_tipo=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=? WHERE id=?`,[v62Val(b.nome),v62Val(b.cognome),v62Val(b.telefono),v62Val(b.email),v62Val(b.codice_fiscale),v62Val(b.tipo_cliente),v62Val(b.ragione_sociale),v62Val(b.partita_iva),v62Val(b.pec),v62Val(b.codice_sdi),v62Val(b.data_inizio),v62Val(b.ora_inizio),v62Val(b.data_fine),v62Val(b.ora_fine),v62Money(b.totale),v62Val(b.stato||'contratto'),v62Val(b.cauzione_richiesta||'no'),v62Val(b.cauzione_ricevuta||'no'),v62Money(b.cauzione_importo),v62Val(b.cauzione_metodo),v62Val(b.cauzione_restituita||'no'),v62Val(b.note),v62Val(b.data_nascita),v62Val(b.luogo_nascita),v62Val(b.cittadinanza_cod||'100000100'),v62Val(b.documento_tipo||'IDENT'),v62Val(b.documento_numero),v62Val(b.documento_scadenza),v62Val(b.patente_numero),v62Val(b.patente_scadenza),req.params.id]);
-  try{ if(typeof syncContrattoDriveV59==='function') await syncContrattoDriveV59(req.params.id); }catch(e){}
-  res.redirect(`/prenotazione/${req.params.id}`);
-});
+
 app.get('/prenotazione/:id/elimina',async(req,res)=>{const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);res.send(page('Elimina contratto',`<div class="box"><h2 class="bad">Eliminare contratto ${esc(p?.codice||req.params.id)}?</h2><form method="post" action="/prenotazione/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina</button><a class="btn btn2" href="/prenotazione/${req.params.id}">Annulla</a></form></div>`));});
 app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM allegati WHERE prenotazione_id=?`,[req.params.id]).catch(()=>{});await run(`DELETE FROM prenotazioni WHERE id=?`,[req.params.id]);res.redirect('/');});
 app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=preventivo'));
@@ -4966,7 +5004,7 @@ app.get('/admin/gestione-v63',(req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V66', `<div class="box">
+  res.send(page('Test CARGOS veicolo V67', `<div class="box">
     <h2>Test tipo veicolo CARGOS</h2>
     <p>Testo: <b>${esc(q)}</b></p>
     <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV61(q))}</b></p>
@@ -4979,10 +5017,10 @@ app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V66', `<div class="box">
-    <h2>Test tipo veicolo CARGOS V66</h2>
+  res.send(page('Test CARGOS veicolo V67', `<div class="box">
+    <h2>Test tipo veicolo CARGOS V67</h2>
     <p>Testo: <b>${esc(q)}</b></p>
-    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV66(q))}</b></p>
+    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV67(q))}</b></p>
     <p>OPEL VIVARO / FURGONI deve essere <b>1</b>.</p>
     <a class="btn" href="/admin/test-cargos-veicolo-v66?q=OPEL%20VIVARO">Test Vivaro</a>
     <a class="btn btn2" href="/admin/test-cargos-veicolo-v66?q=FURGONI">Test Furgoni</a>
@@ -4991,6 +5029,141 @@ app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
 });
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>res.redirect('/admin/test-cargos-veicolo-v66?q=' + encodeURIComponent(req.query.q || 'OPEL VIVARO')));
 
+v67EnsureCriticalColumns(() => console.log('V67 colonne critiche OK'));
+
+app.get('/admin/fix-tutto-v67',(req,res)=>{
+  v67EnsureCriticalColumns(()=>{
+    res.send(page('FIX V67 OK', `<div class="box">
+      <h2 class="ok">FIX V67 OK</h2>
+      <p>Colonne cauzione, documento, patente e nascita aggiornate.</p>
+      <a class="btn" href="/">Dashboard</a>
+      <a class="btn btn2" href="/storico">Storico</a>
+      <a class="btn btn2" href="/admin/gestione-v63">Gestione</a>
+    </div>`));
+  });
+});
+app.get('/admin/fix-tutto-v66',(req,res)=>res.redirect('/admin/fix-tutto-v67'));
+
+
+app.get('/prenotazione/:id/modifica', async (req,res)=>{
+  v67EnsureCriticalColumns(async ()=>{
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if(!p) return res.status(404).send(page('Non trovato', `<div class="box"><h2>Contratto non trovato</h2></div>`));
+    res.send(page('Modifica contratto', `<div class="box">
+      <h2>Modifica ${esc(p.codice || p.id)}</h2>
+      <form method="post" action="/prenotazione/${p.id}/modifica">
+        <div class="grid">
+          <label>Nome<input name="nome" value="${esc(p.nome)}" required></label>
+          <label>Cognome<input name="cognome" value="${esc(p.cognome)}" required></label>
+          <label>Telefono<input name="telefono" value="${esc(p.telefono)}"></label>
+          <label>Email<input name="email" value="${esc(p.email)}"></label>
+          <label>Codice fiscale<input name="codice_fiscale" value="${esc(p.codice_fiscale || p.cf)}"></label>
+          <label>Data nascita<input type="date" name="data_nascita" value="${esc(v67IsoDate(p.data_nascita))}" required></label>
+          <label>Luogo nascita<input name="luogo_nascita" value="${esc(p.luogo_nascita)}"></label>
+          <label>Cittadinanza codice<input name="cittadinanza_cod" value="${esc(p.cittadinanza_cod || '100000100')}"></label>
+          <label>Tipo documento
+            <select name="documento_tipo">
+              <option value="IDENT" ${(p.documento_tipo||'IDENT')==='IDENT'?'selected':''}>Carta identitÃ </option>
+              <option value="IDELE" ${p.documento_tipo==='IDELE'?'selected':''}>Carta identitÃ  elettronica</option>
+              <option value="PASOR" ${p.documento_tipo==='PASOR'?'selected':''}>Passaporto</option>
+              <option value="PATEN" ${p.documento_tipo==='PATEN'?'selected':''}>Patente</option>
+            </select>
+          </label>
+          <label>Numero documento<input name="documento_numero" value="${esc(p.documento_numero)}" required></label>
+          <label>Scadenza documento<input type="date" name="documento_scadenza" value="${esc(v67IsoDate(p.documento_scadenza))}"></label>
+          <label>Numero patente<input name="patente_numero" value="${esc(p.patente_numero)}" required></label>
+          <label>Scadenza patente<input type="date" name="patente_scadenza" value="${esc(v67IsoDate(p.patente_scadenza))}"></label>
+          <label>Tipo cliente
+            <select name="tipo_cliente">
+              <option value="privato" ${(p.tipo_cliente||'privato')==='privato'?'selected':''}>Privato</option>
+              <option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option>
+            </select>
+          </label>
+          <label>Ragione sociale<input name="ragione_sociale" value="${esc(p.ragione_sociale)}"></label>
+          <label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva)}"></label>
+          <label>PEC<input name="pec" value="${esc(p.pec)}"></label>
+          <label>Codice SDI<input name="codice_sdi" value="${esc(p.codice_sdi)}"></label>
+          <label>Data inizio<input type="date" name="data_inizio" value="${esc(p.data_inizio)}"></label>
+          <label>Ora inizio<input type="time" name="ora_inizio" value="${esc(p.ora_inizio)}"></label>
+          <label>Data fine<input type="date" name="data_fine" value="${esc(p.data_fine)}"></label>
+          <label>Ora fine<input type="time" name="ora_fine" value="${esc(p.ora_fine)}"></label>
+          <label>Totale<input name="totale" value="${esc(p.totale)}"></label>
+          <label>Stato
+            <select name="stato">
+              <option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option>
+              <option value="bozza" ${p.stato==='bozza'?'selected':''}>Bozza</option>
+              <option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option>
+              <option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option>
+              <option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option>
+            </select>
+          </label>
+          <label>Cauzione richiesta
+            <select name="cauzione_richiesta">
+              <option value="no" ${(p.cauzione_richiesta||'no')==='no'?'selected':''}>NO</option>
+              <option value="si" ${p.cauzione_richiesta==='si'?'selected':''}>SI</option>
+            </select>
+          </label>
+          <label>Cauzione ricevuta
+            <select name="cauzione_ricevuta">
+              <option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option>
+              <option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option>
+            </select>
+          </label>
+          <label>Importo cauzione<input name="cauzione_importo" value="${esc(p.cauzione_importo || p.cauzione || 0)}"></label>
+          <label>Metodo cauzione
+            <select name="cauzione_metodo">
+              <option value="">---</option>
+              <option value="contanti" ${p.cauzione_metodo==='contanti'?'selected':''}>Contanti</option>
+              <option value="carta" ${p.cauzione_metodo==='carta'?'selected':''}>Carta</option>
+              <option value="bonifico" ${p.cauzione_metodo==='bonifico'?'selected':''}>Bonifico</option>
+              <option value="non_versata" ${p.cauzione_metodo==='non_versata'?'selected':''}>Non versata</option>
+            </select>
+          </label>
+          <label>Cauzione restituita
+            <select name="cauzione_restituita">
+              <option value="no" ${(p.cauzione_restituita||'no')==='no'?'selected':''}>NO</option>
+              <option value="si" ${p.cauzione_restituita==='si'?'selected':''}>SI</option>
+            </select>
+          </label>
+        </div>
+        <label>Note<textarea name="note">${esc(p.note)}</textarea></label>
+        <button class="btn" type="submit">Salva modifiche</button>
+        <a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna</a>
+      </form>
+    </div>`));
+  });
+});
+
+app.post('/prenotazione/:id/modifica', async (req,res)=>{
+  v67EnsureCriticalColumns(async ()=>{
+    try{
+      const b = req.body || {};
+      await run(`UPDATE prenotazioni SET
+        nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?,
+        data_nascita=?, luogo_nascita=?, cittadinanza_cod=?,
+        documento_tipo=?, documento_numero=?, documento_scadenza=?,
+        patente_numero=?, patente_scadenza=?,
+        tipo_cliente=?, ragione_sociale=?, partita_iva=?, pec=?, codice_sdi=?,
+        data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, totale=?, stato=?,
+        cauzione_richiesta=?, cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, cauzione_restituita=?, note=?
+        WHERE id=?`, [
+          v62Val(b.nome), v62Val(b.cognome), v62Val(b.telefono), v62Val(b.email), v62Val(b.codice_fiscale),
+          v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'),
+          v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
+          v62Val(b.patente_numero), v62Val(b.patente_scadenza),
+          v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi),
+          v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Money(b.totale), v62Val(b.stato || 'contratto'),
+          v62Val(b.cauzione_richiesta || 'no'), v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.cauzione_restituita || 'no'), v62Val(b.note),
+          req.params.id
+      ]);
+      try{ if(typeof syncContrattoDriveV59==='function') await syncContrattoDriveV59(req.params.id); }catch(e){}
+      res.redirect(`/contratto/${req.params.id}/gestisci`);
+    } catch(e){
+      res.status(500).send(page('Errore salvataggio', `<div class="box"><h2 class="bad">Errore salvataggio</h2><pre>${esc(e.message)}</pre><a class="btn" href="/prenotazione/${req.params.id}/modifica">Torna modifica</a></div>`));
+    }
+  });
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V66 FIX FUNZIONE VEICOLO CARGOS ONLINE porta ' + PORT);
+  console.log('DP RENT APP V67 FIX SALVA MODIFICA CARGOS ONLINE porta ' + PORT);
 });
