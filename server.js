@@ -24,7 +24,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V63 BOTTONI CARGOS NASCITA
+// V64 FIX CARGOS
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -65,6 +65,23 @@ function v63ContractButtons(p){
     <a class="btn btn2" href="/preventivo/nuovo">Nuovo preventivo</a>
     <a class="btn bad" href="/prenotazione/${id}/elimina">Elimina</a>
   `;
+}
+
+
+// =========================
+// V64 FIX validateCargos
+// =========================
+if (typeof validateCargos === 'undefined') {
+  global.validateCargos = function(p){
+    const errors = [];
+    if(!p) return ['Contratto non trovato'];
+    if(!(p.nome||'').trim()) errors.push('Nome mancante');
+    if(!(p.cognome||'').trim()) errors.push('Cognome mancante');
+    if(!(p.data_nascita||'').trim()) errors.push('Data nascita mancante');
+    if(!(p.documento_numero||'').trim()) errors.push('Documento mancante');
+    if(!(p.patente_numero||'').trim()) errors.push('Patente mancante');
+    return errors;
+  }
 }
 
 app.get('/privacy.pdf', (req, res) => {
@@ -685,7 +702,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V63 BOTTONI CARGOS NASCITA</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V64 FIX CARGOS</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1215,7 +1232,7 @@ doc.end();
 
 
 // =========================
-// V63 BOTTONI CARGOS NASCITA
+// V64 FIX CARGOS
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1342,7 +1359,7 @@ async function buildCargosRecordForContract(id) {
 
 
 // =========================
-// V63 BOTTONI CARGOS NASCITA
+// V64 FIX CARGOS
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -1788,7 +1805,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V63 BOTTONI CARGOS NASCITA'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V64 FIX CARGOS'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1837,7 +1854,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V63 BOTTONI CARGOS NASCITA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V64 FIX CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2727,7 +2744,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V63 BOTTONI CARGOS NASCITA / DRIVE / BRAND
+// V64 FIX CARGOS / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -4898,5 +4915,5 @@ app.get('/admin/gestione-v63',(req,res)=>{
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V63 BOTTONI CARGOS NASCITA ONLINE porta ' + PORT);
+  console.log('DP RENT APP V64 FIX CARGOS ONLINE porta ' + PORT);
 });
