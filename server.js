@@ -24,7 +24,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V67 FIX SALVA MODIFICA CARGOS
+// V68 FIX CITTADINANZA CARGOS
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -69,7 +69,7 @@ function v63ContractButtons(p){
 
 
 // =========================
-// V67 FIX validateCargos
+// V68 FIX validateCargos
 // =========================
 if (typeof validateCargos === 'undefined') {
   global.validateCargos = function(p){
@@ -86,7 +86,7 @@ if (typeof validateCargos === 'undefined') {
 
 
 // =========================
-// V67 PDF UNA PAGINA + CARGOS FURGONI
+// V68 PDF UNA PAGINA + CARGOS FURGONI
 // =========================
 function v65CauzionePdfText(p){
   const richiesta = String(p.cauzione_richiesta || '').toLowerCase() === 'si';
@@ -99,9 +99,9 @@ function v65CauzionePdfText(p){
 
 
 // =========================
-// V67 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
+// V68 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
 // =========================
-function dpRentCleanCargosKeyV67(v) {
+function dpRentCleanCargosKeyV68(v) {
   return String(v || '')
     .toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -111,8 +111,8 @@ function dpRentCleanCargosKeyV67(v) {
     .trim();
 }
 
-function getTipoVeicoloCargosV67(v) {
-  const k = dpRentCleanCargosKeyV67(v);
+function getTipoVeicoloCargosV68(v) {
+  const k = dpRentCleanCargosKeyV68(v);
   if (k === '1' || k.includes('FURG') || k.includes('VAN') || k.includes('DAILY') || k.includes('DUCATO') || k.includes('TRANSIT') || k.includes('VIVARO') || k.includes('EXPERT') || k.includes('SCUDO') || k.includes('DOBLO') || k.includes('DOBL') || k.includes('TALENTO') || k.includes('TRAFIC') || k.includes('MASTER') || k.includes('SPRINTER') || k.includes('VITO')) return '1';
   if (k === '3' || k.includes('BUS') || k.includes('PULMINO') || k.includes('9 POSTI') || k.includes('NOVE POSTI')) return '3';
   if (k === '4' || k.includes('AUTOCAR') || k.includes('MOTRICE') || k.includes('CAMION')) return '4';
@@ -127,16 +127,16 @@ function getTipoVeicoloCargosV67(v) {
 }
 
 // Le vecchie route chiamano getTipoVeicoloCargosV61: ora esiste sempre.
-function getTipoVeicoloCargosV61(v) { return getTipoVeicoloCargosV67(v); }
-function getTipoVeicoloCargosV65(v) { return getTipoVeicoloCargosV67(v); }
-function getTipoVeicoloCargos(v) { return getTipoVeicoloCargosV67(v); }
+function getTipoVeicoloCargosV61(v) { return getTipoVeicoloCargosV68(v); }
+function getTipoVeicoloCargosV65(v) { return getTipoVeicoloCargosV68(v); }
+function getTipoVeicoloCargos(v) { return getTipoVeicoloCargosV68(v); }
 global.getTipoVeicoloCargosV61 = getTipoVeicoloCargosV61;
 global.getTipoVeicoloCargosV65 = getTipoVeicoloCargosV65;
 global.getTipoVeicoloCargos = getTipoVeicoloCargos;
 
 
 // =========================
-// V67 FIX COLONNE + DATA NASCITA CARGOS
+// V68 FIX COLONNE + DATA NASCITA CARGOS
 // =========================
 function v67AddColumn(table, column, type, cb){
   db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, () => cb && cb());
@@ -152,6 +152,7 @@ function v67EnsureCriticalColumns(done){
     ['prenotazioni','data_nascita','TEXT'],
     ['prenotazioni','luogo_nascita','TEXT'],
     ['prenotazioni','cittadinanza_cod','TEXT'],
+    ['prenotazioni','conducente_cittadinanza_cod','TEXT'],
     ['prenotazioni','documento_tipo','TEXT'],
     ['prenotazioni','documento_numero','TEXT'],
     ['prenotazioni','documento_scadenza','TEXT'],
@@ -195,6 +196,24 @@ function v67IsoDate(d){
 }
 function v67DefaultBirth(p){
   return v67NormDate(p.data_nascita || p.nascita_data || p.conducente_nascita_data || '01/01/1970');
+}
+
+
+// =========================
+// V68 FIX CITTADINANZA CARGOS + NO CRASH
+// =========================
+function v68CittadinanzaCod(p){
+  return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
+}
+function v68SafeValidateCargos(p){
+  try {
+    const r = (typeof validateCargos === 'function') ? validateCargos(p) : null;
+    if (r && Array.isArray(r.missing)) return r;
+    if (Array.isArray(r)) return { ok: r.length === 0, missing: r, length: 0 };
+    return { ok: true, missing: [], length: 0 };
+  } catch(e) {
+    return { ok: false, missing: [e.message || 'Errore validazione CARGOS'], length: 0 };
+  }
 }
 
 app.get('/privacy.pdf', (req, res) => {
@@ -815,7 +834,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V67 FIX SALVA MODIFICA CARGOS</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V68 FIX CITTADINANZA CARGOS</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1344,7 +1363,7 @@ doc.end();
 
 
 // =========================
-// V67 FIX SALVA MODIFICA CARGOS
+// V68 FIX CITTADINANZA CARGOS
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1471,7 +1490,7 @@ async function buildCargosRecordForContract(id) {
 
 
 // =========================
-// V67 FIX SALVA MODIFICA CARGOS
+// V68 FIX CITTADINANZA CARGOS
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -1885,7 +1904,7 @@ function v50EnsurePrenotazioniDb(done) {
       record_cargos_checkout_indirizzo:'TEXT', record_cargos_checkin_luogo_cod:'TEXT',
       record_cargos_checkin_indirizzo:'TEXT', record_cargos_agenzia_id:'TEXT',
       record_cargos_operatore_id:'TEXT', record_cargos_luogo_cod:'TEXT',
-      record_cargos_nascita_luogo_cod:'TEXT', record_cargos_cittadinanza_cod:'TEXT',
+      record_cargos_nascita_luogo_cod:'TEXT', record_cargos_cittadinanza_cod:'TEXT', conducente_cittadinanza_cod:'TEXT',
       record_cargos_residenza_luogo_cod:'TEXT', record_cargos_doc_tipo_cod:'TEXT',
       record_cargos_doc_luogoril_cod:'TEXT', record_cargos_patente_luogoril_cod:'TEXT'
     };
@@ -1917,7 +1936,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V67 FIX SALVA MODIFICA CARGOS'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V68 FIX CITTADINANZA CARGOS'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1966,7 +1985,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V67 FIX SALVA MODIFICA CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V68 FIX CITTADINANZA CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2805,7 +2824,7 @@ function buildCargosCsvHeader() {
 }
 
 function validateCargosV37(p) {
-  const v = validateCargos(p);
+  const v = v68SafeValidateCargos(p);
   const record = buildCargosFixedRecord(p);
   return { ...v, length: record.length, fixed_ok: record.length === 1505 };
 }
@@ -2856,7 +2875,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V67 FIX SALVA MODIFICA CARGOS / DRIVE / BRAND
+// V68 FIX CITTADINANZA CARGOS / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3066,7 +3085,7 @@ function cargosRecordDataV40(p) {
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
     CONDUCENTE_CONTRAENTE_NASCITA_DATA: v67DefaultBirth(p),
     CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
-    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: p.record_cargos_cittadinanza_cod || process.env.CARGOS_CITTADINANZA_COD || '100000100',
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: v68CittadinanzaCod(p),
     CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
     CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
     CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: getTipoDocumentoCargosV61(p.documento_tipo || p.tipo_documento || 'IDENT'),
@@ -3283,7 +3302,7 @@ app.get('/cargos/:id/preview', (req, res) => {
         <h2>Ca.R.G.O.S. Preview V40</h2>
         <p><b>Contratto:</b> ${esc(p.codice || p.id)}</p>
         <p><b>Lunghezza record:</b> ${v.length}/1505 ${v.ok ? '<span class="ok">OK</span>' : '<span class="bad">KO</span>'}</p>
-        ${v.missing.length ? `<div class="alert"><b>Mancano:</b><br>${v.missing.map(esc).join('<br>')}</div>` : '<p class="ok">Campi obbligatori OK</p>'}
+        ${v.missing.length ? `<div class="alert"><b>Mancano:</b><br>${(Array.isArray(v.missing)?v.missing:[]).map(esc).join('<br>')}</div>` : '<p class="ok">Campi obbligatori OK</p>'}
         <div class="actions">
           <a class="btn" href="/cargos/${p.id}/check">Verifica dati CaRGOS</a>
           <a class="btn btn3" href="/cargos/${p.id}/send">Invia report CaRGOS</a>
@@ -3353,8 +3372,8 @@ app.get('/cargos/:id/send', async (req, res) => {
 
 app.get('/cargos/:id/invia', (req, res) => res.redirect(`/cargos/${req.params.id}/send`));
 
-app.get('/cargos/:id', (req,res)=>{getPrenotazioneCompleta(req.params.id,(err,p)=>{if(!p)return res.send(page('CARGOS','<div class="box"><h2>Contratto non trovato</h2></div>')); const val=k=>esc(p[k]||''); const v=validateCargos(p); res.send(page('Ca.R.G.O.S.',`
-<div class="box"><h2>Ca.R.G.O.S. ${esc(p.codice)}</h2>${v.ok?`<p class="ok">Dati completi. Lunghezza riga: ${v.length}</p>`:`<div class="alert"><b>Mancano campi:</b><br>${v.missing.map(esc).join('<br>')}</div>`}
+app.get('/cargos/:id', (req,res)=>{getPrenotazioneCompleta(req.params.id,(err,p)=>{if(!p)return res.send(page('CARGOS','<div class="box"><h2>Contratto non trovato</h2></div>')); const val=k=>esc(p[k]||''); const v=v68SafeValidateCargos(p); res.send(page('Ca.R.G.O.S.',`
+<div class="box"><h2>Ca.R.G.O.S. ${esc(p.codice)}</h2>${v.ok?`<p class="ok">Dati completi. Lunghezza riga: ${v.length}</p>`:`<div class="alert"><b>Mancano campi:</b><br>${(Array.isArray(v.missing)?v.missing:[]).map(esc).join('<br>')}</div>`}
 <form method="POST" action="/cargos/${p.id}/save">
 <h3>Contratto / Agenzia</h3><div class="grid">
 <div><label>Metodo pagamento</label>${cargosSelect('record_cargos_pagamento_tipo',p.record_cargos_pagamento_tipo||'0',CARGOS_PAYMENTS)}</div>
@@ -4408,14 +4427,14 @@ const V52_PRENOTAZIONI_COLS = {
   record_cargos_veicolo_colore:'TEXT',
   record_cargos_veicolo_gps:'TEXT',
   record_cargos_veicolo_bloccom:'TEXT',
-  record_cargos_cittadinanza_cod:'TEXT',
+  record_cargos_cittadinanza_cod:'TEXT', conducente_cittadinanza_cod:'TEXT',
   record_cargos_nascita_luogo_cod:'TEXT',
   record_cargos_residenza_luogo_cod:'TEXT',
   record_cargos_doc_tipo_cod:'TEXT',
   record_cargos_doc_luogoril_cod:'TEXT',
   record_cargos_patente_luogoril_cod:'TEXT',
   conducente2_nascita_luogo_cod:'TEXT',
-  conducente2_cittadinanza_cod:'TEXT',
+  conducente2_cittadinanza_cod:'TEXT', conducente_cittadinanza_cod:'TEXT',
   conducente2_doc_tipo_cod:'TEXT',
   conducente2_doc_luogoril_cod:'TEXT',
   conducente2_patente_luogoril_cod:'TEXT',
@@ -4952,7 +4971,7 @@ app.get('/admin/fix-tutto-v63',(req,res)=>{
     db.run(`CREATE TABLE IF NOT EXISTS prenotazioni (id INTEGER PRIMARY KEY AUTOINCREMENT,codice TEXT,nome TEXT,cognome TEXT,telefono TEXT,email TEXT,data_inizio TEXT,data_fine TEXT,totale REAL,stato TEXT DEFAULT 'bozza')`);
     db.run(`CREATE TABLE IF NOT EXISTS mezzi (id INTEGER PRIMARY KEY AUTOINCREMENT,targa TEXT,marca TEXT,modello TEXT,tipo TEXT,stato TEXT DEFAULT 'attivo')`);
     const pren={
-      data_nascita:'TEXT', luogo_nascita:'TEXT', luogo_nascita_cod:'TEXT', cittadinanza_cod:'TEXT',
+      data_nascita:'TEXT', luogo_nascita:'TEXT', luogo_nascita_cod:'TEXT', cittadinanza_cod:'TEXT', conducente_cittadinanza_cod:'TEXT',
       documento_tipo:'TEXT', documento_numero:'TEXT', documento_scadenza:'TEXT', documento_luogo_rilascio_cod:'TEXT',
       patente_numero:'TEXT', patente_scadenza:'TEXT', patente_luogo_rilascio_cod:'TEXT',
       cauzione_richiesta:'TEXT', cauzione_ricevuta:'TEXT', cauzione_importo:'REAL', cauzione_metodo:'TEXT', cauzione_restituita:'TEXT',
@@ -5004,7 +5023,7 @@ app.get('/admin/gestione-v63',(req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V67', `<div class="box">
+  res.send(page('Test CARGOS veicolo V68', `<div class="box">
     <h2>Test tipo veicolo CARGOS</h2>
     <p>Testo: <b>${esc(q)}</b></p>
     <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV61(q))}</b></p>
@@ -5017,10 +5036,10 @@ app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V67', `<div class="box">
-    <h2>Test tipo veicolo CARGOS V67</h2>
+  res.send(page('Test CARGOS veicolo V68', `<div class="box">
+    <h2>Test tipo veicolo CARGOS V68</h2>
     <p>Testo: <b>${esc(q)}</b></p>
-    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV67(q))}</b></p>
+    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV68(q))}</b></p>
     <p>OPEL VIVARO / FURGONI deve essere <b>1</b>.</p>
     <a class="btn" href="/admin/test-cargos-veicolo-v66?q=OPEL%20VIVARO">Test Vivaro</a>
     <a class="btn btn2" href="/admin/test-cargos-veicolo-v66?q=FURGONI">Test Furgoni</a>
@@ -5029,12 +5048,12 @@ app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
 });
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>res.redirect('/admin/test-cargos-veicolo-v66?q=' + encodeURIComponent(req.query.q || 'OPEL VIVARO')));
 
-v67EnsureCriticalColumns(() => console.log('V67 colonne critiche OK'));
+v67EnsureCriticalColumns(() => console.log('V68 colonne critiche OK'));
 
 app.get('/admin/fix-tutto-v67',(req,res)=>{
   v67EnsureCriticalColumns(()=>{
-    res.send(page('FIX V67 OK', `<div class="box">
-      <h2 class="ok">FIX V67 OK</h2>
+    res.send(page('FIX V68 OK', `<div class="box">
+      <h2 class="ok">FIX V68 OK</h2>
       <p>Colonne cauzione, documento, patente e nascita aggiornate.</p>
       <a class="btn" href="/">Dashboard</a>
       <a class="btn btn2" href="/storico">Storico</a>
@@ -5164,6 +5183,21 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
   });
 });
 
+
+app.get('/admin/fix-tutto-v68',(req,res)=>{
+  v67EnsureCriticalColumns(()=>{
+    db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => {
+      res.send(page('FIX V68 OK', `<div class="box">
+        <h2 class="ok">FIX V68 OK</h2>
+        <p>Cittadinanza CARGOS impostata: 100000100 Italia.</p>
+        <a class="btn" href="/">Dashboard</a>
+        <a class="btn btn2" href="/storico">Storico</a>
+      </div>`));
+    });
+  });
+});
+app.get('/admin/fix-tutto-v67',(req,res)=>res.redirect('/admin/fix-tutto-v68'));
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V67 FIX SALVA MODIFICA CARGOS ONLINE porta ' + PORT);
+  console.log('DP RENT APP V68 FIX CITTADINANZA CARGOS ONLINE porta ' + PORT);
 });
