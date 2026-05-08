@@ -24,7 +24,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V64 FIX CARGOS
+// V65 CARGOS PDF ONEPAGE
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -69,7 +69,7 @@ function v63ContractButtons(p){
 
 
 // =========================
-// V64 FIX validateCargos
+// V65 FIX validateCargos
 // =========================
 if (typeof validateCargos === 'undefined') {
   global.validateCargos = function(p){
@@ -82,6 +82,19 @@ if (typeof validateCargos === 'undefined') {
     if(!(p.patente_numero||'').trim()) errors.push('Patente mancante');
     return errors;
   }
+}
+
+
+// =========================
+// V65 PDF UNA PAGINA + CARGOS FURGONI
+// =========================
+function v65CauzionePdfText(p){
+  const richiesta = String(p.cauzione_richiesta || '').toLowerCase() === 'si';
+  const ricevuta = String(p.cauzione_ricevuta || '').toLowerCase() === 'si';
+  const imp = p.cauzione_importo || p.cauzione || 0;
+  if (!richiesta) return 'Cauzione: non richiesta / non versata';
+  if (ricevuta) return `Cauzione ricevuta: SI - â¬ ${imp} - ${p.cauzione_metodo || '-'}`;
+  return `Cauzione ricevuta: NO - importo previsto â¬ ${imp}`;
 }
 
 app.get('/privacy.pdf', (req, res) => {
@@ -702,7 +715,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V64 FIX CARGOS</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V65 CARGOS PDF ONEPAGE</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1118,7 +1131,7 @@ async function generaPdfContratto(id, opts = {}) {
   if (!p) throw new Error('Contratto non trovato');
 
   const file = path.join(contractsDir, pdfFileNameForContract(p));
-  const doc = new PDFDocument({ margin: 40, size:'A4' });
+  const doc = new PDFDocument({ margin: 28, size:'A4' });
   const stream = fs.createWriteStream(file);
   doc.pipe(stream);
 
@@ -1193,7 +1206,6 @@ async function generaPdfContratto(id, opts = {}) {
   doc.text('Condizioni Generali di Noleggio', { link: baseUrl ? `${baseUrl}/clausole.pdf` : '/clausole.pdf', underline: true });
   doc.fillColor('black');
 
-try{doc.moveDown(0.5);const cr=String(p.cauzione_richiesta||'').toLowerCase()==='si';const cv=String(p.cauzione_ricevuta||'').toLowerCase()==='si';const ci=p.cauzione_importo||p.cauzione||0;if(!cr){doc.fontSize(10).fillColor('black').text('Cauzione: non richiesta / non versata.');}else if(cv){doc.fontSize(10).fillColor('black').text(`Cauzione ricevuta: SI - importo â¬ ${ci} - metodo ${p.cauzione_metodo||'-'}.`);}else{doc.fontSize(10).fillColor('red').text(`Cauzione ricevuta: NO - importo previsto â¬ ${ci}.`);doc.fillColor('black');}}catch(e){}
 doc.end();
 
   await new Promise((resolve, reject) => {
@@ -1232,7 +1244,7 @@ doc.end();
 
 
 // =========================
-// V64 FIX CARGOS
+// V65 CARGOS PDF ONEPAGE
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1359,7 +1371,7 @@ async function buildCargosRecordForContract(id) {
 
 
 // =========================
-// V64 FIX CARGOS
+// V65 CARGOS PDF ONEPAGE
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -1805,7 +1817,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V64 FIX CARGOS'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V65 CARGOS PDF ONEPAGE'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -1854,7 +1866,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V64 FIX CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V65 CARGOS PDF ONEPAGE</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2744,7 +2756,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V64 FIX CARGOS / DRIVE / BRAND
+// V65 CARGOS PDF ONEPAGE / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -2943,7 +2955,7 @@ function cargosRecordDataV40(p) {
     AGENZIA_LUOGO_COD: p.record_cargos_agenzia_luogo_cod || luogo,
     AGENZIA_INDIRIZZO: p.record_cargos_agenzia_indirizzo || agenziaInd,
     AGENZIA_RECAPITO_TEL: p.record_cargos_agenzia_tel || tel,
-    VEICOLO_TIPO: getTipoVeicoloCargosV63(p.tipo || p.categoria || p.veicolo_tipo || p.modello || p.descrizione),
+    VEICOLO_TIPO: getTipoVeicoloCargosV61([p.tipo,p.categoria,p.veicolo_tipo,p.marca,p.modello,p.descrizione,p.targa].filter(Boolean).join(' ')),
     VEICOLO_MARCA: p.marca || (String(p.mezzo || '').split(' ')[0] || ''),
     VEICOLO_MODELLO: p.modello || p.mezzo || '',
     VEICOLO_TARGA: p.targa || '',
@@ -4914,6 +4926,19 @@ app.get('/admin/gestione-v63',(req,res)=>{
   </div>`));
 });
 
+
+app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
+  const q = req.query.q || 'OPEL VIVARO';
+  res.send(page('Test CARGOS veicolo V65', `<div class="box">
+    <h2>Test tipo veicolo CARGOS</h2>
+    <p>Testo: <b>${esc(q)}</b></p>
+    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV61(q))}</b></p>
+    <p>OPEL VIVARO deve essere <b>1 = Furgoni</b>.</p>
+    <a class="btn" href="/admin/test-cargos-veicolo-v65?q=OPEL%20VIVARO">Test Vivaro</a>
+    <a class="btn btn2" href="/">Dashboard</a>
+  </div>`));
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V64 FIX CARGOS ONLINE porta ' + PORT);
+  console.log('DP RENT APP V65 CARGOS PDF ONEPAGE ONLINE porta ' + PORT);
 });
