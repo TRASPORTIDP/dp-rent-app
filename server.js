@@ -24,7 +24,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V71 FIX CARGOS TABELLE
+// V72 CARGOS AUTO CARRENTAL
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -69,7 +69,7 @@ function v63ContractButtons(p){
 
 
 // =========================
-// V71 FIX validateCargos
+// V72 FIX validateCargos
 // =========================
 if (typeof validateCargos === 'undefined') {
   global.validateCargos = function(p){
@@ -86,7 +86,7 @@ if (typeof validateCargos === 'undefined') {
 
 
 // =========================
-// V71 PDF UNA PAGINA + CARGOS FURGONI
+// V72 PDF UNA PAGINA + CARGOS FURGONI
 // =========================
 function v65CauzionePdfText(p){
   const richiesta = String(p.cauzione_richiesta || '').toLowerCase() === 'si';
@@ -99,9 +99,9 @@ function v65CauzionePdfText(p){
 
 
 // =========================
-// V71 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
+// V72 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
 // =========================
-function dpRentCleanCargosKeyV71(v) {
+function dpRentCleanCargosKeyV72(v) {
   return String(v || '')
     .toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -111,8 +111,8 @@ function dpRentCleanCargosKeyV71(v) {
     .trim();
 }
 
-function getTipoVeicoloCargosV71(v) {
-  const k = dpRentCleanCargosKeyV71(v);
+function getTipoVeicoloCargosV72(v) {
+  const k = dpRentCleanCargosKeyV72(v);
   if (k === '1' || k.includes('FURG') || k.includes('VAN') || k.includes('DAILY') || k.includes('DUCATO') || k.includes('TRANSIT') || k.includes('VIVARO') || k.includes('EXPERT') || k.includes('SCUDO') || k.includes('DOBLO') || k.includes('DOBL') || k.includes('TALENTO') || k.includes('TRAFIC') || k.includes('MASTER') || k.includes('SPRINTER') || k.includes('VITO')) return '1';
   if (k === '3' || k.includes('BUS') || k.includes('PULMINO') || k.includes('9 POSTI') || k.includes('NOVE POSTI')) return '3';
   if (k === '4' || k.includes('AUTOCAR') || k.includes('MOTRICE') || k.includes('CAMION')) return '4';
@@ -127,16 +127,16 @@ function getTipoVeicoloCargosV71(v) {
 }
 
 // Le vecchie route chiamano getTipoVeicoloCargosV61: ora esiste sempre.
-function getTipoVeicoloCargosV61(v) { return getTipoVeicoloCargosV71(v); }
-function getTipoVeicoloCargosV65(v) { return getTipoVeicoloCargosV71(v); }
-function getTipoVeicoloCargos(v) { return getTipoVeicoloCargosV71(v); }
+function getTipoVeicoloCargosV61(v) { return getTipoVeicoloCargosV72(v); }
+function getTipoVeicoloCargosV65(v) { return getTipoVeicoloCargosV72(v); }
+function getTipoVeicoloCargos(v) { return getTipoVeicoloCargosV72(v); }
 global.getTipoVeicoloCargosV61 = getTipoVeicoloCargosV61;
 global.getTipoVeicoloCargosV65 = getTipoVeicoloCargosV65;
 global.getTipoVeicoloCargos = getTipoVeicoloCargos;
 
 
 // =========================
-// V71 FIX COLONNE + DATA NASCITA CARGOS
+// V72 FIX COLONNE + DATA NASCITA CARGOS
 // =========================
 function v67AddColumn(table, column, type, cb){
   db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, () => cb && cb());
@@ -200,7 +200,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V71 FIX CARGOS TABELLE + NO CRASH
+// V72 CARGOS AUTO CARRENTAL + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -218,12 +218,102 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V71 FIX cargosSelect MANCANTE
+// V72 FIX cargosSelect MANCANTE
 // evita ReferenceError: cargosSelect is not defined
 // =========================
 
+
 // =========================
-// V71 FIX TABELLE CARGOS COMPLETE
+// V72 CARGOS AUTO CARRENTAL - DEFAULT REALI
+// =========================
+const CARGOS_DEFAULTS_V72 = {
+  pagamento_tipo: '1',              // Contanti
+  agenzia_id: '001',
+  agenzia_nome: 'NARNI',
+  agenzia_luogo_cod: '410055022',   // NARNI TR
+  agenzia_indirizzo: 'VIA TUDERTE 466',
+  agenzia_telefono: '0744817108',
+  checkout_luogo_cod: '410055022',  // NARNI TR
+  checkin_luogo_cod: '410055022',   // NARNI TR
+  checkout_indirizzo: 'VIA TUDERTE 466',
+  checkin_indirizzo: 'VIA TUDERTE 466',
+  cittadinanza_cod: '100000100',    // ITALIA
+  tipo_documento: 'PATEN',          // PATENTE DI GUIDA
+  veicolo_tipo: '1',                // FURGONI
+  gps: '0',
+  blocco_motore: '0'
+};
+
+function cargosDefaultV72(p, key, fallback='') {
+  p = p || {};
+  const keys = [
+    key,
+    'record_cargos_' + key,
+    'cargos_' + key
+  ];
+  for (const k of keys) {
+    if (p[k] !== undefined && p[k] !== null && String(p[k]).trim() !== '') return String(p[k]).trim();
+  }
+  if (CARGOS_DEFAULTS_V72[key] !== undefined) return CARGOS_DEFAULTS_V72[key];
+  return fallback;
+}
+
+function getTipoDocumentoCargosV72(v) {
+  const k = String(v || '').trim().toUpperCase();
+  if (!k) return 'PATEN';
+  if (k.includes('PAT') || k === 'PATEN') return 'PATEN';
+  if (k.includes('ELET') || k === 'IDELE') return 'IDELE';
+  if (k.includes('IDENT') || k.includes('CARTA')) return 'IDENT';
+  if (k.includes('PASS')) return 'PASOR';
+  return k.length <= 5 ? k : 'PATEN';
+}
+
+function getTipoDocumentoCargosV61(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargosV65(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargosV66(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargosV67(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargosV68(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargosV69(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargosV70(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargosV71(v){ return getTipoDocumentoCargosV72(v); }
+function getTipoDocumentoCargos(v){ return getTipoDocumentoCargosV72(v); }
+
+global.getTipoDocumentoCargosV61 = getTipoDocumentoCargosV61;
+global.getTipoDocumentoCargosV65 = getTipoDocumentoCargosV65;
+global.getTipoDocumentoCargosV66 = getTipoDocumentoCargosV66;
+global.getTipoDocumentoCargosV67 = getTipoDocumentoCargosV67;
+global.getTipoDocumentoCargosV68 = getTipoDocumentoCargosV68;
+global.getTipoDocumentoCargosV69 = getTipoDocumentoCargosV69;
+global.getTipoDocumentoCargosV70 = getTipoDocumentoCargosV70;
+global.getTipoDocumentoCargosV71 = getTipoDocumentoCargosV71;
+global.getTipoDocumentoCargosV72 = getTipoDocumentoCargosV72;
+global.getTipoDocumentoCargos = getTipoDocumentoCargos;
+
+function cargosPatchDefaultsV72(p) {
+  p = p || {};
+  return Object.assign({}, p, {
+    record_cargos_pagamento_tipo: cargosDefaultV72(p, 'pagamento_tipo'),
+    record_cargos_agenzia_id: cargosDefaultV72(p, 'agenzia_id'),
+    record_cargos_agenzia_nome: cargosDefaultV72(p, 'agenzia_nome'),
+    record_cargos_agenzia_luogo_cod: cargosDefaultV72(p, 'agenzia_luogo_cod'),
+    record_cargos_agenzia_indirizzo: cargosDefaultV72(p, 'agenzia_indirizzo'),
+    record_cargos_agenzia_telefono: cargosDefaultV72(p, 'agenzia_telefono'),
+    record_cargos_checkout_luogo_cod: cargosDefaultV72(p, 'checkout_luogo_cod'),
+    record_cargos_checkin_luogo_cod: cargosDefaultV72(p, 'checkin_luogo_cod'),
+    record_cargos_checkout_indirizzo: cargosDefaultV72(p, 'checkout_indirizzo'),
+    record_cargos_checkin_indirizzo: cargosDefaultV72(p, 'checkin_indirizzo'),
+    record_cargos_cittadinanza_cod: cargosDefaultV72(p, 'cittadinanza_cod'),
+    record_cargos_tipo_documento: cargosDefaultV72(p, 'tipo_documento'),
+    record_cargos_veicolo_tipo: cargosDefaultV72(p, 'veicolo_tipo'),
+    record_cargos_gps: cargosDefaultV72(p, 'gps'),
+    record_cargos_blocco_motore: cargosDefaultV72(p, 'blocco_motore'),
+    conducente_cittadinanza_cod: cargosDefaultV72(p, 'cittadinanza_cod'),
+    cittadinanza_cod: cargosDefaultV72(p, 'cittadinanza_cod')
+  });
+}
+
+// =========================
+// V72 FIX TABELLE CARGOS COMPLETE
 // evita ReferenceError su CARGOS_*
 // =========================
 const CARGOS_VEHICLE_TYPES = [
@@ -306,7 +396,7 @@ function cargosHidden(nome, valore){
 
 
 // =========================
-// V71 FIX cargosSelect MANCANTE - BLOCCO PULITO
+// V72 FIX cargosSelect MANCANTE - BLOCCO PULITO
 // =========================
 function cargosSelect(nome, valore, lista) {
   lista = Array.isArray(lista) ? lista : [];
@@ -947,7 +1037,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V71 FIX CARGOS TABELLE</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V72 CARGOS AUTO CARRENTAL</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1476,7 +1566,7 @@ doc.end();
 
 
 // =========================
-// V71 FIX CARGOS TABELLE
+// V72 CARGOS AUTO CARRENTAL
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1569,6 +1659,9 @@ function cargosTipoVeicolo(categoria) {
 }
 
 async function buildCargosRecordForContract(id) {
+  // buildCargosRecordForContract__v72patched
+  p = cargosPatchDefaultsV72(p);
+
   const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [id]);
   if (!p) throw new Error('Contratto non trovato');
 
@@ -1603,7 +1696,7 @@ async function buildCargosRecordForContract(id) {
 
 
 // =========================
-// V71 FIX CARGOS TABELLE
+// V72 CARGOS AUTO CARRENTAL
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2049,7 +2142,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V71 FIX CARGOS TABELLE'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V72 CARGOS AUTO CARRENTAL'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2098,7 +2191,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V71 FIX CARGOS TABELLE</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V72 CARGOS AUTO CARRENTAL</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2988,7 +3081,7 @@ async function cargosRealCall(action, p) {
 
 
 // =========================
-// V71 FIX CARGOS TABELLE / DRIVE / BRAND
+// V72 CARGOS AUTO CARRENTAL / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3163,6 +3256,9 @@ const CARGOS_FIELDS_V40 = [
 ];
 
 function cargosRecordDataV40(p) {
+  // cargosRecordDataV40__v72patched
+  p = cargosPatchDefaultsV72(p);
+
   const n = splitFullNameV40(p);
   const agenziaNome = process.env.CARGOS_AGENZIA_NOME || 'TRASPORTI DP S.R.L. - DP RENT';
   const agenziaInd = process.env.CARGOS_AGENZIA_INDIRIZZO || 'VIA TUDERTE 466, NARNI (TR)';
@@ -3239,6 +3335,9 @@ function cargosRowsV40(p) {
 }
 
 function validateCargosV40(p) {
+  // validateCargosV40__v72patched
+  p = cargosPatchDefaultsV72(p);
+
   const d = cargosRecordDataV40(p);
   const missing = [];
   const req = [
@@ -5136,7 +5235,7 @@ app.get('/admin/gestione-v63',(req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V71', `<div class="box">
+  res.send(page('Test CARGOS veicolo V72', `<div class="box">
     <h2>Test tipo veicolo CARGOS</h2>
     <p>Testo: <b>${esc(q)}</b></p>
     <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV61(q))}</b></p>
@@ -5149,10 +5248,10 @@ app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V71', `<div class="box">
-    <h2>Test tipo veicolo CARGOS V71</h2>
+  res.send(page('Test CARGOS veicolo V72', `<div class="box">
+    <h2>Test tipo veicolo CARGOS V72</h2>
     <p>Testo: <b>${esc(q)}</b></p>
-    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV71(q))}</b></p>
+    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV72(q))}</b></p>
     <p>OPEL VIVARO / FURGONI deve essere <b>1</b>.</p>
     <a class="btn" href="/admin/test-cargos-veicolo-v66?q=OPEL%20VIVARO">Test Vivaro</a>
     <a class="btn btn2" href="/admin/test-cargos-veicolo-v66?q=FURGONI">Test Furgoni</a>
@@ -5161,12 +5260,12 @@ app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
 });
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>res.redirect('/admin/test-cargos-veicolo-v66?q=' + encodeURIComponent(req.query.q || 'OPEL VIVARO')));
 
-v67EnsureCriticalColumns(() => console.log('V71 colonne critiche OK'));
+v67EnsureCriticalColumns(() => console.log('V72 colonne critiche OK'));
 
 app.get('/admin/fix-tutto-v67',(req,res)=>{
   v67EnsureCriticalColumns(()=>{
-    res.send(page('FIX V71 OK', `<div class="box">
-      <h2 class="ok">FIX V71 OK</h2>
+    res.send(page('FIX V72 OK', `<div class="box">
+      <h2 class="ok">FIX V72 OK</h2>
       <p>Colonne cauzione, documento, patente e nascita aggiornate.</p>
       <a class="btn" href="/">Dashboard</a>
       <a class="btn btn2" href="/storico">Storico</a>
@@ -5300,8 +5399,8 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
 app.get('/admin/fix-tutto-v68',(req,res)=>{
   v67EnsureCriticalColumns(()=>{
     db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => {
-      res.send(page('FIX V71 OK', `<div class="box">
-        <h2 class="ok">FIX V71 OK</h2>
+      res.send(page('FIX V72 OK', `<div class="box">
+        <h2 class="ok">FIX V72 OK</h2>
         <p>Cittadinanza CARGOS impostata: 100000100 Italia.</p>
         <a class="btn" href="/">Dashboard</a>
         <a class="btn btn2" href="/storico">Storico</a>
@@ -5315,8 +5414,8 @@ app.get('/admin/fix-tutto-v67',(req,res)=>res.redirect('/admin/fix-tutto-v68'));
 app.get('/admin/fix-tutto-v69',(req,res)=>{
   v67EnsureCriticalColumns(()=>{
     db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => {
-      res.send(page('FIX V71 OK', `<div class="box">
-        <h2 class="ok">FIX V71 OK</h2>
+      res.send(page('FIX V72 OK', `<div class="box">
+        <h2 class="ok">FIX V72 OK</h2>
         <p>Fix cargosSelect + colonne critiche completato.</p>
         <a class="btn" href="/">Dashboard</a>
         <a class="btn btn2" href="/storico">Storico</a>
@@ -5331,8 +5430,8 @@ app.get('/admin/fix-tutto-v70', (req, res) => {
   if (typeof v67EnsureCriticalColumns === 'function') {
     v67EnsureCriticalColumns(() => {
       db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => {
-        res.send(page('FIX V71 OK', `<div class="box">
-          <h2 class="ok">FIX V71 OK</h2>
+        res.send(page('FIX V72 OK', `<div class="box">
+          <h2 class="ok">FIX V72 OK</h2>
           <p>Server sistemato: sintassi corretta, cargosSelect presente, colonne critiche controllate.</p>
           <a class="btn" href="/">Dashboard</a>
           <a class="btn btn2" href="/storico">Storico</a>
@@ -5340,8 +5439,8 @@ app.get('/admin/fix-tutto-v70', (req, res) => {
       });
     });
   } else {
-    res.send(page('FIX V71 OK', `<div class="box">
-      <h2 class="ok">FIX V71 OK</h2>
+    res.send(page('FIX V72 OK', `<div class="box">
+      <h2 class="ok">FIX V72 OK</h2>
       <p>Server sistemato.</p>
       <a class="btn" href="/">Dashboard</a>
     </div>`));
@@ -5352,8 +5451,8 @@ app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v70
 
 
 app.get('/admin/fix-tutto-v71', (req, res) => {
-  const done = () => res.send(page('FIX V71 OK', `<div class="box">
-    <h2 class="ok">FIX V71 OK</h2>
+  const done = () => res.send(page('FIX V72 OK', `<div class="box">
+    <h2 class="ok">FIX V72 OK</h2>
     <p>Tabelle CARGOS caricate: pagamenti, veicoli, documenti, luoghi base.</p>
     <a class="btn" href="/">Dashboard</a>
     <a class="btn btn2" href="/storico">Storico</a>
@@ -5370,6 +5469,24 @@ app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v71
 app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v71'));
 app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v71'));
 
+
+app.get('/admin/fix-tutto-v72', (req, res) => {
+  const done = () => res.send(page('FIX V72 OK', `<div class="box">
+    <h2 class="ok">FIX V72 OK</h2>
+    <p>Ca.R.G.O.S. automatico impostato come esempio CarRental: Narni, Italia, contanti, furgoni, patente.</p>
+    <a class="btn" href="/">Dashboard</a>
+    <a class="btn btn2" href="/storico">Storico</a>
+  </div>`));
+  if (typeof v67EnsureCriticalColumns === 'function') {
+    v67EnsureCriticalColumns(() => {
+      db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => done());
+    });
+  } else done();
+});
+app.get('/admin/fix-tutto-v71', (req, res) => res.redirect('/admin/fix-tutto-v72'));
+app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v72'));
+app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v72'));
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V71 FIX CARGOS TABELLE ONLINE porta ' + PORT);
+  console.log('DP RENT APP V72 CARGOS AUTO CARRENTAL ONLINE porta ' + PORT);
 });
