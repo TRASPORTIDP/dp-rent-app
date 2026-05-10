@@ -22,7 +22,16 @@ const appPublicDir = path.join(__dirname, 'public');
 try { fs.mkdirSync(appPublicDir, { recursive: true }); } catch(e) {}
 app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
+// =========================
+// V70 FIX CARGOS PAYMENTS
+// =========================
 
+const CARGOS_PAYMENTS = [
+  { id: '0', descrizione: 'Contanti' },
+  { id: '1', descrizione: 'Carta' },
+  { id: '2', descrizione: 'Bonifico' },
+  { id: '3', descrizione: 'Assegno' }
+];
 // =========================
 // V70 FIX SYNTAX CARGOSSELECT
 // =========================
