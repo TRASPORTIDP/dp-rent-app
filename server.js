@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -3524,14 +3525,23 @@ async function cargosGetTokenV40() {
   const password = process.env.CARGOS_PASSWORD;
   if (!username || !password) throw new Error('Mancano CARGOS_USERNAME o CARGOS_PASSWORD');
   const auth = Buffer.from(`${username}:${password}`).toString('base64');
+
+  // FIX V76: l'endpoint Token di Ca.R.G.O.S. NON accetta POST.
+  // Render mostrava: 405 "The requested resource does not support http method 'POST'."
+  // Quindi il token va richiesto in GET con Basic Auth.
   const r = await fetch(`${CARGOS_BASE_URL}/api/Token`, {
-    method: 'POST',
-    headers: { 'Authorization': `Basic ${auth}`, 'Accept': 'application/json' }
+    method: 'GET',
+    headers: {
+      'Authorization': `Basic ${auth}`,
+      'Accept': 'application/json'
+    }
   });
+
   const text = await r.text();
   let data; try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  if (!r.ok || !data.access_token) throw new Error(`Token CARGOS KO ${r.status}: ${text.slice(0,500)}`);
-  return data.access_token;
+  const accessToken = data.access_token || data.accessToken || data.token || data?.Esito?.access_token;
+  if (!r.ok || !accessToken) throw new Error(`Token CARGOS KO ${r.status}: ${text.slice(0,500)}`);
+  return accessToken;
 }
 
 function cargosEncryptTokenV40(accessToken) {
