@@ -1660,11 +1660,11 @@ function cargosTipoVeicolo(categoria) {
 
 async function buildCargosRecordForContract(id) {
   // buildCargosRecordForContract__v72patched
-  p = cargosPatchDefaultsV72(p);
+
 
   const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [id]);
   if (!p) throw new Error('Contratto non trovato');
-
+Object.assign(p, cargosPatchDefaultsV72(p));
   const fields = [
     cargosPad(p.codice,50), cargosDateTime(p.created_at || moment(), moment().format('HH:mm')),
     cargosPad(process.env.CARGOS_TIPO_PAGAMENTO || '1',1,'number'),
