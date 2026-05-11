@@ -485,7 +485,7 @@ const bookingUpload = upload.fields([
 app.post('/bookings', bookingUpload, (req,res)=>{
   const customer = getOrCreateCustomer(req.body);
   const vehicle = findVehicle(req.body.vehicleId);
-  const booking = buildBooking(req.body, customer, vehicle, null, req.files || {});
+  const booking = buildBooking(req.body, customer, vehicle, {}, req.files || {});
   booking.id = newId('BKG');
   booking.contractNumber = nextContractNumber();
   booking.createdAt = new Date().toISOString();
@@ -509,6 +509,8 @@ function filesToStored(files) {
 }
 
 function buildBooking(body, customer, vehicle, existing = {}, files = {}) {
+  existing = existing || {};
+  files = files || {};
   const daily = parseMoney(body.dailyPrice || (vehicle && vehicle.dailyPrice) || existing.dailyPrice || 70);
   const booking = {
     ...existing,
