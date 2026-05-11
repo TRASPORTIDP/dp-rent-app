@@ -93,8 +93,8 @@ function v65CauzionePdfText(p){
   const ricevuta = String(p.cauzione_ricevuta || '').toLowerCase() === 'si';
   const imp = p.cauzione_importo || p.cauzione || 0;
   if (!richiesta) return 'Cauzione: non richiesta / non versata';
-  if (ricevuta) return `Cauzione ricevuta: SI - â¬ ${imp} - ${p.cauzione_metodo || '-'}`;
-  return `Cauzione ricevuta: NO - importo previsto â¬ ${imp}`;
+  if (ricevuta) return `Cauzione ricevuta: SI - € ${imp} - ${p.cauzione_metodo || '-'}`;
+  return `Cauzione ricevuta: NO - importo previsto € ${imp}`;
 }
 
 
@@ -105,7 +105,7 @@ function dpRentCleanCargosKeyV76(v) {
   return String(v || '')
     .toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[â']/g, '')
+    .replace(/[’']/g, '')
     .replace(/[_\-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -343,8 +343,8 @@ const CARGOS_PAYMENT_TYPES = CARGOS_PAYMENTS;
 
 const CARGOS_DOC_TYPES = [
   { id: 'CIDIP', descrizione: 'Carta ID diplomatica' },
-  { id: 'IDELE', descrizione: 'Carta identitÃ  elettronica' },
-  { id: 'IDENT', descrizione: "Carta di identitÃ " },
+  { id: 'IDELE', descrizione: 'Carta identità elettronica' },
+  { id: 'IDENT', descrizione: "Carta di identità" },
   { id: 'PASDI', descrizione: 'Passaporto diplomatico' },
   { id: 'PASOR', descrizione: 'Passaporto ordinario' },
   { id: 'PASSE', descrizione: 'Passaporto di servizio' },
@@ -1098,7 +1098,7 @@ function codicePratica(id) {
 }
 function validDateRange(inizio, fine) {
   if (!inizio || !fine) return 'Data inizio/fine mancante';
-  if (moment(fine).isBefore(moment(inizio))) return 'La data fine non puÃ² essere precedente alla data inizio';
+  if (moment(fine).isBefore(moment(inizio))) return 'La data fine non può essere precedente alla data inizio';
   return '';
 }
 function extraOrario(ora) {
@@ -1505,7 +1505,7 @@ async function generaPdfContratto(id, opts = {}) {
 
   y = Math.max(yVeh, yCost) + 10;
   y = section(doc, 'CONDIZIONI GENERALI E PRIVACY', 45, y, 510);
-  doc.fontSize(8).fillColor('#111').text('Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio e lâinformativa privacy DP RENT / Trasporti DP S.R.L. Il mezzo deve essere riconsegnato nelle stesse condizioni, con carburante equivalente. Danni, multe, pedaggi, franchigie, ritardi, smarrimenti e costi accessori restano a carico del cliente.', 55, y, {width:490});
+  doc.fontSize(8).fillColor('#111').text('Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio e l’informativa privacy DP RENT / Trasporti DP S.R.L. Il mezzo deve essere riconsegnato nelle stesse condizioni, con carburante equivalente. Danni, multe, pedaggi, franchigie, ritardi, smarrimenti e costi accessori restano a carico del cliente.', 55, y, {width:490});
   y += 50;
   if (TERMS_URL) { doc.fontSize(7).text(`Condizioni generali: ${TERMS_URL}`, 55, y, {width:490}); y += 12; }
   if (PRIVACY_URL) { doc.fontSize(7).text(`Informativa privacy: ${PRIVACY_URL}`, 55, y, {width:490}); y += 12; }
@@ -1574,7 +1574,7 @@ const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 function v61CleanKey(v) {
   return String(v || '').toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    .replace(/[â']/g, '').replace(/[_\-]+/g, ' ')
+    .replace(/[’']/g, '').replace(/[_\-]+/g, ' ')
     .replace(/\s+/g, ' ').trim();
 }
 
@@ -1891,14 +1891,14 @@ async function estraiDatiDocumentoConAI(localPath, mimetype) {
   const base64 = fs.readFileSync(localPath).toString('base64');
   const dataUrl = `data:${mimetype || 'image/jpeg'};base64,${base64}`;
 
-  const prompt = `Leggi documento italiano patente/carta identitÃ . Rispondi SOLO JSON valido:
+  const prompt = `Leggi documento italiano patente/carta identità. Rispondi SOLO JSON valido:
 {
 "tipo_documento":"","nome":"","cognome":"","data_nascita":"YYYY-MM-DD","luogo_nascita":"",
 "codice_fiscale":"","numero_documento":"","ente_rilascio":"","data_rilascio":"YYYY-MM-DD",
 "data_scadenza":"YYYY-MM-DD","numero_patente":"","categoria_patente":"","indirizzo":"",
 "note":"","confidence":"alta|media|bassa"
 }
-Se un campo non Ã¨ visibile lascia vuoto.`;
+Se un campo non è visibile lascia vuoto.`;
 
   const r = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
@@ -2398,7 +2398,7 @@ app.get('/mezzi-web', async (req, res) => {
       <td>${esc(m.modello)}</td>
       <td>${esc(m.categoria)}</td>
       <td>${esc(descrizionePubblica(m))}</td>
-      <td>â¬ ${euro(m.prezzo_giorno)}</td>
+      <td>€ ${euro(m.prezzo_giorno)}</td>
       <td>${esc(m.km_inclusi)}</td>
       <td>${alertBadge(m)}</td>
       <td>${esc(m.stato)}</td>
@@ -3044,7 +3044,7 @@ app.get('/nuova-prenotazione', async (req, res) => {
   res.send(page('Nuova prenotazione', `<h2>Nuova prenotazione / contratto</h2>
       <div class="box" style="border:2px solid #0b6b2d">
         <h3>1) Prima carica/scatta documento o patente</h3>
-        <p class="notice">Consigliato: fai OCR prima di creare il contratto, cosÃ¬ i dati cliente si compilano piÃ¹ velocemente.</p>
+        <p class="notice">Consigliato: fai OCR prima di creare il contratto, così i dati cliente si compilano più velocemente.</p>
         <a class="btn btn3" href="/ocr-pro"> OCR carta identita + patente</a>
       </div>
       <h3>2) Poi controlla i dati e crea contratto</h3>
@@ -3105,7 +3105,7 @@ app.post('/prenota-admin', async (req, res) => {
     const result = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${placeholders})`, cols.map(k=>data[k]));
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
-    res.send(actionScreen(result.lastID, 'Contratto creato', `Codice: <b>${cod}</b><br>Mezzo: <b>${esc(data.targa)} ${esc(data.marca)} ${esc(data.modello)}</b><br>Totale: <b>â¬ ${euro(calc.totale)}</b>`));
+    res.send(actionScreen(result.lastID, 'Contratto creato', `Codice: <b>${cod}</b><br>Mezzo: <b>${esc(data.targa)} ${esc(data.marca)} ${esc(data.modello)}</b><br>Totale: <b>€ ${euro(calc.totale)}</b>`));
   } catch (e) {
     res.status(500).send(page('Errore prenotazione', `<div class="box"><h2 class="bad">Errore prenotazione</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
   }
@@ -3141,7 +3141,7 @@ app.post('/prenota-cliente', async (req, res) => {
     `, [b.nome,b.cognome,b.telefono,b.email,b.codice_fiscale,b.indirizzo,'privato',mezzo.id,b.data_inizio,b.data_fine,b.ora_inizio || '08:30',b.ora_fine || '18:00',calc.giorni,Number(b.km_previsti || 0),calc.extra_fuori_orario,calc.extraKm,calc.imponibile,calc.iva,calc.totale,CAUZIONE,'richiesta_cliente']);
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
-    res.send(page('Richiesta inviata', `<div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice: <b>${cod}</b></p><p>Totale previsto: <b>â¬ ${euro(calc.totale)}</b></p><p>DP RENT confermera la prenotazione.</p></div>`));
+    res.send(page('Richiesta inviata', `<div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice: <b>${cod}</b></p><p>Totale previsto: <b>€ ${euro(calc.totale)}</b></p><p>DP RENT confermera la prenotazione.</p></div>`));
   } catch (e) {
     res.status(500).send(page('Errore', `<pre>${esc(e.message)}</pre>`));
   }
@@ -3200,7 +3200,7 @@ function cargosHumanTable(p) {
 
 function cargosMissingHtml(missing) {
   if (!missing || !missing.length) return '<p class="ok">Nessun campo obbligatorio mancante.</p>';
-  return `<div class="alert"><b>Campi obbligatori mancanti:</b><br>${missing.map(x => 'â¢ ' + esc(x)).join('<br>')}</div>`;
+  return `<div class="alert"><b>Campi obbligatori mancanti:</b><br>${missing.map(x => '• ' + esc(x)).join('<br>')}</div>`;
 }
 
 function cargosApiConfigured() {
@@ -3334,7 +3334,7 @@ function cleanCargos(v, len) {
   return String(v || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .toUpperCase()
-    .replace(/[^A-Z0-9 ÃÃÃÃÃÃ\/\.\-\+\s]/g, '')
+    .replace(/[^A-Z0-9 ÀÈÉÌÒÙ\/\.\-\+\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim()
     .slice(0, len);
@@ -3438,10 +3438,17 @@ function cargosRecordDataV40(p) {
     AGENZIA_LUOGO_COD: p.record_cargos_agenzia_luogo_cod || luogo,
     AGENZIA_INDIRIZZO: p.record_cargos_agenzia_indirizzo || agenziaInd,
     AGENZIA_RECAPITO_TEL: p.record_cargos_agenzia_tel || tel,
-    VEICOLO_TIPO: getTipoVeicoloCargosV61([p.tipo,p.categoria,p.veicolo_tipo,p.marca,p.modello,p.descrizione,p.targa].filter(Boolean).join(' ')),
-    VEICOLO_MARCA: p.marca || (String(p.mezzo || '').split(' ')[0] || ''),
-    VEICOLO_MODELLO: p.modello || p.mezzo || '',
-    VEICOLO_TARGA: p.targa || '',
+    // V76 FIX REALE: getPrenotazioneCompleta() legge il mezzo con alias mezzo_*
+    // Se usiamo solo p.marca/p.modello/p.targa, Ca.R.G.O.S resta vuoto quando il veicolo arriva dalla tabella mezzi.
+    VEICOLO_TIPO: getTipoVeicoloCargosV61([
+      p.tipo, p.categoria, p.veicolo_tipo,
+      p.marca, p.modello, p.targa,
+      p.mezzo_tipo, p.mezzo_categoria, p.mezzo_marca, p.mezzo_modello, p.mezzo_targa, p.mezzo_descrizione,
+      p.mezzo
+    ].filter(Boolean).join(' ')),
+    VEICOLO_MARCA: String(p.marca || p.veicolo_marca || p.mezzo_marca || '').trim(),
+    VEICOLO_MODELLO: String(p.modello || p.veicolo_modello || p.mezzo_modello || p.mezzo_descrizione || p.mezzo || '').trim(),
+    VEICOLO_TARGA: String(p.targa || p.veicolo_targa || p.mezzo_targa || '').trim(),
     VEICOLO_COLORE: p.colore || p.record_cargos_veicolo_colore || '',
     VEICOLO_GPS: String(p.gps ?? p.record_cargos_veicolo_gps ?? process.env.CARGOS_VEICOLO_GPS ?? '0'),
     VEICOLO_BLOCCOM: String(p.blocco_motore ?? p.record_cargos_veicolo_bloccom ?? process.env.CARGOS_VEICOLO_BLOCCOM ?? '0'),
@@ -3628,7 +3635,7 @@ function privacyHtmlV40() {
     <p><b>Sede:</b> Via Tuderte 466, Narni (TR)</p>
     <p><b>Contatti:</b> 0744817108 - contabilita@trasportidp.com</p>
     <p>I dati personali e i documenti sono trattati per identificazione cliente, gestione contratto di noleggio, obblighi fiscali, sicurezza, gestione danni, multe, pedaggi e adempimenti previsti dalla normativa.</p>
-    <p>I dati possono essere comunicati alle autoritÃ  competenti quando richiesto dalla legge.</p>
+    <p>I dati possono essere comunicati alle autorità competenti quando richiesto dalla legge.</p>
     <a class="btn" href="/">Torna</a>
   </div>`);
 }
@@ -3640,7 +3647,7 @@ function condizioniHtmlV40() {
     <p>Carburante: livello indicato nel contratto, normalmente pieno/pieno.</p>
     <p>Km inclusi e extra km sono quelli indicati nel contratto.</p>
     <p>Danni, franchigie, ritardi, multe, pedaggi, smarrimento chiavi/documenti e costi accessori sono a carico del cliente.</p>
-    <p>Il deposito cauzionale Ã¨ gestito separatamente secondo accordi DP RENT.</p>
+    <p>Il deposito cauzionale è gestito separatamente secondo accordi DP RENT.</p>
     <a class="btn" href="/">Torna</a>
   </div>`);
 }
@@ -3798,8 +3805,8 @@ app.get('/prenotazione/:id', async (req, res) => {
       <p><b>Cliente:</b> ${esc(p.nome)} ${esc(p.cognome)} - ${esc(p.telefono)}</p>
       <p><b>Email:</b> ${esc(p.email)} | <b>CF:</b> ${esc(p.codice_fiscale)}</p>
       <p><b>Mezzo:</b> <a href="/mezzo/${p.mezzo_id}">${esc(p.targa)} ${esc(descrizionePubblica(p))}</a></p>
-      <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} â ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
-      <p><b>Totale:</b> â¬ ${euro(p.totale)} | <b>Cauzione:</b> â¬ ${euro(p.cauzione || CAUZIONE)}</p>
+      <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} → ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
+      <p><b>Totale:</b> € ${euro(p.totale)} | <b>Cauzione:</b> € ${euro(p.cauzione || CAUZIONE)}</p>
       <p><b>Stato:</b> ${esc(p.stato)} | <b>Nexi:</b> ${esc(p.nexi_stato || '')} | <b>Ca.R.G.O.S.:</b> ${esc(p.record_cargos_stato || '')}</p>
       ${p.pdf_drive_web_link ? `<p><b>PDF Drive:</b> <a target="_blank" href="${esc(p.pdf_drive_web_link)}">Apri su Drive</a></p>` : ''}
       ${p.nexi_link ? `<p><b>Link Nexi:</b> <a target="_blank" href="${esc(p.nexi_link)}">${esc(p.nexi_link)}</a></p>` : ''}
@@ -3832,7 +3839,7 @@ app.get('/prenotazioni', async (req, res) => {
   if (al) { sql += ` AND date(p.data_fine)<=date(?)`; params.push(al); }
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} → ${esc(p.data_fine)}</td><td>€ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
   res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${trs}</table>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
@@ -3859,7 +3866,7 @@ app.get('/planning', async (req, res) => {
     rows += '</tr>';
   });
   const prec = start.clone().subtract(1,'month').format('YYYY-MM'), succ = start.clone().add(1,'month').format('YYYY-MM');
-  res.send(page('Planning', `<h2>Planning ${start.format('MM/YYYY')}</h2><p><a href="/planning?mese=${prec}">â Mese precedente</a> | <a href="/planning?mese=${succ}">Mese successivo â</a></p><p><span class="libero" style="padding:6px;">Libero: clic per prenotare</span> <span class="occupato" style="padding:6px;">Occupato: clic per aprire contratto</span></p><div class="sticky-table"><table><tr>${header}</tr>${rows}</table></div>`));
+  res.send(page('Planning', `<h2>Planning ${start.format('MM/YYYY')}</h2><p><a href="/planning?mese=${prec}">← Mese precedente</a> | <a href="/planning?mese=${succ}">Mese successivo →</a></p><p><span class="libero" style="padding:6px;">Libero: clic per prenotare</span> <span class="occupato" style="padding:6px;">Occupato: clic per aprire contratto</span></p><div class="sticky-table"><table><tr>${header}</tr>${rows}</table></div>`));
 });
 
 
@@ -3884,7 +3891,7 @@ function renderOcrUploadForm(action, backUrl, title = 'Carica documenti') {
       <label>Tipo documento</label>
       <select id="tipoScelto">
         <option>Patente</option>
-        <option>Carta identitÃ </option>
+        <option>Carta identità</option>
         <option>Codice fiscale</option>
         <option>Altro documento</option>
       </select>
@@ -3928,7 +3935,7 @@ function renderOcrConfirmPage(p, dati, saveAction, cancelUrl) {
   return page('Conferma dati OCR', `
     <div class="box">
       <h2>Controlla dati letti</h2>
-      <p class="notice">Controlla bene: se una data o un numero Ã¨ sbagliato, correggilo prima di salvare.</p>
+      <p class="notice">Controlla bene: se una data o un numero è sbagliato, correggilo prima di salvare.</p>
 
       <form method="POST" action="${saveAction}">
         <div class="grid">
@@ -4055,7 +4062,7 @@ app.get('/cliente-documenti/:id/:token', async (req, res) => {
       <p class="notice">Puoi caricare patente/documento. Dopo la lettura automatica controlli e confermi i dati.</p>
     </div>
     ${renderOcrUploadForm(`/cliente-documenti/${p.id}/${req.params.token}`, `/cliente-documenti/${p.id}/${req.params.token}`, 'Carica/scatta documento')}
-    <div class="box"><h3>File giÃ  caricati</h3><ul>${lista || '<li>Nessun file caricato</li>'}</ul></div>
+    <div class="box"><h3>File già caricati</h3><ul>${lista || '<li>Nessun file caricato</li>'}</ul></div>
   `));
 });
 
@@ -4098,7 +4105,7 @@ app.post('/cliente-documenti/:id/:token/salva', async (req, res) => {
     res.send(page('Documenti salvati', `
       <div class="box">
         <h2 class="ok">Dati salvati correttamente</h2>
-        <p>Grazie. DP RENT controllerÃ  i dati e completerÃ  il contratto.</p>
+        <p>Grazie. DP RENT controllerà i dati e completerà il contratto.</p>
       </div>
     `));
   } catch (e) {
@@ -4373,7 +4380,7 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
   const testo =
     `DP RENT - Contratto ${p.codice}\n` +
     `Cliente: ${p.nome || ''} ${p.cognome || ''}\n` +
-    `Totale: â¬ ${Number(p.totale || 0).toFixed(2)}\n\n` +
+    `Totale: € ${Number(p.totale || 0).toFixed(2)}\n\n` +
     (pdfLink ? `PDF contratto: ${pdfLink}\n\n` : '') +
     `Firma online: ${firmaLink}`;
 
@@ -4416,14 +4423,14 @@ app.get('/nexi/:id', async (req, res) => {
 
     const testoWa =
       `DP RENT - pagamento contratto ${p.codice}\n` +
-      `Totale: â¬ ${euro(p.totale)}\n` +
+      `Totale: € ${euro(p.totale)}\n` +
       `${pagamento.link}`;
 
     res.send(page('Pagamento Nexi', `
       <div class="box">
         <h2>Pagamento Nexi PayMail</h2>
         <p><b>Contratto:</b> ${esc(p.codice)}</p>
-        <p><b>Totale contratto:</b> â¬ ${euro(p.totale)}</p>
+        <p><b>Totale contratto:</b> € ${euro(p.totale)}</p>
         <p class="notice">La cauzione resta gestita manualmente. Qui paghi solo il totale contratto.</p>
 
         <a class="btn btnWarn" href="${esc(pagamento.link)}" target="_blank">Apri link pagamento Nexi</a>
@@ -4471,7 +4478,7 @@ app.get('/termini-noleggio', (req, res) => {
       <p>Il cliente prende in consegna il mezzo nello stato indicato al check-out e si impegna a riconsegnarlo nello stesso stato.</p>
       <p>Carburante: politica pieno/pieno o livello indicato nel contratto. Differenze di carburante, pulizia straordinaria, danni, smarrimento chiavi/documenti, ritardi, multe, ZTL, pedaggi e franchigie sono a carico del cliente.</p>
       <p>Km extra: se previsti, sono conteggiati alla tariffa indicata nel contratto.</p>
-      <p>Deposito cauzionale: resta gestito separatamente e puÃ² essere trattenuto in tutto o in parte per danni o costi accessori.</p>
+      <p>Deposito cauzionale: resta gestito separatamente e può essere trattenuto in tutto o in parte per danni o costi accessori.</p>
       <p>La firma del contratto conferma accettazione di privacy e condizioni.</p>
       <a class="btn" href="/">Torna</a>
     </div>
@@ -4504,7 +4511,7 @@ CARGOS_BASE_URL=https://cargos.poliziadistato.it/CARGOS_API</pre>
 
 app.get('/cargos', async (req, res) => {
   const rows = await all(`SELECT p.*, m.targa FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id ORDER BY p.id DESC LIMIT 50`);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.record_cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} → ${esc(p.data_fine)}</td><td>${esc(p.record_cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
   res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Ca.R.G.O.S.</h2><p>Modulo pronto. Quando hai username/password/APIKEY e codici tabelle, Check e Send diventano reali.</p><p><b>Configurato:</b> ${cargosConfigured() ? '<span class="ok">SI</span>' : '<span class="bad">NO</span>'}</p><p>Servono: CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_AGENZIA_ID, CARGOS_OPERATORE_ID, CARGOS_LUOGO_COD.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>Azione</th></tr>${trs}</table>`));
 });
 
@@ -5280,8 +5287,8 @@ A Mezzi d'opera
 
 DOCUMENTI:
 CIDIP Carta id. diplomatica
-IDELE Carta identitÃ  elettronica
-IDENT Carta identitÃ 
+IDELE Carta identità elettronica
+IDENT Carta identità
 PASDI Passaporto diplomatico
 PASOR Passaporto ordinario
 PASSE Passaporto servizio
@@ -5323,7 +5330,7 @@ app.get('/admin/fix-tutto-v60',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 app.get('/admin/fix-tutto-v58',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 
 
-app.get('/prenotazione/:id/elimina',async(req,res)=>{const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);res.send(page('Elimina contratto',`<div class="box"><h2 class="bad">Eliminare contratto ${esc(p?.codice||req.params.id)}?</h2><form method="post" action="/prenotazione/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina</button><a class="btn btn2" href="/prenotazione/${req.params.id}">Annulla</a></form></div>`));});
+app.get('/prenotazione/:id/elimina',async(req,res)=>{const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);res.send(page('Elimina contratto',`<div class="box"><h2 class="bad">Eliminare contratto ${esc(p?.codice||req.params.id)}?</h2><form method="post" action="/prenotazione/${req.params.id}/elimina"><button class="btn bad" type="submit">Sì, elimina</button><a class="btn btn2" href="/prenotazione/${req.params.id}">Annulla</a></form></div>`));});
 app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM allegati WHERE prenotazione_id=?`,[req.params.id]).catch(()=>{});await run(`DELETE FROM prenotazioni WHERE id=?`,[req.params.id]);res.redirect('/');});
 app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=preventivo'));
 app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=?`,[req.params.id]);res.redirect(`/prenotazione/${req.params.id}`);});
@@ -5365,8 +5372,8 @@ app.get('/contratto/:id/gestisci', async (req,res)=>{
     <h2>Gestisci ${esc(p.codice||p.id)}</h2>
     <p><b>Cliente:</b> ${esc((p.nome||'')+' '+(p.cognome||''))}</p>
     <p><b>Periodo:</b> ${esc(p.data_inizio||'')} ${esc(p.ora_inizio||'')} - ${esc(p.data_fine||'')} ${esc(p.ora_fine||'')}</p>
-    <p><b>Totale:</b> â¬ ${esc(p.totale||0)}</p>
-    <p><b>Cauzione:</b> richiesta ${esc(p.cauzione_richiesta||'no')} / ricevuta ${esc(p.cauzione_ricevuta||'no')} / â¬ ${esc(p.cauzione_importo||p.cauzione||0)}</p>
+    <p><b>Totale:</b> € ${esc(p.totale||0)}</p>
+    <p><b>Cauzione:</b> richiesta ${esc(p.cauzione_richiesta||'no')} / ricevuta ${esc(p.cauzione_ricevuta||'no')} / € ${esc(p.cauzione_importo||p.cauzione||0)}</p>
     ${v63ContractButtons(p)}
     <hr>
     <a class="btn btn2" href="/contratto/${p.id}">PDF</a>
@@ -5451,8 +5458,8 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Cittadinanza codice<input name="cittadinanza_cod" value="${esc(p.cittadinanza_cod || '100000100')}"></label>
           <label>Tipo documento
             <select name="documento_tipo">
-              <option value="IDENT" ${(p.documento_tipo||'IDENT')==='IDENT'?'selected':''}>Carta identitÃ </option>
-              <option value="IDELE" ${p.documento_tipo==='IDELE'?'selected':''}>Carta identitÃ  elettronica</option>
+              <option value="IDENT" ${(p.documento_tipo||'IDENT')==='IDENT'?'selected':''}>Carta identità</option>
+              <option value="IDELE" ${p.documento_tipo==='IDELE'?'selected':''}>Carta identità elettronica</option>
               <option value="PASOR" ${p.documento_tipo==='PASOR'?'selected':''}>Passaporto</option>
               <option value="PATEN" ${p.documento_tipo==='PATEN'?'selected':''}>Patente</option>
             </select>
