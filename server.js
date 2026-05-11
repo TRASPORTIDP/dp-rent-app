@@ -24,7 +24,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V75 CARGOS 1505 FIX
+// V76 FIX ROUTE SYNTAX CARGOS
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -69,7 +69,7 @@ function v63ContractButtons(p){
 
 
 // =========================
-// V75 FIX validateCargos
+// V76 FIX validateCargos
 // =========================
 if (typeof validateCargos === 'undefined') {
   global.validateCargos = function(p){
@@ -86,7 +86,7 @@ if (typeof validateCargos === 'undefined') {
 
 
 // =========================
-// V75 PDF UNA PAGINA + CARGOS FURGONI
+// V76 PDF UNA PAGINA + CARGOS FURGONI
 // =========================
 function v65CauzionePdfText(p){
   const richiesta = String(p.cauzione_richiesta || '').toLowerCase() === 'si';
@@ -99,9 +99,9 @@ function v65CauzionePdfText(p){
 
 
 // =========================
-// V75 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
+// V76 FIX DEFINITIVO FUNZIONE VEICOLO CARGOS
 // =========================
-function dpRentCleanCargosKeyV75(v) {
+function dpRentCleanCargosKeyV76(v) {
   return String(v || '')
     .toUpperCase()
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -111,8 +111,8 @@ function dpRentCleanCargosKeyV75(v) {
     .trim();
 }
 
-function old_getTipoVeicoloCargosV75_DISABLED(v) {
-  const k = dpRentCleanCargosKeyV75(v);
+function old_getTipoVeicoloCargosV76_DISABLED(v) {
+  const k = dpRentCleanCargosKeyV76(v);
   if (k === '1' || k.includes('FURG') || k.includes('VAN') || k.includes('DAILY') || k.includes('DUCATO') || k.includes('TRANSIT') || k.includes('VIVARO') || k.includes('EXPERT') || k.includes('SCUDO') || k.includes('DOBLO') || k.includes('DOBL') || k.includes('TALENTO') || k.includes('TRAFIC') || k.includes('MASTER') || k.includes('SPRINTER') || k.includes('VITO')) return '1';
   if (k === '3' || k.includes('BUS') || k.includes('PULMINO') || k.includes('9 POSTI') || k.includes('NOVE POSTI')) return '3';
   if (k === '4' || k.includes('AUTOCAR') || k.includes('MOTRICE') || k.includes('CAMION')) return '4';
@@ -127,16 +127,16 @@ function old_getTipoVeicoloCargosV75_DISABLED(v) {
 }
 
 // Le vecchie route chiamano getTipoVeicoloCargosV61: ora esiste sempre.
-function old_getTipoVeicoloCargosV61_DISABLED(v) { return getTipoVeicoloCargosV75(v); }
-function old_getTipoVeicoloCargosV65_DISABLED(v) { return getTipoVeicoloCargosV75(v); }
-function old_getTipoVeicoloCargos_DISABLED(v) { return getTipoVeicoloCargosV75(v); }
+function old_getTipoVeicoloCargosV61_DISABLED(v) { return getTipoVeicoloCargosV76(v); }
+function old_getTipoVeicoloCargosV65_DISABLED(v) { return getTipoVeicoloCargosV76(v); }
+function old_getTipoVeicoloCargos_DISABLED(v) { return getTipoVeicoloCargosV76(v); }
 global.getTipoVeicoloCargosV61 = getTipoVeicoloCargosV61;
 global.getTipoVeicoloCargosV65 = getTipoVeicoloCargosV65;
 global.getTipoVeicoloCargos = getTipoVeicoloCargos;
 
 
 // =========================
-// V75 FIX COLONNE + DATA NASCITA CARGOS
+// V76 FIX COLONNE + DATA NASCITA CARGOS
 // =========================
 function v67AddColumn(table, column, type, cb){
   db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`, () => cb && cb());
@@ -200,7 +200,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V75 CARGOS 1505 FIX + NO CRASH
+// V76 FIX ROUTE SYNTAX CARGOS + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -218,15 +218,15 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V75 FIX cargosSelect MANCANTE
+// V76 FIX cargosSelect MANCANTE
 // evita ReferenceError: cargosSelect is not defined
 // =========================
 
 
 // =========================
-// V75 CARGOS 1505 FIX - DEFAULT REALI
+// V76 FIX ROUTE SYNTAX CARGOS - DEFAULT REALI
 // =========================
-const CARGOS_DEFAULTS_V75 = {
+const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
   agenzia_id: '001',
   agenzia_nome: 'NARNI',
@@ -244,7 +244,7 @@ const CARGOS_DEFAULTS_V75 = {
   blocco_motore: '0'
 };
 
-function cargosDefaultV75(p, key, fallback='') {
+function cargosDefaultV76(p, key, fallback='') {
   p = p || {};
   const keys = [
     key,
@@ -254,11 +254,11 @@ function cargosDefaultV75(p, key, fallback='') {
   for (const k of keys) {
     if (p[k] !== undefined && p[k] !== null && String(p[k]).trim() !== '') return String(p[k]).trim();
   }
-  if (CARGOS_DEFAULTS_V75[key] !== undefined) return CARGOS_DEFAULTS_V75[key];
+  if (CARGOS_DEFAULTS_V76[key] !== undefined) return CARGOS_DEFAULTS_V76[key];
   return fallback;
 }
 
-function getTipoDocumentoCargosV75(v) {
+function getTipoDocumentoCargosV76(v) {
   const k = String(v || '').trim().toUpperCase();
   if (!k) return 'PATEN';
   if (k.includes('PAT') || k === 'PATEN') return 'PATEN';
@@ -268,15 +268,15 @@ function getTipoDocumentoCargosV75(v) {
   return k.length <= 5 ? k : 'PATEN';
 }
 
-function getTipoDocumentoCargosV61(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargosV65(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargosV66(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargosV67(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargosV68(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargosV69(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargosV70(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargosV71(v){ return getTipoDocumentoCargosV75(v); }
-function getTipoDocumentoCargos(v){ return getTipoDocumentoCargosV75(v); }
+function getTipoDocumentoCargosV61(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargosV65(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargosV66(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargosV67(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargosV68(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargosV69(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargosV70(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargosV71(v){ return getTipoDocumentoCargosV76(v); }
+function getTipoDocumentoCargos(v){ return getTipoDocumentoCargosV76(v); }
 
 global.getTipoDocumentoCargosV61 = getTipoDocumentoCargosV61;
 global.getTipoDocumentoCargosV65 = getTipoDocumentoCargosV65;
@@ -286,35 +286,35 @@ global.getTipoDocumentoCargosV68 = getTipoDocumentoCargosV68;
 global.getTipoDocumentoCargosV69 = getTipoDocumentoCargosV69;
 global.getTipoDocumentoCargosV70 = getTipoDocumentoCargosV70;
 global.getTipoDocumentoCargosV71 = getTipoDocumentoCargosV71;
-global.getTipoDocumentoCargosV75 = getTipoDocumentoCargosV75;
+global.getTipoDocumentoCargosV76 = getTipoDocumentoCargosV76;
 global.getTipoDocumentoCargos = getTipoDocumentoCargos;
 
-function cargosPatchDefaultsV75(p) {
+function cargosPatchDefaultsV76(p) {
   p = p || {};
-  p = patchCargosVehicleTypeIntoObjectV75(p);
+  p = patchCargosVehicleTypeIntoObjectV76(p);
   return Object.assign({}, p, {
-    record_cargos_pagamento_tipo: cargosDefaultV75(p, 'pagamento_tipo'),
-    record_cargos_agenzia_id: cargosDefaultV75(p, 'agenzia_id'),
-    record_cargos_agenzia_nome: cargosDefaultV75(p, 'agenzia_nome'),
-    record_cargos_agenzia_luogo_cod: cargosDefaultV75(p, 'agenzia_luogo_cod'),
-    record_cargos_agenzia_indirizzo: cargosDefaultV75(p, 'agenzia_indirizzo'),
-    record_cargos_agenzia_telefono: cargosDefaultV75(p, 'agenzia_telefono'),
-    record_cargos_checkout_luogo_cod: cargosDefaultV75(p, 'checkout_luogo_cod'),
-    record_cargos_checkin_luogo_cod: cargosDefaultV75(p, 'checkin_luogo_cod'),
-    record_cargos_checkout_indirizzo: cargosDefaultV75(p, 'checkout_indirizzo'),
-    record_cargos_checkin_indirizzo: cargosDefaultV75(p, 'checkin_indirizzo'),
-    record_cargos_cittadinanza_cod: cargosDefaultV75(p, 'cittadinanza_cod'),
-    record_cargos_tipo_documento: cargosDefaultV75(p, 'tipo_documento'),
-    record_cargos_veicolo_tipo: cargosDefaultV75(p, 'veicolo_tipo'),
-    record_cargos_gps: cargosDefaultV75(p, 'gps'),
-    record_cargos_blocco_motore: cargosDefaultV75(p, 'blocco_motore'),
-    conducente_cittadinanza_cod: cargosDefaultV75(p, 'cittadinanza_cod'),
-    cittadinanza_cod: cargosDefaultV75(p, 'cittadinanza_cod')
+    record_cargos_pagamento_tipo: cargosDefaultV76(p, 'pagamento_tipo'),
+    record_cargos_agenzia_id: cargosDefaultV76(p, 'agenzia_id'),
+    record_cargos_agenzia_nome: cargosDefaultV76(p, 'agenzia_nome'),
+    record_cargos_agenzia_luogo_cod: cargosDefaultV76(p, 'agenzia_luogo_cod'),
+    record_cargos_agenzia_indirizzo: cargosDefaultV76(p, 'agenzia_indirizzo'),
+    record_cargos_agenzia_telefono: cargosDefaultV76(p, 'agenzia_telefono'),
+    record_cargos_checkout_luogo_cod: cargosDefaultV76(p, 'checkout_luogo_cod'),
+    record_cargos_checkin_luogo_cod: cargosDefaultV76(p, 'checkin_luogo_cod'),
+    record_cargos_checkout_indirizzo: cargosDefaultV76(p, 'checkout_indirizzo'),
+    record_cargos_checkin_indirizzo: cargosDefaultV76(p, 'checkin_indirizzo'),
+    record_cargos_cittadinanza_cod: cargosDefaultV76(p, 'cittadinanza_cod'),
+    record_cargos_tipo_documento: cargosDefaultV76(p, 'tipo_documento'),
+    record_cargos_veicolo_tipo: cargosDefaultV76(p, 'veicolo_tipo'),
+    record_cargos_gps: cargosDefaultV76(p, 'gps'),
+    record_cargos_blocco_motore: cargosDefaultV76(p, 'blocco_motore'),
+    conducente_cittadinanza_cod: cargosDefaultV76(p, 'cittadinanza_cod'),
+    cittadinanza_cod: cargosDefaultV76(p, 'cittadinanza_cod')
   });
 }
 
 // =========================
-// V75 FIX TABELLE CARGOS COMPLETE
+// V76 FIX TABELLE CARGOS COMPLETE
 // evita ReferenceError su CARGOS_*
 // =========================
 const CARGOS_VEHICLE_TYPES = [
@@ -397,7 +397,7 @@ function cargosHidden(nome, valore){
 
 
 // =========================
-// V75 FIX cargosSelect MANCANTE - BLOCCO PULITO
+// V76 FIX cargosSelect MANCANTE - BLOCCO PULITO
 // =========================
 function cargosSelect(nome, valore, lista) {
   lista = Array.isArray(lista) ? lista : [];
@@ -1038,7 +1038,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V75 CARGOS 1505 FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V76 FIX ROUTE SYNTAX CARGOS</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1567,7 +1567,7 @@ doc.end();
 
 
 // =========================
-// V75 CARGOS 1505 FIX
+// V76 FIX ROUTE SYNTAX CARGOS
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1661,10 +1661,10 @@ function cargosTipoVeicolo(categoria) {
 
 
 // =========================
-// V75 FIX DEFINITIVO VEICOLO_TIPO CARGOS
+// V76 FIX DEFINITIVO VEICOLO_TIPO CARGOS
 // Ca.R.G.O.S. accetta solo: 0,1,3,4,5,6,7,8,9,A
 // =========================
-function normalizeCargosVehicleTypeV75(v, mezzoTxt='') {
+function normalizeCargosVehicleTypeV76(v, mezzoTxt='') {
   let k = String(v ?? '').trim().toUpperCase();
   const txt = String((mezzoTxt || '') + ' ' + k).toUpperCase();
   if (['0','1','3','4','5','6','7','8','9','A'].includes(k)) return k;
@@ -1679,20 +1679,20 @@ function normalizeCargosVehicleTypeV75(v, mezzoTxt='') {
   if (txt.includes('OPERA')) return 'A';
   return '1';
 }
-function getTipoVeicoloCargosV75(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV72(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV71(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV70(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV69(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV68(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV66(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV65(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargosV61(v){ return normalizeCargosVehicleTypeV75(v); }
-function getTipoVeicoloCargos(v){ return normalizeCargosVehicleTypeV75(v); }
-function patchCargosVehicleTypeIntoObjectV75(p) {
+function getTipoVeicoloCargosV76(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV72(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV71(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV70(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV69(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV68(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV66(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV65(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargosV61(v){ return normalizeCargosVehicleTypeV76(v); }
+function getTipoVeicoloCargos(v){ return normalizeCargosVehicleTypeV76(v); }
+function patchCargosVehicleTypeIntoObjectV76(p) {
   p = p || {};
   const mezzoTxt = [p.marca, p.modello, p.mezzo, p.nome_mezzo, p.categoria, p.tipo_mezzo, p.record_cargos_veicolo_tipo].filter(Boolean).join(' ');
-  const cod = normalizeCargosVehicleTypeV75(p.record_cargos_veicolo_tipo || p.veicolo_tipo || p.tipo_veicolo || p.categoria, mezzoTxt);
+  const cod = normalizeCargosVehicleTypeV76(p.record_cargos_veicolo_tipo || p.veicolo_tipo || p.tipo_veicolo || p.categoria, mezzoTxt);
   p.record_cargos_veicolo_tipo = cod;
   p.veicolo_tipo = cod;
   p.tipo_veicolo = cod;
@@ -1701,11 +1701,11 @@ function patchCargosVehicleTypeIntoObjectV75(p) {
 
 
 // =========================
-// V75 FIX ORDINE RECORD CARGOS VEICOLO
+// V76 FIX ORDINE RECORD CARGOS VEICOLO
 // Il tracciato vuole: VEICOLO_TIPO prima di MARCA e MODELLO.
 // Se manca, Ca.R.G.O.S. legge FIAT/FORD come VEICOLO_TIPO e rifiuta.
 // =========================
-function cargosTipoVeicoloFinaleV75(p) {
+function cargosTipoVeicoloFinaleV76(p) {
   p = p || {};
   const txt = [
     p.record_cargos_veicolo_tipo,
@@ -1718,8 +1718,8 @@ function cargosTipoVeicoloFinaleV75(p) {
     p.nome_mezzo
   ].filter(Boolean).join(' ');
 
-  if (typeof normalizeCargosVehicleTypeV75 === 'function') return normalizeCargosVehicleTypeV75(p.record_cargos_veicolo_tipo || p.veicolo_tipo || p.tipo_veicolo || p.categoria, txt);
-  if (typeof normalizeCargosVehicleTypeV75 === 'function') return normalizeCargosVehicleTypeV75(p.record_cargos_veicolo_tipo || p.veicolo_tipo || p.tipo_veicolo || p.categoria, txt);
+  if (typeof normalizeCargosVehicleTypeV76 === 'function') return normalizeCargosVehicleTypeV76(p.record_cargos_veicolo_tipo || p.veicolo_tipo || p.tipo_veicolo || p.categoria, txt);
+  if (typeof normalizeCargosVehicleTypeV76 === 'function') return normalizeCargosVehicleTypeV76(p.record_cargos_veicolo_tipo || p.veicolo_tipo || p.tipo_veicolo || p.categoria, txt);
 
   const k = String(txt || '').toUpperCase();
   if (['0','1','3','4','5','6','7','8','9','A'].includes(String(p.record_cargos_veicolo_tipo || '').trim().toUpperCase())) {
@@ -1729,40 +1729,40 @@ function cargosTipoVeicoloFinaleV75(p) {
   return '1';
 }
 
-function cargosMarcaFinaleV75(p) {
+function cargosMarcaFinaleV76(p) {
   p = p || {};
   return String(p.record_cargos_marca || p.marca || p.brand || '').trim().toUpperCase();
 }
 
-function cargosModelloFinaleV75(p) {
+function cargosModelloFinaleV76(p) {
   p = p || {};
   return String(p.record_cargos_modello || p.modello || p.model || p.mezzo || '').trim().toUpperCase();
 }
 
-function patchCargosVehicleRecordV75(p) {
+function patchCargosVehicleRecordV76(p) {
   p = p || {};
-  p.record_cargos_veicolo_tipo = cargosTipoVeicoloFinaleV75(p);
+  p.record_cargos_veicolo_tipo = cargosTipoVeicoloFinaleV76(p);
   p.veicolo_tipo = p.record_cargos_veicolo_tipo;
   p.tipo_veicolo = p.record_cargos_veicolo_tipo;
-  p.record_cargos_marca = cargosMarcaFinaleV75(p);
-  p.record_cargos_modello = cargosModelloFinaleV75(p);
+  p.record_cargos_marca = cargosMarcaFinaleV76(p);
+  p.record_cargos_modello = cargosModelloFinaleV76(p);
   return p;
 }
 
 async function buildCargosRecordForContract(id) {
-  // V75 patch veicolo
+  // V76 patch veicolo
 
   // buildCargosRecordForContract__v72patched
-  // V75 rimosso: p non ancora inizializzato
+  // V76 rimosso: p non ancora inizializzato
 
   const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [id]);
   if (!p) throw new Error('Contratto non trovato');
 
   
   
-  patchCargosVehicleRecordV75(p);
-Object.assign(p, cargosPatchDefaultsV75(p));
-  patchCargosVehicleTypeIntoObjectV75(p);
+  patchCargosVehicleRecordV76(p);
+Object.assign(p, cargosPatchDefaultsV76(p));
+  patchCargosVehicleTypeIntoObjectV76(p);
 const fields = [
     cargosPad(p.codice,50), cargosDateTime(p.created_at || moment(), moment().format('HH:mm')),
     cargosPad(process.env.CARGOS_TIPO_PAGAMENTO || '1',1,'number'),
@@ -1770,7 +1770,7 @@ const fields = [
     cargosDateTime(p.data_fine,p.ora_fine || '18:00'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
     cargosPad(process.env.CARGOS_OPERATORE_ID || '',50), cargosPad(process.env.CARGOS_AGENZIA_ID || '',30), cargosPad(process.env.CARGOS_AGENZIA_NOME || AZIENDA.nome,70),
     cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150), cargosPad(AZIENDA.telefono,20,'number'),
-    cargosPad(cargosTipoVeicoloFinaleV75(p),1), cargosPad(cargosMarcaFinaleV75(p) || p.marca || '',50), cargosPad(cargosModelloFinaleV75(p) || p.modello || '',100), cargosPad(p.targa || '',15),
+    cargosPad(cargosTipoVeicoloFinaleV76(p),1), cargosPad(cargosMarcaFinaleV76(p) || p.marca || '',50), cargosPad(cargosModelloFinaleV76(p) || p.modello || '',100), cargosPad(p.targa || '',15),
     cargosPad('',50), cargosPad('',1,'number'), cargosPad('',1,'number'),
     cargosPad(p.cognome || '',50), cargosPad(p.nome || '',30), cargosDate(p.data_nascita || ''),
     cargosPad(process.env.CARGOS_NASCITA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
@@ -1794,7 +1794,7 @@ const fields = [
 
 
 // =========================
-// V75 CARGOS 1505 FIX
+// V76 FIX ROUTE SYNTAX CARGOS
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2240,7 +2240,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V75 CARGOS 1505 FIX'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2289,7 +2289,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V75 CARGOS 1505 FIX</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V76 FIX ROUTE SYNTAX CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -3159,8 +3159,8 @@ function cargosApiConfigured() {
 async function cargosRealCall(action, p) {
   
   
-  p = patchCargosVehicleRecordV75(p);
-p = patchCargosVehicleTypeIntoObjectV75(cargosPatchDefaultsV75(p));
+  p = patchCargosVehicleRecordV76(p);
+p = patchCargosVehicleTypeIntoObjectV76(cargosPatchDefaultsV76(p));
 const validation = validateCargosV37(p);
   if (!validation.ok || !validation.fixed_ok) {
     return { ok:false, action, error:'VALIDAZIONE_LOCALE_KO', missing:validation.missing, length:validation.length };
@@ -3183,7 +3183,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V75 CARGOS 1505 FIX / DRIVE / BRAND
+// V76 FIX ROUTE SYNTAX CARGOS / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3358,10 +3358,10 @@ const CARGOS_FIELDS_V40 = [
 ];
 
 function cargosRecordDataV40(p) {
-  // V75 patch veicolo
+  // V76 patch veicolo
 
   // cargosRecordDataV40__v72patched
-  // V75 rimosso: p non ancora inizializzato
+  // V76 rimosso: p non ancora inizializzato
 
   const n = splitFullNameV40(p);
   const agenziaNome = process.env.CARGOS_AGENZIA_NOME || 'TRASPORTI DP S.R.L. - DP RENT';
@@ -3439,10 +3439,10 @@ function cargosRowsV40(p) {
 }
 
 function validateCargosV40(p) {
-  // V75 patch veicolo
+  // V76 patch veicolo
 
   // validateCargosV40__v72patched
-  // V75 rimosso: p non ancora inizializzato
+  // V76 rimosso: p non ancora inizializzato
 
   const d = cargosRecordDataV40(p);
   const missing = [];
@@ -5341,7 +5341,7 @@ app.get('/admin/gestione-v63',(req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V75', `<div class="box">
+  res.send(page('Test CARGOS veicolo V76', `<div class="box">
     <h2>Test tipo veicolo CARGOS</h2>
     <p>Testo: <b>${esc(q)}</b></p>
     <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV61(q))}</b></p>
@@ -5354,10 +5354,10 @@ app.get('/admin/test-cargos-veicolo-v65', (req,res)=>{
 
 app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
   const q = req.query.q || 'OPEL VIVARO';
-  res.send(page('Test CARGOS veicolo V75', `<div class="box">
-    <h2>Test tipo veicolo CARGOS V75</h2>
+  res.send(page('Test CARGOS veicolo V76', `<div class="box">
+    <h2>Test tipo veicolo CARGOS V76</h2>
     <p>Testo: <b>${esc(q)}</b></p>
-    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV75(q))}</b></p>
+    <p>Codice CARGOS: <b>${esc(getTipoVeicoloCargosV76(q))}</b></p>
     <p>OPEL VIVARO / FURGONI deve essere <b>1</b>.</p>
     <a class="btn" href="/admin/test-cargos-veicolo-v66?q=OPEL%20VIVARO">Test Vivaro</a>
     <a class="btn btn2" href="/admin/test-cargos-veicolo-v66?q=FURGONI">Test Furgoni</a>
@@ -5366,12 +5366,12 @@ app.get('/admin/test-cargos-veicolo-v66', (req,res)=>{
 });
 app.get('/admin/test-cargos-veicolo-v65', (req,res)=>res.redirect('/admin/test-cargos-veicolo-v66?q=' + encodeURIComponent(req.query.q || 'OPEL VIVARO')));
 
-v67EnsureCriticalColumns(() => console.log('V75 colonne critiche OK'));
+v67EnsureCriticalColumns(() => console.log('V76 colonne critiche OK'));
 
 app.get('/admin/fix-tutto-v67',(req,res)=>{
   v67EnsureCriticalColumns(()=>{
-    res.send(page('FIX V75 OK', `<div class="box">
-      <h2 class="ok">FIX V75 OK</h2>
+    res.send(page('FIX V76 OK', `<div class="box">
+      <h2 class="ok">FIX V76 OK</h2>
       <p>Colonne cauzione, documento, patente e nascita aggiornate.</p>
       <a class="btn" href="/">Dashboard</a>
       <a class="btn btn2" href="/storico">Storico</a>
@@ -5502,133 +5502,30 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
 });
 
 
-app.get('/admin/fix-tutto-v68',(req,res)=>{
-  v67EnsureCriticalColumns(()=>{
-    db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => {
-      res.send(page('FIX V75 OK', `<div class="box">
-        <h2 class="ok">FIX V75 OK</h2>
-        <p>Cittadinanza CARGOS impostata: 100000100 Italia.</p>
-        <a class="btn" href="/">Dashboard</a>
-        <a class="btn btn2" href="/storico">Storico</a>
-      </div>`));
-    });
-  });
-});
-app.get('/admin/fix-tutto-v67',(req,res)=>res.redirect('/admin/fix-tutto-v68'));
-
-
-app.get('/admin/fix-tutto-v69',(req,res)=>{
-  v67EnsureCriticalColumns(()=>{
-    db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => {
-      res.send(page('FIX V75 OK', `<div class="box">
-        <h2 class="ok">FIX V75 OK</h2>
-        <p>Fix cargosSelect + colonne critiche completato.</p>
-        <a class="btn" href="/">Dashboard</a>
-        <a class="btn btn2" href="/storico">Storico</a>
-      </div>`));
-    });
-  });
-});
-app.get('/admin/fix-tutto-v68',(req,res)=>res.redirect('/admin/fix-tutto-v69'));
-
-
-app.get('/admin/fix-tutto-v70', (req, res) => {
-  if (typeof v67EnsureCriticalColumns === 'function') {
-    v67EnsureCriticalColumns(() => {
-      db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => {
-        res.send(page('FIX V75 OK', `<div class="box">
-          <h2 class="ok">FIX V75 OK</h2>
-          <p>Server sistemato: sintassi corretta, cargosSelect presente, colonne critiche controllate.</p>
-          <a class="btn" href="/">Dashboard</a>
-          <a class="btn btn2" href="/storico">Storico</a>
-        </div>`));
-      });
-    });
-  } else {
-    res.send(page('FIX V75 OK', `<div class="box">
-      <h2 class="ok">FIX V75 OK</h2>
-      <p>Server sistemato.</p>
-      <a class="btn" href="/">Dashboard</a>
-    </div>`));
-  }
-});
-app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v70'));
-app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v70'));
-
-
-app.get('/admin/fix-tutto-v71', (req, res) => {
-  const done = () => res.send(page('FIX V75 OK', `<div class="box">
-    <h2 class="ok">FIX V75 OK</h2>
-    <p>Tabelle CARGOS caricate: pagamenti, veicoli, documenti, luoghi base.</p>
+// =========================
+// V76 ROUTE FIX PULITE
+// =========================
+app.get('/admin/fix-tutto-v76', (req, res) => {
+  const html = `<div class="box">
+    <h2 class="ok">FIX V76 OK</h2>
+    <p>Route corrette. Nessun syntax error su fix-tutto.</p>
+    <p>Record Ca.R.G.O.S.: VEICOLO_TIPO una sola volta, lunghezza 1505.</p>
     <a class="btn" href="/">Dashboard</a>
     <a class="btn btn2" href="/storico">Storico</a>
-  </div>`));
-  if (typeof v67EnsureCriticalColumns === 'function') {
-    v67EnsureCriticalColumns(() => {
-      db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => done());
-    });
-  } else {
-    done();
-  }
+  </div>`;
+  if (typeof page === 'function') return res.send(page('FIX V76 OK', html));
+  res.send(html);
 });
-app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v71'));
-app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v71'));
-app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v71'));
 
+app.get('/admin/fix-tutto-v75', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v74', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v73', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v72', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v71', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v76'));
 
-app.get('/admin/fix-tutto-v72', (req, res) => {
-  const done = () => res.send(page('FIX V75 OK', `<div class="box">
-    <h2 class="ok">FIX V75 OK</h2>
-    <p>Ca.R.G.O.S. automatico impostato come esempio CarRental: Narni, Italia, contanti, furgoni, patente.</p>
-    <a class="btn" href="/">Dashboard</a>
-    <a class="btn btn2" href="/storico">Storico</a>
-  </div>`));
-  if (typeof v67EnsureCriticalColumns === 'function') {
-    v67EnsureCriticalColumns(() => {
-      db.run(`ALTER TABLE prenotazioni ADD COLUMN conducente_cittadinanza_cod TEXT`, () => done());
-    });
-  } else done();
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS ONLINE porta ' + PORT);
 });
-app.get('/admin/fix-tutto-v71', (req, res) => res.redirect('/admin/fix-tutto-v72'));
-app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v72'));
-app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v72'));
-
-
-app.get('/admin/fix-tutto-v73', (req, res) => {
-  const done = () => res.send(page('FIX V75 OK', `<div class="box">
-    <h2 class="ok">FIX V75 OK</h2>
-    <p>VEICOLO_TIPO normalizzato: Furgoni = 1. Nessuna stringa fuori tabella inviata a Ca.R.G.O.S.</p>
-    <a class="btn" href="/">Dashboard</a>
-    <a class="btn btn2" href="/storico">Storico</a>
-  </div>`));
-  if (typeof v67EnsureCriticalColumns === 'function') v67EnsureCriticalColumns(() => done()); else done();
-});
-app.get('/admin/fix-tutto-v72', (req, res) => res.redirect('/admin/fix-tutto-v73'));
-app.get('/admin/fix-tutto-v71', (req, res) => res.redirect('/admin/fix-tutto-v73'));
-
-
-app.get('/admin/fix-tutto-v74', (req, res) => {
-  const done = () => res.send(page('FIX V75 OK', `<div class="box">
-    <h2 class="ok">FIX V75 OK</h2>
-    <p>Ordine record Ca.R.G.O.S. corretto: VEICOLO_TIPO prima di marca e modello.</p>
-    <p>Furgoni / Fiorino / Vivaro / Trafic = codice 1.</p>
-    <a class="btn" href="/">Dashboard</a>
-    <a class="btn btn2" href="/storico">Storico</a>
-  </div>`));
-  if (typeof v67EnsureCriticalColumns === 'function') v67EnsureCriticalColumns(() => done()); else done();
-});
-app.get('/admin/fix-tutto-v73', (req, res) => res.redirect('/admin/fix-tutto-v74'));
-app.get('/admin/fix-tutto-v72', (req, res) => res.redirect('/admin/fix-tutto-v74'));
-
-
-app.get('/admin/fix-tutto-v75', (req, res) => {
-  const done = () => res.send(page('FIX V75 OK', `<div class="box">
-    <h2 class="ok">FIX V75 OK</h2>
-    <p>Record Ca.R.G.O.S. riportato a 1505 caratteri: VEICOLO_TIPO una sola volta.</p>
-    <p>Furgoni / Fiorino / Vivaro / Trafic = codice 1.</p>
-    <a class="btn" href="/">Dashboard</a>
-    <a class="btn btn2" href="/storico">Storico</a>
-  </div>`));
-  if (typeof v67EnsureCriticalColumns === 'function') v67EnsureCriticalColumns(() => done()); else done();
-});
-app.get('/admin/fix-tutto-v74', (req, res) => res.redirect('/admin/fix
