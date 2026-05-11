@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -1855,7 +1854,7 @@ async function cargosSendRecords(records, method='Check') {
   const encrypted = cargosEncryptAes(await cargosGetToken());
   const r = await fetch(`${base}/api/${method}`, {
     method:'POST',
-    headers:{ Authorization:`Bearer ${encrypted}`, Organization:(process.env.CARGOS_USERNAME || 'C00000100'), 'Content-Type':'application/json', Accept:'application/json' },
+    headers:{ Authorization:`Bearer ${encrypted}`, Organization:cargosOrganizationHeaderV76(), 'Content-Type':'application/json', Accept:'application/json' },
     body: JSON.stringify(records)
   });
   const text = await r.text();
@@ -3331,6 +3330,19 @@ function generateCondizioniPage() {
 // =========================
 const CARGOS_BASE_URL = (process.env.CARGOS_BASE_URL || 'https://cargos.poliziadistato.it/CARGOS_API').replace(/\/+$/, '');
 
+function cargosOrganizationHeaderV76() {
+  // Header richiesto da Ca.R.G.O.S.: Organization.
+  // Su Render puoi mettere CARGOS_ORGANIZATION oppure CARGOS_ORGANIZATION_ID.
+  // Se non lo metti, uso CARGOS_USERNAME come fallback perché spesso coincide col codice ente/organizzazione.
+  return String(
+    process.env.CARGOS_ORGANIZATION ||
+    process.env.CARGOS_ORGANIZATION_ID ||
+    process.env.CARGOS_ORG ||
+    process.env.CARGOS_USERNAME ||
+    'C00000100'
+  ).trim();
+}
+
 function cleanCargos(v, len) {
   return String(v || '')
     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -3562,6 +3574,7 @@ async function cargosCallV40(endpoint, records) {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${encrypted}`,
+      'Organization': cargosOrganizationHeaderV76(),
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
@@ -4502,6 +4515,7 @@ app.get('/cargos-config', (req, res) => {
       <p><b>Utente impostato:</b> ${esc(process.env.CARGOS_USERNAME || 'C00000100')}</p>
       <p class="${process.env.CARGOS_PASSWORD ? 'ok' : 'bad'}">Password: ${process.env.CARGOS_PASSWORD ? 'presente' : 'mancante'}</p>
       <p class="${process.env.CARGOS_APIKEY ? 'ok' : 'bad'}">APIKEY: ${process.env.CARGOS_APIKEY ? 'presente' : 'mancante'}</p>
+      <p class="${cargosOrganizationHeaderV76() ? 'ok' : 'bad'}">ORGANIZATION: ${esc(cargosOrganizationHeaderV76() || 'mancante')}</p>
       <p class="${process.env.CARGOS_AGENZIA_ID ? 'ok' : 'bad'}">AGENZIA_ID: cargosAgenziaIdV63()}</p>
       <p class="${process.env.CARGOS_OPERATORE_ID ? 'ok' : 'bad'}">OPERATORE_ID: cargosOperatoreIdV63()}</p>
       <p class="${process.env.CARGOS_LUOGO_COD ? 'ok' : 'bad'}">LUOGO_COD: ${process.env.CARGOS_LUOGO_COD ? 'presente' : 'mancante'}</p>
@@ -4510,6 +4524,7 @@ app.get('/cargos-config', (req, res) => {
       <pre>CARGOS_USERNAME=C00000100
 CARGOS_PASSWORD=la_password_che_hai
 CARGOS_APIKEY=da richiedere/recuperare
+CARGOS_ORGANIZATION=codice Organization Ca.R.G.O.S.
 CARGOS_AGENZIA_ID=da Ca.R.G.O.S.
 CARGOS_OPERATORE_ID=da Ca.R.G.O.S.
 CARGOS_LUOGO_COD=codice luogo polizia
