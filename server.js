@@ -2420,7 +2420,8 @@ app.get('/mezzo/:id', async (req, res) => {
   const m = await get(`SELECT * FROM mezzi WHERE id=?`, [req.params.id]);
   if (!m) return res.send('Mezzo non trovato');
   const files = await all(`SELECT * FROM allegati WHERE mezzo_id=? ORDER BY id DESC`, [m.id]);
-  const lista = files.map(f => `<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}" target="_blank">${esc(f.originalname)}</a> ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Google Drive</a>` : ''}</li>`).join('');
+  const filesV99 = v99DedupeAllegati(files);
+  const lista = filesV99.map(f => `<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}" target="_blank">${esc(f.originalname)}</a> ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Google Drive</a>` : ''}</li>`).join('');
   res.send(page('Scheda mezzo', `
     <div class="box">
       <h2>Scheda mezzo ${esc(m.targa)} ${alertBadge(m)}</h2>
@@ -4677,7 +4678,8 @@ app.get('/cliente-documenti-link/:id', async (req, res) => {
 
 app.get('/documenti/:id', async (req, res) => {
   const files = await all(`SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id DESC`, [req.params.id]);
-  const lista = files.map(f => `<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}" target="_blank">${esc(f.originalname)}</a> ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Google Drive</a>` : ''}</li>`).join('');
+  const filesV99 = v99DedupeAllegati(files);
+  const lista = filesV99.map(f => `<li>${esc(f.tipo)} - <a href="/uploads/${esc(f.filename)}" target="_blank">${esc(f.originalname)}</a> ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Google Drive</a>` : ''}</li>`).join('');
 
   const options = `
     <option>Patente fronte</option><option>Patente retro</option>
@@ -6606,7 +6608,126 @@ app.get('/test-drive-officina', async (req, res) => {
 app.post('/whatsapp', dpHandleWhatsApp);
 app.post('/webhook', dpHandleWhatsApp);
 
+
+
+// =========================
+// V99 ROUTE DOCUMENTI INTERNI PRATICA
+// =========================
+app.get('/documenti/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    let allegati = [];
+    try {
+      if (typeof all === 'function') {
+        allegati = await all('SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id DESC', [id]);
+      }
+    } catch (_) {}
+    allegati = v99SoloDocumentiInterni(allegati);
+
+    const rows = allegati.map(a => {
+      const nome = esc(a.originalname || a.filename || a.nome || 'file');
+      const tipo = esc(a.tipo || a.type || 'documento');
+      const link = a.drive_web_link || a.drive_link || a.webViewLink || a.url || '';
+      const href = link ? `<a class="btn small" target="_blank" href="${esc(link)}">Apri Drive</a>` : '';
+      const img = link ? `<div class="thumb"><a target="_blank" href="${esc(link)}">${nome}</a></div>` : `<div class="thumb">${nome}</div>`;
+      return `<div class="doc-card"><b>${tipo}</b>${img}${href}</div>`;
+    }).join('');
+
+    res.send(page('Documenti pratica', `
+      <div class="box">
+        <h2>Documenti interni pratica ${esc(id)}</h2>
+        <p class="muted">Visibili solo a DP RENT. Non vengono inseriti nel PDF cliente.</p>
+        <div class="doc-grid">${rows || '<p>Nessun documento salvato.</p>'}</div>
+        <p><a class="btn" href="/storico">Torna storico</a></p>
+      </div>
+      <style>
+        .doc-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px}
+        .doc-card{background:#fff;border:1px solid #eee;border-radius:18px;padding:18px;box-shadow:0 10px 30px #0001}
+        .thumb{margin:12px 0;padding:16px;background:#f7f7f9;border-radius:14px;word-break:break-all}
+        .btn.small{font-size:14px;padding:8px 12px}
+      </style>
+    `));
+  } catch (e) {
+    res.status(500).send('Errore documenti: ' + esc(e.message));
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP V94 OCR PRIMA + FIRMA WHATSAPP porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
+
+
+// =========================
+// V99 FIX ALLEGATI / DOCUMENTI SEPARATI
+// =========================
+function v99NormFileName(v) {
+  return String(v || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 180);
+}
+
+function v99AllegatoKey(a) {
+  return [
+    String(a?.id || ''),
+    String(a?.drive_file_id || a?.driveFileId || ''),
+    v99NormFileName(a?.originalname || a?.filename || a?.name || ''),
+    String(a?.size || a?.bytes || ''),
+    String(a?.tipo || a?.type || '')
+  ].join('|');
+}
+
+function v99TipoRank(tipo) {
+  const t = String(tipo || '').toLowerCase();
+  if (t.includes('documento') && t.includes('fronte')) return 10;
+  if (t.includes('documento') && t.includes('retro')) return 20;
+  if (t.includes('patente') && t.includes('fronte')) return 30;
+  if (t.includes('patente') && t.includes('retro')) return 40;
+  if (t.includes('documento')) return 50;
+  if (t.includes('patente')) return 60;
+  if (t.includes('checkin') || t.includes('check-in')) return 70;
+  if (t.includes('checkout') || t.includes('check-out')) return 80;
+  return 99;
+}
+
+function v99DedupeAllegati(list) {
+  const seen = new Set();
+  const out = [];
+  for (const a of Array.isArray(list) ? list : []) {
+    if (!a || typeof a !== 'object') continue;
+    const k = v99AllegatoKey(a);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(a);
+  }
+  return out.sort((a,b) => {
+    const r = v99TipoRank(a.tipo || a.type) - v99TipoRank(b.tipo || b.type);
+    if (r) return r;
+    return String(a.originalname || a.filename || '').localeCompare(String(b.originalname || b.filename || ''));
+  });
+}
+
+function v99SoloDocumentiInterni(list) {
+  return v99DedupeAllegati(list).filter(a => {
+    const t = String(a.tipo || a.type || '').toLowerCase();
+    return t.includes('documento') || t.includes('patente') || t.includes('allegat');
+  });
+}
+
+function v99SoloFotoMezzo(list) {
+  return v99DedupeAllegati(list).filter(a => {
+    const t = String(a.tipo || a.type || '').toLowerCase();
+    return t.includes('checkin') || t.includes('checkout') || t.includes('mezzo');
+  });
+}
+
+function v99IsClientePdfImageAllowed(tipo) {
+  // Privacy: i documenti personali NON devono finire nel PDF cliente.
+  const t = String(tipo || '').toLowerCase();
+  if (t.includes('documento') || t.includes('patente') || t.includes('carta') || t.includes('ident')) return false;
+  return false;
+}
+
