@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -5642,7 +5643,18 @@ app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v76
 // =====================================================
 const DP_BOT_SESSIONS = {};
 const DP_BOT_DONE_SIDS = new Map();
-const DP_TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+390744817108';
+function dpNormalizeWhatsAppNumber(n){
+  n = String(n || '').trim();
+  if(!n) return '';
+  if(n.startsWith('whatsapp:')) return n;
+  n = n.replace(/\s+/g,'');
+  if(!n.startsWith('+')) {
+    if(n.startsWith('39')) n = '+' + n;
+    else n = '+39' + n.replace(/^0+/, '');
+  }
+  return 'whatsapp:' + n;
+}
+const DP_TWILIO_WHATSAPP_NUMBER = dpNormalizeWhatsAppNumber(process.env.TWILIO_WHATSAPP_NUMBER || '+390744817108');
 const DP_STAFF_NUMBERS = dpParseNumbers(process.env.INTERNAL_GENERAL_NUMBERS || process.env.STAFF_WHATSAPP_NUMBERS, [
   'whatsapp:+393287377675',
   'whatsapp:+393472733226',
@@ -5676,8 +5688,8 @@ const dpTwilioClient = (twilio && process.env.TWILIO_ACCOUNT_SID && process.env.
   : null;
 
 function dpParseNumbers(value, fallback){
-  if(!value) return fallback;
-  return String(value).split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean).map(n=>n.startsWith('whatsapp:') ? n : 'whatsapp:' + n);
+  if(!value) return (fallback || []).map(dpNormalizeWhatsAppNumber).filter(Boolean);
+  return String(value).split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean).map(dpNormalizeWhatsAppNumber).filter(Boolean);
 }
 function dpClean(v){ return String(v || '').trim(); }
 function dpNorm(v){ return dpClean(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
@@ -5716,26 +5728,41 @@ function dpAlreadySid(sid){
   return false;
 }
 async function dpNotify(numbers, body){
-  const targets = Array.from(new Set((numbers || []).filter(Boolean)));
+  const targets = Array.from(new Set((numbers || []).map(dpNormalizeWhatsAppNumber).filter(Boolean)));
+  const fromNumber = dpNormalizeWhatsAppNumber(process.env.TWILIO_WHATSAPP_NUMBER || DP_TWILIO_WHATSAPP_NUMBER || '+390744817108');
+  console.log('DP_NOTIFY FROM:', fromNumber);
   console.log('DP_NOTIFY TO:', targets.join(', '));
   console.log('DP_NOTIFY BODY:', body);
+
   if(!dpTwilioClient){
-    console.log('Twilio non configurato, notifica non inviata');
-    return { ok:false, sent:0, errors:['Twilio non configurato'] };
+    const err = 'Twilio non configurato: mancano TWILIO_ACCOUNT_SID o TWILIO_AUTH_TOKEN';
+    console.log(err);
+    return { ok:false, sent:0, errors:[err] };
   }
+  if(!fromNumber || !fromNumber.startsWith('whatsapp:+')){
+    const err = 'TWILIO_WHATSAPP_NUMBER non valido: ' + String(process.env.TWILIO_WHATSAPP_NUMBER || '');
+    console.log(err);
+    return { ok:false, sent:0, errors:[err] };
+  }
+  if(!targets.length){
+    const err = 'Nessun numero staff configurato';
+    console.log(err);
+    return { ok:false, sent:0, errors:[err] };
+  }
+
   let sent = 0;
   const errors = [];
   for(const to of targets){
     try{
       const msg = await dpTwilioClient.messages.create({
-        from: DP_TWILIO_WHATSAPP_NUMBER,
+        from: fromNumber,
         to,
         body: dpWa(body)
       });
       sent++;
       console.log('Notifica WhatsApp inviata a', to, msg.sid || '');
     }catch(e){
-      const err = `${to}: ${e.message || e}`;
+      const err = `${to}: ${e.message || e} ${e.code ? '(code '+e.code+')' : ''}`;
       errors.push(err);
       console.error('Errore notifica WhatsApp', to, e.message, e.code || '');
     }
@@ -5743,21 +5770,60 @@ async function dpNotify(numbers, body){
   return { ok: sent > 0, sent, errors };
 }
 
+
+async function dpGoogleAuth(scopes){
+  if(typeof google === 'undefined' || !google) throw new Error('googleapis non installato');
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
+  if(!clientEmail || !privateKey) throw new Error('ENV Google mancanti');
+  privateKey = privateKey.replace(/\n/g, '\n');
+  if(privateKey.includes('\\n')) privateKey = privateKey.replace(/\\n/g, '\n');
+  return new google.auth.JWT(clientEmail, null, privateKey, scopes);
+}
+async function dpGetOrCreateDriveFolder(driveApi, parentId, folderName){
+  const safe = String(folderName).replace(/'/g, "\\'");
+  let q = `mimeType='application/vnd.google-apps.folder' and name='${safe}' and trashed=false`;
+  if(parentId) q += ` and '${parentId}' in parents`;
+  const found = await driveApi.files.list({ q, fields:'files(id,name,webViewLink)', spaces:'drive' });
+  if(found.data.files && found.data.files[0]) return found.data.files[0];
+  const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
+  if(parentId) requestBody.parents = [parentId];
+  const created = await driveApi.files.create({ requestBody, fields:'id,name,webViewLink' });
+  return created.data;
+}
+async function dpUploadTextToDriveServiceAccount(tipo, codice, from, profileName, body){
+  const parentId = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || process.env.GOOGLE_DRIVE_OFFICINA_FOLDER_ID || '';
+  if(!parentId) return { ok:false, error:'GOOGLE_DRIVE_FOLDER_ID mancante' };
+  const auth = await dpGoogleAuth(['https://www.googleapis.com/auth/drive']);
+  const driveApi = google.drive({ version:'v3', auth });
+  const folder = await dpGetOrCreateDriveFolder(driveApi, parentId, 'DP OFFICINA');
+  const fileName = `${codice}.txt`;
+  const localPath = path.join(uploadDir, fileName);
+  const content = `${tipo}\n\nCodice pratica: ${codice}\nCliente: ${profileName || '-'}\nWhatsApp: ${from || '-'}\nData: ${new Date().toLocaleString('it-IT')}\n\nRichiesta:\n${body || '-' }\n`;
+  fs.writeFileSync(localPath, content, 'utf8');
+  const media = { mimeType:'text/plain', body: fs.createReadStream(localPath) };
+  const uploaded = await driveApi.files.create({
+    requestBody:{ name:fileName, parents:[folder.id] },
+    media,
+    fields:'id,name,webViewLink'
+  });
+  return { ok:true, link: uploaded.data.webViewLink || folder.webViewLink || '', id: uploaded.data.id || '', folder: folder.webViewLink || '' };
+}
 async function dpSaveRequestToDrive(tipo, codice, from, profileName, body){
+  // 1) Prova prima Google Drive diretto con Service Account, cosÃ¬ non dipende da Apps Script.
   try{
-    if(!googleDriveConfigured()) return { ok:false, error:'Drive non configurato' };
+    const direct = await dpUploadTextToDriveServiceAccount(tipo, codice, from, profileName, body);
+    if(direct && direct.ok) return direct;
+  }catch(e){
+    console.error('Drive diretto non riuscito:', e.message);
+  }
+
+  // 2) Fallback vecchio Apps Script se Ã¨ configurato.
+  try{
+    if(!googleDriveConfigured()) return { ok:false, error:'Drive non configurato: manca GOOGLE_DRIVE_FOLDER_ID o DRIVE_WEBAPP_URL' };
     const fileName = `${codice}.txt`;
     const localPath = path.join(uploadDir, fileName);
-    const content = `${tipo}
-
-Codice pratica: ${codice}
-Cliente: ${profileName || '-'}
-WhatsApp: ${from || '-'}
-Data: ${new Date().toLocaleString('it-IT')}
-
-Richiesta:
-${body || '-' }
-`;
+    const content = `${tipo}\n\nCodice pratica: ${codice}\nCliente: ${profileName || '-'}\nWhatsApp: ${from || '-'}\nData: ${new Date().toLocaleString('it-IT')}\n\nRichiesta:\n${body || '-' }\n`;
     fs.writeFileSync(localPath, content, 'utf8');
     const dr = await uploadFileToDrive(localPath, fileName, 'text/plain', `${tipo} ${codice}`);
     if(!dr) return { ok:false, error:'Upload Drive non riuscito' };
@@ -5823,6 +5889,7 @@ async function dpCreateCalendarEventOfficina(from, profileName, text){
     let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
     if(!clientEmail || !privateKey) return { ok:false, error:'ENV Google mancanti' };
     privateKey = privateKey.replace(/\\n/g, '\n');
+    if(privateKey.includes('\\n')) privateKey = privateKey.replace(/\\n/g, '\n');
     const auth = new google.auth.JWT(clientEmail, null, privateKey, ['https://www.googleapis.com/auth/calendar']);
     const calendar = google.calendar({ version:'v3', auth });
     const d = dpExtractDate(text) || new Date(Date.now()+24*60*60*1000);
@@ -5932,9 +5999,10 @@ Drive: ${dr.ok ? (dr.link || 'file creato') : 'NON creato - ' + (dr.error || '-'
     return dpTwimlResponse(res, `${EMJ.ok} Richiesta officina ricevuta.
 
 Codice pratica: ${codice}
-${notif.ok ? 'Messaggio inviato allo staff DP.' : 'ATTENZIONE: messaggio staff non inviato, controlliamo noi.'}
-${cal.ok ? 'Evento inserito in Google Calendar.' : 'Calendar non creato.'}
-${dr.ok ? 'Richiesta salvata su Google Drive.' : 'Drive non creato.'}
+${notif.ok ? 'Messaggio inviato allo staff DP.' : 'ATTENZIONE: messaggio staff non inviato. Errore: ' + (notif.errors || []).join(' | ')}
+${cal.ok ? 'Evento inserito in Google Calendar.' : 'Calendar non creato: ' + (cal.error || '-')}
+${dr.ok ? 'Richiesta salvata su Google Drive.' : 'Drive non creato: ' + (dr.error || '-')}
+${dr.ok && dr.link ? '\nDrive: ' + dr.link : ''}
 
 Ti ricontatteremo per confermare appuntamento e orario.`);
   }
@@ -6009,10 +6077,21 @@ Ti ricontatteremo per confermare appuntamento e orario.`);
   return dpTwimlResponse(res, dpMenu(profileName));
 }
 
+
+app.get('/test-whatsapp-staff', async (req, res) => {
+  const r = await dpNotify(DP_STAFF_NUMBERS, 'TEST DP RENT - notifica staff ' + new Date().toLocaleString('it-IT'));
+  res.json(r);
+});
+app.get('/test-drive-officina', async (req, res) => {
+  const codice = 'TEST-OFF-' + Date.now();
+  const r = await dpSaveRequestToDrive('TEST OFFICINA DP', codice, 'test', 'Test', 'Prova salvataggio Drive officina');
+  res.json(r);
+});
+
 app.post('/whatsapp', dpHandleWhatsApp);
 app.post('/webhook', dpHandleWhatsApp);
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V89 COMPLETA + BOT WHATSAPP DRIVE OFFICINA ONLINE porta ' + PORT);
+  console.log('DP RENT APP V90 COMPLETA + BOT WHATSAPP DRIVE OFFICINA NOTIFICHE FIX porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
