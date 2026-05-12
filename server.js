@@ -6509,3 +6509,17 @@ Ti ricontatteremo per confermare appuntamento e orario.`);
 app.get('/test-whatsapp-staff', async (req, res) => {
   const r = await dpNotify(DP_STAFF_NUMBERS, 'TEST DP RENT - notifica staff ' + new Date().toLocaleString('it-IT'));
   res.json(r);
+});
+app.get('/test-drive-officina', async (req, res) => {
+  const codice = 'TEST-OFF-' + Date.now();
+  const r = await dpSaveRequestToDrive('TEST OFFICINA DP', codice, 'test', 'Test', 'Prova salvataggio Drive officina');
+  res.json(r);
+});
+
+app.post('/whatsapp', dpHandleWhatsApp);
+app.post('/webhook', dpHandleWhatsApp);
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V94 OCR PRIMA + FIRMA WHATSAPP porta ' + PORT);
+  console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
+});
