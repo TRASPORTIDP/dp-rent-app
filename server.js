@@ -18,10 +18,11 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || '';
 const TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+390744817108';
 const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
 
-const INTERNAL_NUMBERS = parseNumbers(
-  process.env.INTERNAL_GENERAL_NUMBERS || process.env.INTERNAL_NUMBERS,
-  ['whatsapp:+393287377675', 'whatsapp:+393472733226', 'whatsapp:+393494040073']
-);
+const DEFAULT_INTERNAL_NUMBERS = ['whatsapp:+393287377675', 'whatsapp:+393472733226', 'whatsapp:+393494040073'];
+const INTERNAL_NUMBERS = uniqueNumbers([
+  ...parseNumbers(process.env.INTERNAL_GENERAL_NUMBERS || process.env.INTERNAL_NUMBERS || '', []),
+  ...DEFAULT_INTERNAL_NUMBERS
+]);
 
 const DRIVE_PARENT_FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_PARENT_FOLDER_ID || '';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '';
@@ -54,6 +55,9 @@ function nextId(prefix) {
 function parseNumbers(value, fallback) {
   if (!value) return fallback;
   return String(value).split(/[;,\n]/).map(s => s.trim()).filter(Boolean).map(n => n.startsWith('whatsapp:') ? n : `whatsapp:${n}`);
+}
+function uniqueNumbers(list) {
+  return [...new Set((list || []).filter(Boolean))];
 }
 function clean(v) { return String(v || '').trim(); }
 function norm(v) { return clean(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); }
@@ -102,7 +106,7 @@ function normalizeYear(y) { y = String(y); return y.length === 2 ? Number('20' +
 function extractKm(v) { const m = clean(v).replace(/\./g,'').match(/\d{1,6}/); return m ? Number(m[0]) : null; }
 
 function menuText() {
-  return `*DP RENT / TRASPORTI DP*\n\nScegli il servizio:\n\n1) Officina\n2) Noleggio\n3) Vendita auto\n4) Trasporto veicoli\n5) Altre richieste\n\nScrivi solo il numero.`;
+  return `*DP RENT / TRASPORTI DP*\n\nScegli il servizio:\n\n1) Officina\n2) Noleggio\n3) Vendita auto\n4) Trasporto veicoli\n5) Altre richieste / parla con assistente DP\n\nScrivi solo il numero.`;
 }
 function getSession(from, profile) {
   if (!sessions[from] || Date.now() - sessions[from].createdAt > 60 * 60 * 1000) {
@@ -139,11 +143,22 @@ function isAvailable(typeKey, start, end) {
 
 async function sendInternal(title, text, extra = {}) {
   const body = safeMsg(`${title}\n\n${text}`);
+  console.log('NOTIFICA INTERNA:', title, 'NUMERI:', INTERNAL_NUMBERS.join(', '), 'TESTO:', body.slice(0, 500));
+
   for (const to of INTERNAL_NUMBERS) {
-    try { await client.messages.create({ from: TWILIO_WHATSAPP_NUMBER, to, body }); }
-    catch (e) { console.error('Errore notifica interna', to, e.message); }
+    try {
+      if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_WHATSAPP_NUMBER) {
+        console.error('Twilio non configurato: impossibile inviare a', to);
+        continue;
+      }
+      const msg = await client.messages.create({ from: TWILIO_WHATSAPP_NUMBER, to, body });
+      console.log('Notifica WhatsApp inviata:', to, msg.sid);
+    } catch (e) {
+      console.error('Errore notifica interna', to, e.message, e.code || '');
+    }
   }
-  // Drive SOLO se richiesto esplicitamente, principalmente noleggio/contratti/foto.
+
+  // Drive SOLO se richiesto esplicitamente: noleggio/contratti/foto.
   if (extra && extra.saveDrive) {
     await saveRequestNotificationToDrive(title, body, extra).catch(e => console.error('Drive notifica KO:', e.message));
   }
@@ -279,6 +294,27 @@ async function askGpt(question, profileName) {
   return data.choices?.[0]?.message?.content || 'Richiesta ricevuta.';
 }
 
+
+function looksLikeFreeRequest(text) {
+  const t = norm(text);
+  if (!t) return false;
+  if (/^[1-5]$/.test(t)) return false;
+  return t.length >= 4;
+}
+
+async function handleGenericRequestFromMenu(session, from, profile, body, twiml, res) {
+  const r = createRichiesta({ prefix: 'GEN', tipo: 'generale', cliente: profile, whatsapp: from, testo: body });
+  await sendInternal(
+    'NUOVA RICHIESTA GENERALE',
+    `Cliente: ${profile}\nWhatsApp: ${from}\nPratica: ${r.id}\n\n${body}`,
+    { praticaId: r.id, tipo: 'generale' }
+  );
+  const answer = await askGpt(body, profile);
+  clearSession(from);
+  twiml.message(safeMsg(`${answer}\n\nHo inviato la richiesta allo staff DP.\nCodice pratica: ${r.id}`));
+  return respondTwiml(res, twiml);
+}
+
 async function handleWhatsApp(req, res) {
   const twiml = new twilio.twiml.MessagingResponse();
   const from = clean(req.body.From).toLowerCase();
@@ -299,6 +335,9 @@ async function handleWhatsApp(req, res) {
     if (!body && !media.length) return respondTwiml(res, twiml);
     if (['menu','inizio','ciao','reset','start'].includes(norm(body))) {
       session = resetSession(from, profile);
+      if (looksLikeFreeRequest(body)) {
+        return await handleGenericRequestFromMenu(session, from, profile, body, twiml, res);
+      }
       twiml.message(safeMsg(menuText()));
       return respondTwiml(res, twiml);
     }
@@ -442,8 +481,8 @@ async function handleWhatsApp(req, res) {
 }
 function respondTwiml(res, twiml) { res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' }); return res.end(twiml.toString()); }
 
-app.get('/', (req, res) => res.send('DP RENT BOT V83 online'));
-app.get('/health', (req, res) => res.json({ ok: true, version: 'V83', time: new Date().toISOString() }));
+app.get('/', (req, res) => res.send('DP RENT BOT V84 online'));
+app.get('/health', (req, res) => res.json({ ok: true, version: 'V84', time: new Date().toISOString() }));
 app.get('/richieste', (req, res) => res.json(db.richieste));
 
 app.get('/cliente-web', (req, res) => {
@@ -478,6 +517,6 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 app.listen(PORT, () => {
-  console.log(`DP RENT BOT V83 online porta ${PORT}`);
+  console.log(`DP RENT BOT V84 online porta ${PORT}`);
   console.log('Numeri interni:', INTERNAL_NUMBERS.join(', '));
 });
