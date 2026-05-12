@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -3361,40 +3362,54 @@ function cargosNum(v, len) {
   return String(v || '').replace(/\D/g, '').slice(0, len).padStart(len, '0');
 }
 
-function cargosDateTime(date, time) {
-  let d = String(date || '').trim();
+function cargosNormalizeIsoDateV76(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '';
+
+  // già ISO: 2026-05-11 oppure 2026-05-11T22:36:31
+  let m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+
+  // formato italiano: 11/05/2026, 11-05-2026, 11.05.2026
+  m = raw.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+  if (m) {
+    let yy = m[3];
+    if (yy.length === 2) yy = '20' + yy;
+    return `${yy}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+  }
+
+  const d = new Date(raw);
+  if (!Number.isNaN(d.getTime())) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  return '';
+}
+
+function cargosNormalizeTimeV76(date, time) {
   let t = String(time || '').trim();
+  const raw = String(date || '').trim();
   if (!t) {
-    const m = d.match(/(\d{1,2}:\d{2})/);
-    if (m) t = m[1];
+    let m = raw.match(/[T\s](\d{1,2}):(\d{2})/);
+    if (m) t = `${String(m[1]).padStart(2,'0')}:${m[2]}`;
   }
-  if (!t) t = '00:00';
-
-  // YYYY-MM-DD -> DD/MM/YYYY
-  let iso = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) d = `${iso[3]}/${iso[2]}/${iso[1]}`;
-
-  let it = d.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
-  if (it) {
-    let yy = it[3]; if (yy.length === 2) yy = '20' + yy;
-    d = `${String(it[1]).padStart(2,'0')}/${String(it[2]).padStart(2,'0')}/${yy}`;
-  }
-
   const tm = t.match(/(\d{1,2}):(\d{2})/);
-  t = tm ? `${String(tm[1]).padStart(2,'0')}:${tm[2]}` : '00:00';
-  return `${d} ${t}`.slice(0,16);
+  if (tm) return `${String(tm[1]).padStart(2,'0')}:${tm[2]}`;
+  return '00:00';
+}
+
+function cargosDateTime(date, time) {
+  // FIX V76 Ca.R.G.O.S: il servizio rifiuta DD/MM/YYYY.
+  // Il campo fisso è lungo 16, quindi inviamo: YYYY-MM-DDTHH:mm
+  const d = cargosNormalizeIsoDateV76(date);
+  const t = cargosNormalizeTimeV76(date, time);
+  if (!d) return ''.padEnd(16, ' ');
+  return `${d}T${t}`.slice(0,16);
 }
 
 function cargosDateOnly(date) {
-  let d = String(date || '').trim();
-  let iso = d.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
-  let it = d.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
-  if (it) {
-    let yy = it[3]; if (yy.length === 2) yy = '20' + yy;
-    return `${String(it[1]).padStart(2,'0')}/${String(it[2]).padStart(2,'0')}/${yy}`;
-  }
-  return ''.padEnd(10, ' ').slice(0,10);
+  // FIX V76 Ca.R.G.O.S: date pure in formato ISO YYYY-MM-DD
+  const d = cargosNormalizeIsoDateV76(date);
+  return (d || '').padEnd(10, ' ').slice(0,10);
 }
 
 function splitFullNameV40(p) {
