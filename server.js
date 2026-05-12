@@ -4118,7 +4118,7 @@ app.get('/prenotazione/:id', async (req, res) => {
         <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
         <a class="btn btn3" href="/checkin/${p.id}">Check-in</a>
         <a class="btn btnWarn" href="/nexi/${p.id}">Nexi Pay Link</a>
-        <a class="btn btn3" href="/firma-link/${p.id}">Link firma WhatsApp</a>
+        <a class="btn btn3" href="/firma-link/${p.id}">Link firma WhatsApp</a> <a class="btn btn3" href="/firma-whatsapp/${p.id}">Invia firma WhatsApp diretto</a>
         <a class="btn btn3" href="/whatsapp-contratto/${p.id}">Invia contratto WhatsApp</a>
         <a class="btn btn2" href="/cargos/export/${p.id}">Export Ca.R.G.O.S.</a>
       </div>
@@ -4354,6 +4354,114 @@ app.post('/ocr-documenti/:id/salva', async (req, res) => {
 });
 
 
+
+function mergeOcrObjects(list) {
+  const out = {};
+  for (const obj of list) {
+    if (!obj || typeof obj !== 'object') continue;
+    for (const [k, v] of Object.entries(obj)) {
+      const val = String(v ?? '').trim();
+      if (val && !out[k]) out[k] = val;
+    }
+  }
+  return out;
+}
+
+function renderClientePulitoPage(p, token, files) {
+  const lista = (files || []).map(f => `<li>${esc(f.tipo)} - ${esc(f.originalname)} ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Drive</a>` : ''}</li>`).join('');
+  const actionBase = `/cliente-documenti/${p.id}/${token}`;
+  return page('DP RENT - Pratica cliente', `
+    <style>
+      .client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:white;border-radius:30px;padding:36px 42px;margin-bottom:26px;box-shadow:0 16px 40px rgba(0,0,0,.18)}
+      .client-hero h1{font-size:54px;line-height:1;margin:0 0 18px 0;color:white}
+      .client-hero p{font-size:26px;line-height:1.35;margin:0;opacity:.95}
+      .pill{display:inline-block;background:#fff;color:#173f9d;border-radius:999px;padding:12px 22px;margin:18px 12px 0 0;font-weight:900;font-size:22px}
+      .step-card{background:white;border-radius:30px;padding:34px;margin-bottom:26px;box-shadow:0 14px 35px rgba(15,23,42,.10);border:1px solid #edf0f7}
+      .step-card h2{font-size:44px;margin-top:0;color:#0b1226}
+      .upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+      .upload-box{border:2px dashed #cbd5e1;border-radius:22px;padding:18px;background:#f8fafc}
+      .upload-box label{font-size:22px;font-weight:900;color:#0f172a}
+      .upload-box input{font-size:22px;width:100%;margin-top:12px}
+      .big-red{font-size:28px;border-radius:22px;padding:18px 26px;background:#d40000;color:white;border:0;font-weight:900;box-shadow:0 12px 28px rgba(212,0,0,.25)}
+      details.manual{background:white;border-radius:30px;padding:26px;margin:26px 0;box-shadow:0 14px 35px rgba(15,23,42,.10)}
+      details.manual summary{font-size:34px;font-weight:900;cursor:pointer;color:#0b1226}
+      .fixed-save{position:sticky;bottom:12px;z-index:9;background:rgba(255,255,255,.96);padding:12px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.16)}
+      @media(max-width:700px){.client-hero h1{font-size:40px}.client-hero p{font-size:22px}.upload-grid{grid-template-columns:1fr}.step-card h2{font-size:38px}}
+    </style>
+
+    <div class="client-hero">
+      <h1>DP RENT</h1>
+      <p>Prima carica documento e patente. Proviamo a leggere i dati automaticamente, poi puoi controllare e correggere tutto manualmente.</p>
+      <span class="pill">${esc(p.codice || 'Pratica cliente')}</span>
+      <span class="pill">${esc((p.marca || '') + ' ' + (p.modello || '')).trim() || 'Mezzo'}</span>
+    </div>
+
+    <div class="step-card">
+      <h2>1. Carica documenti per OCR</h2>
+      <p class="notice">Scatta o carica le foto. Puoi anche caricare solo una foto: i campi mancanti li compili sotto a mano.</p>
+      <form method="POST" action="${actionBase}/ocr-multiplo" enctype="multipart/form-data">
+        <div class="upload-grid">
+          <div class="upload-box"><label>Documento fronte</label><input type="file" name="documento_fronte" accept="image/*,.pdf" capture="environment"></div>
+          <div class="upload-box"><label>Documento retro</label><input type="file" name="documento_retro" accept="image/*,.pdf" capture="environment"></div>
+          <div class="upload-box"><label>Patente fronte</label><input type="file" name="patente_fronte" accept="image/*,.pdf" capture="environment"></div>
+          <div class="upload-box"><label>Patente retro</label><input type="file" name="patente_retro" accept="image/*,.pdf" capture="environment"></div>
+        </div>
+        <br>
+        <button class="big-red">Leggi dati automaticamente</button>
+      </form>
+    </div>
+
+    <details class="manual" open>
+      <summary>2. Controlla / compila manualmente</summary>
+      <p class="notice">Questi sono i dati necessari per contratto, fatturazione e controlli Ca.R.G.O.S.</p>
+      <form method="POST" action="${actionBase}/salva">
+        <div class="grid">
+          <div><label>Nome</label><input name="nome" value="${esc(p.nome||'')}" autocomplete="given-name"></div>
+          <div><label>Cognome</label><input name="cognome" value="${esc(p.cognome||'')}" autocomplete="family-name"></div>
+          <div><label>Telefono</label><input name="telefono" value="${esc(p.telefono||'')}" autocomplete="tel"></div>
+          <div><label>Email</label><input name="email" value="${esc(p.email||'')}" autocomplete="email"></div>
+          <div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(p.codice_fiscale||'')}"></div>
+          <div><label>Data nascita</label><input type="date" name="data_nascita" value="${esc(p.data_nascita||'')}"></div>
+          <div><label>Luogo nascita</label><input name="luogo_nascita" value="${esc(p.luogo_nascita||'')}"></div>
+          <div><label>Cittadinanza codice</label><input name="cittadinanza_cod" value="${esc(p.cittadinanza_cod||p.cittadinanza||'100000100')}"></div>
+          <div><label>Indirizzo</label><input name="indirizzo" value="${esc(p.indirizzo||'')}"></div>
+          <div><label>CittÃ </label><input name="citta" value="${esc(p.citta||'')}"></div>
+          <div><label>Provincia</label><input name="provincia" value="${esc(p.provincia||'')}"></div>
+          <div><label>CAP</label><input name="cap" value="${esc(p.cap||'')}"></div>
+          <div><label>Tipo documento</label><select name="documento_tipo"><option ${p.documento_tipo==='Carta identitÃ '?'selected':''}>Carta identitÃ </option><option ${p.documento_tipo==='Passaporto'?'selected':''}>Passaporto</option><option ${p.documento_tipo==='Patente'?'selected':''}>Patente</option></select></div>
+          <div><label>Numero documento</label><input name="numero_documento" value="${esc(p.documento_numero||'')}"></div>
+          <div><label>Ente rilascio documento</label><input name="ente_rilascio" value="${esc(p.documento_rilascio||'')}"></div>
+          <div><label>Luogo rilascio documento</label><input name="documento_luogo_rilascio" value="${esc(p.documento_luogo_rilascio||p.citta||'')}"></div>
+          <div><label>Data rilascio documento</label><input type="date" name="data_rilascio" value="${esc(p.documento_data_rilascio||'')}"></div>
+          <div><label>Scadenza documento</label><input type="date" name="data_scadenza" value="${esc(p.documento_scadenza||'')}"></div>
+          <div><label>Numero patente</label><input name="numero_patente" value="${esc(p.patente_numero||p.patente1||'')}"></div>
+          <div><label>Ente rilascio patente</label><input name="patente_rilascio" value="${esc(p.patente_rilascio||'')}"></div>
+          <div><label>Luogo rilascio patente</label><input name="patente_luogo_rilascio" value="${esc(p.patente_luogo_rilascio||p.citta||'')}"></div>
+          <div><label>Data rilascio patente</label><input type="date" name="patente_data_rilascio" value="${esc(p.patente_data_rilascio||'')}"></div>
+          <div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${esc(p.patente_scadenza||p.patente1_scadenza||'')}"></div>
+          <div><label>Categoria patente</label><input name="categoria_patente" value="${esc(p.categoria_patente||'')}"></div>
+          <div><label>Tipo cliente</label><select name="tipo_cliente"><option value="privato" ${p.tipo_cliente!=='azienda'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></div>
+          <div><label>Ragione sociale</label><input name="ragione_sociale" value="${esc(p.ragione_sociale||'')}"></div>
+          <div><label>Partita IVA</label><input name="piva" value="${esc(p.piva||p.partita_iva||'')}"></div>
+          <div><label>PEC</label><input name="pec" value="${esc(p.pec||'')}"></div>
+          <div><label>Codice SDI</label><input name="codice_sdi" value="${esc(p.codice_sdi||'')}"></div>
+        </div>
+        <div class="fixed-save"><button class="big-red">Salva dati cliente e documenti</button></div>
+      </form>
+    </details>
+
+    <div class="step-card">
+      <h2>3. Altri allegati</h2>
+      <form method="POST" action="${actionBase}" enctype="multipart/form-data">
+        <input type="hidden" name="tipo" value="Altro allegato cliente">
+        <input type="file" name="file" accept="image/*,.pdf" multiple>
+        <button>Carica allegato</button>
+      </form>
+      <h3>File giÃ  caricati</h3><ul>${lista || '<li>Nessun file caricato</li>'}</ul>
+    </div>
+  `);
+}
+
 app.get('/cliente-documenti/:id/:token', async (req, res) => {
   const expected = clienteDocToken(req.params.id);
   if (req.params.token !== expected) return res.status(403).send('Link non valido');
@@ -4362,40 +4470,57 @@ app.get('/cliente-documenti/:id/:token', async (req, res) => {
   if (!p) return res.send('Contratto non trovato');
 
   const files = await all(`SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id DESC`, [p.id]);
-  const lista = files.map(f => `<li>${esc(f.tipo)} - ${esc(f.originalname)} ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Drive</a>` : ''}</li>`).join('');
+  res.send(renderClientePulitoPage(p, req.params.token, files));
+});
 
-  res.send(page('Carica documenti DP RENT', `
-    <div class="box">
-      <h2>DP RENT - Carica documenti</h2>
-      <p><b>Contratto:</b> ${esc(p.codice)}</p>
-      <p><b>Cliente:</b> ${esc(p.nome)} ${esc(p.cognome)}</p>
-      <p class="notice">Puoi caricare patente/documento. Dopo la lettura automatica controlli e confermi i dati.</p>
-    </div>
-    ${renderOcrUploadForm(`/cliente-documenti/${p.id}/${req.params.token}`, `/cliente-documenti/${p.id}/${req.params.token}`, 'Carica/scatta documento')}
-    <div class="box">
-      <h2>Compila dati manualmente</h2>
-      <p class="notice">Puoi compilare tutto anche senza OCR. I campi sono quelli necessari per contratto e Ca.R.G.O.S.</p>
-      <form method="POST" action="/cliente-documenti/${p.id}/${req.params.token}/salva">
-        <div class="grid">
-          <div><label>Nome</label><input name="nome" value="${esc(p.nome||'')}"></div>
-          <div><label>Cognome</label><input name="cognome" value="${esc(p.cognome||'')}"></div>
-          <div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(p.codice_fiscale||'')}"></div>
-          <div><label>Data nascita</label><input type="date" name="data_nascita" value="${esc(p.data_nascita||'')}"></div>
-          <div><label>Luogo nascita</label><input name="luogo_nascita" value="${esc(p.luogo_nascita||'')}"></div>
-          <div><label>Indirizzo</label><input name="indirizzo" value="${esc(p.indirizzo||'')}"></div>
-          <div><label>Numero documento</label><input name="numero_documento" value="${esc(p.documento_numero||'')}"></div>
-          <div><label>Ente rilascio documento</label><input name="ente_rilascio" value="${esc(p.documento_rilascio||'')}"></div>
-          <div><label>Data rilascio documento</label><input type="date" name="data_rilascio" value="${esc(p.documento_data_rilascio||'')}"></div>
-          <div><label>Scadenza documento</label><input type="date" name="data_scadenza" value="${esc(p.documento_scadenza||'')}"></div>
-          <div><label>Numero patente</label><input name="numero_patente" value="${esc(p.patente_numero||p.patente1||'')}"></div>
-          <div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${esc(p.patente_scadenza||p.patente1_scadenza||'')}"></div>
-          <div><label>Categoria patente</label><input name="categoria_patente" value="${esc(p.categoria_patente||'')}"></div>
-        </div>
-        <button>Salva dati manuali</button>
-      </form>
-    </div>
-    <div class="box"><h3>File giÃ  caricati</h3><ul>${lista || '<li>Nessun file caricato</li>'}</ul></div>
-  `));
+app.post('/cliente-documenti/:id/:token/ocr-multiplo', upload.fields([
+  { name:'documento_fronte', maxCount:1 },
+  { name:'documento_retro', maxCount:1 },
+  { name:'patente_fronte', maxCount:1 },
+  { name:'patente_retro', maxCount:1 }
+]), async (req, res) => {
+  try {
+    const expected = clienteDocToken(req.params.id);
+    if (req.params.token !== expected) return res.status(403).send('Link non valido');
+
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+
+    const allFiles = [];
+    for (const [field, arr] of Object.entries(req.files || {})) {
+      for (const f of arr || []) allFiles.push({ field, file:f });
+    }
+    if (!allFiles.length) return res.send(page('OCR documenti', `<div class="box"><h2>Nessuna foto caricata</h2><a class="btn" href="/cliente-documenti/${p.id}/${req.params.token}">Torna</a></div>`));
+
+    const results = [];
+    for (const item of allFiles) {
+      const f = item.file;
+      let driveRes = null;
+      try {
+        driveRes = await uploadFileToDrive(
+          f.path,
+          `${Date.now()}_${item.field}_${f.originalname}`,
+          f.mimetype,
+          `${p.codice || 'CONTRATTO'} - ${p.nome || ''} ${p.cognome || ''}`
+        );
+      } catch (e) { console.log('Errore upload OCR multiplo Drive:', e.message); }
+
+      await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
+        [p.id, `OCR CLIENTE ${item.field}`, f.filename, f.originalname, f.path, f.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
+
+      try {
+        const dati = await estraiDatiDocumentoConAI(f.path, f.mimetype);
+        results.push(dati || {});
+      } catch (e) {
+        console.log('Errore OCR su', item.field, e.message);
+      }
+    }
+
+    const merged = mergeOcrObjects(results);
+    res.send(renderOcrConfirmPage(p, merged, `/cliente-documenti/${p.id}/${req.params.token}/salva`, `/cliente-documenti/${p.id}/${req.params.token}`));
+  } catch (e) {
+    res.status(500).send(page('Errore OCR cliente', `<div class="box"><h2 class="bad">Errore lettura documenti</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cliente-documenti/${req.params.id}/${req.params.token}">Riprova</a></div>`));
+  }
 });
 
 app.post('/cliente-documenti/:id/:token', upload.single('file'), async (req, res) => {
@@ -4674,6 +4799,22 @@ app.post('/firma/:id', async (req, res) => {
     res.send('OK');
   } catch (e) {
     res.status(500).send(e.message);
+  }
+});
+
+
+app.get('/firma-whatsapp/:id', async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+    const tel = normalizzaWa(p.telefono || p.telefono_cliente || '');
+    if (!tel) return res.send(page('Invio firma WhatsApp', `<div class="box"><h2 class="bad">Telefono cliente mancante</h2><a class="btn" href="/prenotazione/${p.id}">Torna</a></div>`));
+    const link = absoluteUrl(req, `/firma/${p.id}`);
+    const msg = `DP RENT - firma online contratto ${p.codice || p.id}: ${link}`;
+    const r = await dpNotify([tel], msg);
+    res.send(page('Invio firma WhatsApp', `<div class="box"><h2>${r.ok ? 'Link firma inviato' : 'Invio non riuscito'}</h2><p>${r.ok ? 'Messaggio inviato al cliente su WhatsApp.' : esc((r.errors || []).join(' | '))}</p><p><b>Cliente:</b> ${esc(tel)}</p><p><b>Link:</b> <a target="_blank" href="${esc(link)}">${esc(link)}</a></p><a class="btn" href="/prenotazione/${p.id}">Torna</a></div>`));
+  } catch (e) {
+    res.status(500).send(page('Errore invio firma', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
   }
 });
 
@@ -6368,17 +6509,3 @@ Ti ricontatteremo per confermare appuntamento e orario.`);
 app.get('/test-whatsapp-staff', async (req, res) => {
   const r = await dpNotify(DP_STAFF_NUMBERS, 'TEST DP RENT - notifica staff ' + new Date().toLocaleString('it-IT'));
   res.json(r);
-});
-app.get('/test-drive-officina', async (req, res) => {
-  const codice = 'TEST-OFF-' + Date.now();
-  const r = await dpSaveRequestToDrive('TEST OFFICINA DP', codice, 'test', 'Test', 'Prova salvataggio Drive officina');
-  res.json(r);
-});
-
-app.post('/whatsapp', dpHandleWhatsApp);
-app.post('/webhook', dpHandleWhatsApp);
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V91 NO DRIVE OFFICINA + CRUD CLIENTI porta ' + PORT);
-  console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
-});
