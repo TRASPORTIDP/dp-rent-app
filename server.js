@@ -207,7 +207,8 @@ function v67DefaultBirth(p){
 // V76 FIX ROUTE SYNTAX CARGOS + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
-  return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
+  const raw = (p && (p.record_cargos_cittadinanza_cod || p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || process.env.CARGOS_CITTADINANZA_COD || '100000100';
+  return String(raw).replace(/\D/g,'').trim() || '100000100';
 }
 function v68SafeValidateCargos(p){
   try {
@@ -1755,46 +1756,36 @@ function patchCargosVehicleRecordV76(p) {
 }
 
 async function buildCargosRecordForContract(id) {
-  // V76 patch veicolo
-
-  // buildCargosRecordForContract__v72patched
-  // V76 rimosso: p non ancora inizializzato
-
-  const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [id]);
+  // V97: builder unico. Tutti i pulsanti Ca.R.G.O.S. usano lo stesso tracciato del contratto.
+  const p = await get(`
+    SELECT p.*,
+           m.targa AS mezzo_targa,
+           m.marca AS mezzo_marca,
+           m.modello AS mezzo_modello,
+           m.tipo AS mezzo_tipo,
+           m.descrizione AS mezzo_descrizione,
+           m.km AS mezzo_km,
+           m.km_attuali AS mezzo_km_attuali,
+           m.categoria AS mezzo_categoria,
+           m.codice_tipo AS mezzo_codice_tipo
+    FROM prenotazioni p
+    LEFT JOIN mezzi m ON p.mezzo_id = m.id
+    WHERE p.id = ?
+  `, [id]);
   if (!p) throw new Error('Contratto non trovato');
 
-  
-  
   patchCargosVehicleRecordV76(p);
-Object.assign(p, cargosPatchDefaultsV76(p));
+  Object.assign(p, cargosPatchDefaultsV76(p));
   patchCargosVehicleTypeIntoObjectV76(p);
-const fields = [
-    cargosPad(p.codice,50), cargosDateTime(p.created_at || moment(), moment().format('HH:mm')),
-    cargosPad(process.env.CARGOS_TIPO_PAGAMENTO || '1',1,'number'),
-    cargosDateTime(p.data_inizio,p.ora_inizio || '08:30'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
-    cargosDateTime(p.data_fine,p.ora_fine || '18:00'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
-    cargosPad(process.env.CARGOS_OPERATORE_ID || '',50), cargosPad(process.env.CARGOS_AGENZIA_ID || '',30), cargosPad(process.env.CARGOS_AGENZIA_NOME || AZIENDA.nome,70),
-    cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150), cargosPad(AZIENDA.telefono,20,'number'),
-    cargosPad(cargosTipoVeicoloFinaleV76(p),1), cargosPad(cargosMarcaFinaleV76(p) || p.marca || '',50), cargosPad(cargosModelloFinaleV76(p) || p.modello || '',100), cargosPad(p.targa || '',15),
-    cargosPad('',50), cargosPad('',1,'number'), cargosPad('',1,'number'),
-    cargosPad(p.cognome || '',50), cargosPad(p.nome || '',30), cargosDate(p.data_nascita || ''),
-    cargosPad(process.env.CARGOS_NASCITA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(process.env.CARGOS_CITTADINANZA_COD || '',9,'number'),
-    cargosPad(process.env.CARGOS_RESIDENZA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(p.indirizzo || '',150),
-    cargosPad(process.env.CARGOS_TIPO_DOCUMENTO || 'CI',5),
-    cargosPad(process.env.CARGOS_DOC_NUMERO_FALLBACK || '',20),
-    cargosPad(process.env.CARGOS_DOC_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(p.patente1 || '',20),
-    cargosPad(process.env.CARGOS_PATENTE_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(p.telefono || '',20),
-    cargosPad('',50), cargosPad('',30), cargosDate(''), cargosPad('',9,'number'), cargosPad('',9,'number'),
-    cargosPad('',5), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20)
-  ];
 
-  const record = fields.join('');
-  if (record.length !== 1505) throw new Error(`Record Ca.R.G.O.S. lunghezza errata: ${record.length}, attesa 1505`);
-  return record;
+  const v = validateCargosV40(p);
+  if (!v.ok) {
+    throw new Error('Campi Ca.R.G.O.S. mancanti: ' + (v.missing || []).join(', '));
+  }
+  if (v.record.length !== 1505) {
+    throw new Error(`FORMATO - Dimensione riga errata (${v.record.length}/1505)`);
+  }
+  return v.record;
 }
 
 
@@ -4089,13 +4080,7 @@ app.get('/cargos/:id/check', async (req, res) => {
       return res.send(page('CARGOS Check', `<div class="box"><h2 class="bad">Verifica locale KO</h2><p>Mancano campi obbligatori:</p><pre>${esc(v.missing.join('\n'))}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
     }
     try {
-      let fixedRecord = v.record;
-      try {
-        if (!fixedRecord.includes('CONDUCENTE_CONTRAENTE_CITTADINANZA_COD')) {
-          fixedRecord += '\nCONDUCENTE_CONTRAENTE_CITTADINANZA_COD=IT';
-        }
-      } catch {}
-      const result = await cargosCallV40('Check', [fixedRecord]);
+      const result = await cargosCallV40('Check', [v.record]);
       db.run(`UPDATE prenotazioni SET record_cargos_stato=?, record_cargos_last_check=?, record_cargos_last_error=? WHERE id=?`,
         [result.ok ? 'check_ok' : 'check_ko', new Date().toISOString(), JSON.stringify(result).slice(0,1000), p.id]);
       res.send(page('CARGOS Check', `<div class="box"><h2>Risposta Check CaRGOS</h2><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/cargos/${p.id}/send">Invia report</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a></div>`));
