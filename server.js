@@ -3406,7 +3406,7 @@ function cargosDateTime(date, time) {
 }
 
 function cargosDateOnly(date) {
-  // FIX V76 Ca.R.G.O.S: date pure in formato ISO YYYY-MM-DD
+  // FIX V76 Ca.R.G.O.S: SOLO data ISO YYYY-MM-DD, senza ora/timezone.
   const d = cargosNormalizeIsoDateV76(date);
   return (d || '').padEnd(10, ' ').slice(0,10);
 }
@@ -3453,10 +3453,10 @@ function cargosRecordDataV40(p) {
     CONTRATTO_ID: p.codice || `DPR-${p.id}`,
     CONTRATTO_DATA: cargosDateOnly(p.created_at || new Date().toISOString()),
     CONTRATTO_TIPOP: getTipoPagamentoCargosV63(p.pagamento || p.tipo_pagamento || '9'),
-    CONTRATTO_CHECKOUT_DATA: cargosDateTime(p.data_inizio, p.ora_inizio || '08:30'),
+    CONTRATTO_CHECKOUT_DATA: cargosDateOnly(p.data_inizio || p.checkout_data || p.data_checkout || ''),
     CONTRATTO_CHECKOUT_LUOGO_COD: cargosCheckoutLuogoCodV63(),
     CONTRATTO_CHECKOUT_INDIRIZZO: p.record_cargos_checkout_indirizzo || agenziaInd,
-    CONTRATTO_CHECKIN_DATA: cargosDateTime(p.data_fine, p.ora_fine || '18:00'),
+    CONTRATTO_CHECKIN_DATA: cargosDateOnly(p.data_fine || p.checkin_data || p.data_checkin || ''),
     CONTRATTO_CHECKIN_LUOGO_COD: cargosCheckinLuogoCodV63(),
     CONTRATTO_CHECKIN_INDIRIZZO: p.record_cargos_checkin_indirizzo || agenziaInd,
     OPERATORE_ID: cargosOperatoreIdV63(),
