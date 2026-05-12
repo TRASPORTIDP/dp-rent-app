@@ -1035,10 +1035,35 @@ canvas{border:2px solid #333;background:white;width:100%;height:250px;touch-acti
 .badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}
 pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;padding:12px;border-radius:8px;overflow:auto}
 @media(max-width:700px){.grid{grid-template-columns:1fr}main{padding:10px}header h1{font-size:24px}.tile{font-size:19px;min-height:100px}th,td{font-size:12px;padding:6px}}
+
+/* DP RENT APP - grafica aggiornata */
+:root{--red:#d80000;--red2:#a90000;--black:#090909;--soft:#f6f7fb;--card:#ffffff;--line:#e8e8ef;--text:#191919}
+body{background:linear-gradient(180deg,#f7f7fb 0%,#ffffff 100%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
+header{background:linear-gradient(135deg,#070707,#202020);padding:22px 26px;box-shadow:0 8px 26px rgba(0,0,0,.18);display:flex;align-items:center;gap:16px}
+header h1{letter-spacing:3px;font-size:34px;margin:0;color:#fff}
+nav{background:linear-gradient(135deg,var(--red),var(--red2));padding:14px 18px;display:flex;gap:10px;flex-wrap:wrap;box-shadow:0 10px 22px rgba(216,0,0,.20)}
+nav a{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:11px 15px;color:#fff;text-decoration:none;font-weight:800}
+nav a:hover{background:#fff;color:var(--red)}
+main{padding:24px;max-width:1500px;margin:0 auto}
+.box{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px;margin:16px 0;box-shadow:0 12px 32px rgba(0,0,0,.08)}
+table{background:#fff;border-radius:18px;overflow:hidden;border-collapse:separate;border-spacing:0;width:100%;box-shadow:0 10px 26px rgba(0,0,0,.06)}
+th{background:#171717;color:#fff;padding:12px;text-align:left}
+td{border-bottom:1px solid var(--line);padding:11px;vertical-align:top}
+tr:hover td{background:#fff7f7}
+input,select,textarea{background:#fff;border:1px solid #d8d8e0;border-radius:12px;padding:13px}
+button,.btn{border-radius:13px;padding:12px 17px;box-shadow:0 6px 15px rgba(216,0,0,.18)}
+.btn2{background:#2d2d32!important}.btn3{background:#087a34!important}.bad,.btn.bad{color:#fff!important;background:#a30000!important}
+.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:15px}
+.tile{background:linear-gradient(135deg,#fff,#fff5f5);border:1px solid #ffe0e0;border-radius:22px;box-shadow:0 12px 30px rgba(0,0,0,.08);padding:22px;min-height:110px;text-decoration:none;color:#111;font-weight:900;font-size:21px}
+.tile span{display:block;font-size:34px;margin-bottom:8px}
+.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+pre{border-radius:16px;padding:18px}
+@media(max-width:700px){header{padding:18px}header h1{font-size:30px}nav{gap:8px}nav a{font-size:18px;padding:12px 14px}main{padding:12px}.box{border-radius:20px;padding:18px}table{font-size:13px}.hero{grid-template-columns:1fr 1fr}.tile{font-size:18px;min-height:95px;padding:16px}}
+
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V76 FIX ROUTE SYNTAX CARGOS</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP</h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -2240,7 +2265,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS'));
+app.get('/versione', (req, res) => res.send('DP RENT APP'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2289,7 +2314,6 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V76 FIX ROUTE SYNTAX CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2402,10 +2426,12 @@ app.get('/mezzi-web', async (req, res) => {
       <td>${esc(m.km_inclusi)}</td>
       <td>${alertBadge(m)}</td>
       <td>${esc(m.stato)}</td>
+      <td><div class="actions"><a class="btn btn2" href="/mezzo/${m.id}">Apri</a><a class="btn btn2" href="/mezzi/${m.id}/modifica">Modifica</a><a class="btn bad" href="/mezzi/${m.id}/elimina">Elimina</a></div></td>
     </tr>`).join('');
   res.send(page('Mezzi', `
     <h2>Elenco mezzi</h2>
-    <table><tr><th>ID</th><th>Targa</th><th>Marca</th><th>Modello</th><th>Categoria</th><th>Descrizione pubblica</th><th>Prezzo</th><th>Km/giorno</th><th>Alert</th><th>Stato</th></tr>${trs}</table>
+    <div class="actions"><a class="btn" href="/mezzi/nuovo">Nuovo mezzo</a></div>
+    <table><tr><th>ID</th><th>Targa</th><th>Marca</th><th>Modello</th><th>Categoria</th><th>Descrizione pubblica</th><th>Prezzo</th><th>Km/giorno</th><th>Alert</th><th>Stato</th><th>Azioni</th></tr>${trs}</table>
   `));
 });
 
@@ -2449,7 +2475,7 @@ app.get('/mezzo/:id', async (req, res) => {
         <button>Carica file mezzo</button>
       </form>
       <ul>${lista}</ul>
-      <a class="btn" href="/nuova-prenotazione?mezzo_id=${m.id}">Prenota questo mezzo</a>
+      <div class="actions"><a class="btn" href="/nuova-prenotazione?mezzo_id=${m.id}">Prenota questo mezzo</a><a class="btn btn2" href="/mezzi/${m.id}/modifica">Modifica mezzo</a><a class="btn bad" href="/mezzi/${m.id}/elimina">Elimina mezzo</a></div>
     </div>
   `));
 });
@@ -2737,7 +2763,7 @@ app.get('/clienti', (req, res) => {
         <td>${esc(c.codice_fiscale||'')}</td>
         <td>${esc(c.documento_numero||'')}<br>Scad. ${esc(c.documento_scadenza||'')}</td>
         <td>${esc(c.patente_numero||'')}<br>Scad. ${esc(c.patente_scadenza||'')}</td>
-        <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a></td>
+        <td><div class="actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a><a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica</a><a class="btn bad" href="/cliente/${c.id}/elimina">Elimina</a></div></td>
       </tr>`).join('');
     res.send(page('Clienti', `
       <div class="box"><h2>Storico clienti</h2>
@@ -2759,10 +2785,60 @@ app.get('/cliente/:id', (req, res) => {
       <p><b>Documento:</b> ${esc(c.documento_numero||'')} - scad. ${esc(c.documento_scadenza||'')}</p>
       <p><b>Patente:</b> ${esc(c.patente_numero||'')} - scad. ${esc(c.patente_scadenza||'')} - cat. ${esc(c.categoria_patente||'')}</p>
       <p><b>Note:</b> ${esc(c.note||'')}</p>
-      <a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto da cliente</a>
-      <a class="btn btn2" href="/clienti">Torna clienti</a>
+      <div class="actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto da cliente</a>
+      <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica cliente</a>
+      <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina cliente</a>
+      <a class="btn btn2" href="/clienti">Torna clienti</a></div>
     </div>`));
   });
+});
+
+
+app.get('/cliente/:id/modifica', async (req,res)=>{
+  const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
+  if(!c) return res.redirect('/clienti');
+  res.send(page('Modifica cliente', `<div class="box"><h2>Modifica cliente</h2>
+    <form method="post" action="/cliente/${c.id}/modifica">
+      <div class="grid">
+        <label>Nome<input name="nome" value="${esc(c.nome)}" required></label>
+        <label>Cognome<input name="cognome" value="${esc(c.cognome)}" required></label>
+        <label>Telefono<input name="telefono" value="${esc(c.telefono)}"></label>
+        <label>Email<input name="email" value="${esc(c.email)}"></label>
+        <label>Codice fiscale<input name="codice_fiscale" value="${esc(c.codice_fiscale)}"></label>
+        <label>Data nascita<input type="date" name="data_nascita" value="${esc(v67IsoDate(c.data_nascita))}"></label>
+        <label>Luogo nascita<input name="luogo_nascita" value="${esc(c.luogo_nascita)}"></label>
+        <label>Indirizzo<input name="indirizzo" value="${esc(c.indirizzo)}"></label>
+        <label>CittÃ <input name="citta" value="${esc(c.citta)}"></label>
+        <label>CAP<input name="cap" value="${esc(c.cap)}"></label>
+        <label>Numero documento<input name="documento_numero" value="${esc(c.documento_numero)}"></label>
+        <label>Scadenza documento<input type="date" name="documento_scadenza" value="${esc(v67IsoDate(c.documento_scadenza))}"></label>
+        <label>Numero patente<input name="patente_numero" value="${esc(c.patente_numero)}"></label>
+        <label>Scadenza patente<input type="date" name="patente_scadenza" value="${esc(v67IsoDate(c.patente_scadenza))}"></label>
+        <label>Categoria patente<input name="categoria_patente" value="${esc(c.categoria_patente)}"></label>
+      </div>
+      <label>Note<textarea name="note">${esc(c.note)}</textarea></label>
+      <button class="btn" type="submit">Salva cliente</button>
+      <a class="btn btn2" href="/cliente/${c.id}">Annulla</a>
+    </form></div>`));
+});
+
+app.post('/cliente/:id/modifica', async (req,res)=>{
+  const b=req.body||{};
+  await run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[
+    v62Val(b.nome),v62Val(b.cognome),v62Val(b.telefono),v62Val(b.email),v62Val(b.codice_fiscale).toUpperCase(),v62Val(b.indirizzo),v62Val(b.citta),v62Val(b.cap),v62Val(b.data_nascita),v62Val(b.luogo_nascita),v62Val(b.documento_numero),v62Val(b.documento_scadenza),v62Val(b.patente_numero),v62Val(b.patente_scadenza),v62Val(b.categoria_patente),v62Val(b.note),req.params.id
+  ]);
+  res.redirect(`/cliente/${req.params.id}`);
+});
+
+app.get('/cliente/:id/elimina', async (req,res)=>{
+  const c=await get(`SELECT * FROM clienti WHERE id=?`,[req.params.id]);
+  if(!c) return res.redirect('/clienti');
+  res.send(page('Elimina cliente', `<div class="box"><h2 class="bad">Eliminare cliente ${esc(c.nome)} ${esc(c.cognome)}?</h2><p>I contratti giÃ  creati restano nello storico perchÃ© hanno i dati salvati dentro il contratto.</p><form method="post" action="/cliente/${c.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina cliente</button><a class="btn btn2" href="/cliente/${c.id}">Annulla</a></form></div>`));
+});
+
+app.post('/cliente/:id/elimina', async (req,res)=>{
+  await run(`DELETE FROM clienti WHERE id=?`,[req.params.id]);
+  res.redirect('/clienti');
 });
 
 
@@ -3876,7 +3952,7 @@ app.get('/prenotazioni', async (req, res) => {
   if (al) { sql += ` AND date(p.data_fine)<=date(?)`; params.push(al); }
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><div class="actions"><a class="btn btn2" href="/contratto/${p.id}/gestisci">Apri</a><a class="btn" href="/prenotazione/${p.id}/modifica">Modifica</a><a class="btn btn2" href="/contratto/${p.id}">PDF</a><a class="btn btn2" href="/nexi/${p.id}">Nexi</a><a class="btn bad" href="/prenotazione/${p.id}/elimina">Elimina</a></div></td></tr>`).join('');
   res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${trs}</table>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
@@ -5369,15 +5445,16 @@ app.get('/admin/fix-tutto-v60',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 app.get('/admin/fix-tutto-v58',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 
 
-app.get('/prenotazione/:id/elimina',async(req,res)=>{const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);res.send(page('Elimina contratto',`<div class="box"><h2 class="bad">Eliminare contratto ${esc(p?.codice||req.params.id)}?</h2><form method="post" action="/prenotazione/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina</button><a class="btn btn2" href="/prenotazione/${req.params.id}">Annulla</a></form></div>`));});
-app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM allegati WHERE prenotazione_id=?`,[req.params.id]).catch(()=>{});await run(`DELETE FROM prenotazioni WHERE id=?`,[req.params.id]);res.redirect('/');});
+app.get('/prenotazione/:id/elimina',async(req,res)=>{const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);res.send(page('Elimina contratto',`<div class="box"><h2 class="bad">Eliminare contratto ${esc(p?.codice||req.params.id)}?</h2><form method="post" action="/prenotazione/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina</button><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Annulla</a></form></div>`));});
+app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM allegati WHERE prenotazione_id=?`,[req.params.id]).catch(()=>{});await run(`DELETE FROM prenotazioni WHERE id=?`,[req.params.id]);res.redirect('/prenotazioni');});
 app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=preventivo'));
 app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=?`,[req.params.id]);res.redirect(`/prenotazione/${req.params.id}`);});
 
 app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="furgone">Furgone</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
 app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),'attivo',v62Val(b.note)]);res.redirect('/mezzi');});
 app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km<input name="km" value="${esc(m.km||m.km_attuali)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato<select name="stato"><option value="attivo" ${m.stato!=='non_attivo'?'selected':''}>Attivo</option><option value="non_attivo" ${m.stato==='non_attivo'?'selected':''}>Non attivo</option></select></label></div><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
-app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),v62Val(b.stato||'attivo'),v62Val(b.note),v62Val(b.data_nascita),v62Val(b.luogo_nascita),v62Val(b.cittadinanza_cod||'100000100'),v62Val(b.documento_tipo||'IDENT'),v62Val(b.documento_numero),v62Val(b.documento_scadenza),v62Val(b.patente_numero),v62Val(b.patente_scadenza),req.params.id]);res.redirect('/mezzi');});
+app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,categoria=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.tipo || b.categoria),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),v62Val(b.stato||'attivo'),v62Val(b.note),req.params.id]);res.redirect('/mezzi-web');});
+app.get('/mezzi/:id/elimina',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.redirect('/mezzi-web');res.send(page('Elimina mezzo',`<div class="box"><h2 class="bad">Eliminare mezzo ${esc(m.targa)}?</h2><p>Attenzione: se ci sono prenotazioni collegate, resteranno nello storico con i dati giÃ  salvati nel contratto.</p><form method="post" action="/mezzi/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina mezzo</button><a class="btn btn2" href="/mezzo/${req.params.id}">Annulla</a></form></div>`));});
 app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi');});
 
 
@@ -5609,20 +5686,3 @@ app.get('/admin/fix-tutto-v76', (req, res) => {
     <p>Record Ca.R.G.O.S.: VEICOLO_TIPO una sola volta, lunghezza 1505.</p>
     <a class="btn" href="/">Dashboard</a>
     <a class="btn btn2" href="/storico">Storico</a>
-  </div>`;
-  if (typeof page === 'function') return res.send(page('FIX V76 OK', html));
-  res.send(html);
-});
-
-app.get('/admin/fix-tutto-v75', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-app.get('/admin/fix-tutto-v74', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-app.get('/admin/fix-tutto-v73', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-app.get('/admin/fix-tutto-v72', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-app.get('/admin/fix-tutto-v71', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v76'));
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS ONLINE porta ' + PORT);
-});
