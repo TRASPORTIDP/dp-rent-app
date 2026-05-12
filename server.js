@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -5717,20 +5716,56 @@ function dpAlreadySid(sid){
   return false;
 }
 async function dpNotify(numbers, body){
-  console.log('DP_NOTIFY TO:', numbers.join(', '));
+  const targets = Array.from(new Set((numbers || []).filter(Boolean)));
+  console.log('DP_NOTIFY TO:', targets.join(', '));
   console.log('DP_NOTIFY BODY:', body);
-  if(!dpTwilioClient){ console.log('Twilio non configurato, notifica non inviata'); return false; }
+  if(!dpTwilioClient){
+    console.log('Twilio non configurato, notifica non inviata');
+    return { ok:false, sent:0, errors:['Twilio non configurato'] };
+  }
   let sent = 0;
-  for(const to of numbers){
+  const errors = [];
+  for(const to of targets){
     try{
-      await dpTwilioClient.messages.create({ from: DP_TWILIO_WHATSAPP_NUMBER, to, body: dpWa(body) });
+      const msg = await dpTwilioClient.messages.create({
+        from: DP_TWILIO_WHATSAPP_NUMBER,
+        to,
+        body: dpWa(body)
+      });
       sent++;
-      console.log('Notifica WhatsApp inviata a', to);
+      console.log('Notifica WhatsApp inviata a', to, msg.sid || '');
     }catch(e){
+      const err = `${to}: ${e.message || e}`;
+      errors.push(err);
       console.error('Errore notifica WhatsApp', to, e.message, e.code || '');
     }
   }
-  return sent > 0;
+  return { ok: sent > 0, sent, errors };
+}
+
+async function dpSaveRequestToDrive(tipo, codice, from, profileName, body){
+  try{
+    if(!googleDriveConfigured()) return { ok:false, error:'Drive non configurato' };
+    const fileName = `${codice}.txt`;
+    const localPath = path.join(uploadDir, fileName);
+    const content = `${tipo}
+
+Codice pratica: ${codice}
+Cliente: ${profileName || '-'}
+WhatsApp: ${from || '-'}
+Data: ${new Date().toLocaleString('it-IT')}
+
+Richiesta:
+${body || '-' }
+`;
+    fs.writeFileSync(localPath, content, 'utf8');
+    const dr = await uploadFileToDrive(localPath, fileName, 'text/plain', `${tipo} ${codice}`);
+    if(!dr) return { ok:false, error:'Upload Drive non riuscito' };
+    return { ok:true, link: dr.webViewLink || dr.link || '', id: dr.id || '' };
+  }catch(e){
+    console.error('Errore salvataggio Drive richiesta:', e.message);
+    return { ok:false, error:e.message };
+  }
 }
 function dpExtractDate(text){
   const t = dpClean(text);
@@ -5879,10 +5914,29 @@ async function dpHandleWhatsApp(req,res){
   }
 
   if(session.state === 'officina'){
+    const codice = `OFF-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(1000 + Math.random()*9000)}`;
     const cal = await dpCreateCalendarEventOfficina(from, profileName, body);
-    await dpNotify(DP_OFFICINA_NUMBERS, `${EMJ.wrench} NUOVA RICHIESTA OFFICINA\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nRichiesta:\n${body}\n\nCalendar: ${cal.ok ? (cal.link || 'evento creato') : 'NON creato - ' + (cal.error || '-')}`);
+    const dr = await dpSaveRequestToDrive('OFFICINA DP', codice, from, profileName, body);
+    const notif = await dpNotify(DP_OFFICINA_NUMBERS, `${EMJ.wrench} NUOVA RICHIESTA OFFICINA
+
+Codice pratica: ${codice}
+Cliente: ${profileName}
+WhatsApp: ${from}
+
+Richiesta:
+${body}
+
+Calendar: ${cal.ok ? (cal.link || 'evento creato') : 'NON creato - ' + (cal.error || '-')}
+Drive: ${dr.ok ? (dr.link || 'file creato') : 'NON creato - ' + (dr.error || '-')}`);
     delete DP_BOT_SESSIONS[from];
-    return dpTwimlResponse(res, `${EMJ.ok} Richiesta officina ricevuta.\n\nL abbiamo inviata allo staff DP.${cal.ok ? '\nEvento inserito in Google Calendar.' : ''}\n\nTi ricontatteremo per confermare appuntamento e orario.`);
+    return dpTwimlResponse(res, `${EMJ.ok} Richiesta officina ricevuta.
+
+Codice pratica: ${codice}
+${notif.ok ? 'Messaggio inviato allo staff DP.' : 'ATTENZIONE: messaggio staff non inviato, controlliamo noi.'}
+${cal.ok ? 'Evento inserito in Google Calendar.' : 'Calendar non creato.'}
+${dr.ok ? 'Richiesta salvata su Google Drive.' : 'Drive non creato.'}
+
+Ti ricontatteremo per confermare appuntamento e orario.`);
   }
 
   if(session.state === 'noleggio_model'){
@@ -5959,6 +6013,6 @@ app.post('/whatsapp', dpHandleWhatsApp);
 app.post('/webhook', dpHandleWhatsApp);
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V88 COMPLETA + BOT WHATSAPP INTEGRATO ONLINE porta ' + PORT);
+  console.log('DP RENT APP V89 COMPLETA + BOT WHATSAPP DRIVE OFFICINA ONLINE porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
