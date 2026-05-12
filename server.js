@@ -982,6 +982,7 @@ function privacyCheckboxHtml() {
 
 
 const OCR_PREFILL = {};
+const PREN_OCR_UPLOADS = {}; // foto caricate prima della compilazione cliente
 function makeOcrId(){ return 'OCR' + Date.now() + Math.floor(Math.random()*10000); }
 
 
@@ -3225,8 +3226,33 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
   ${categoria ? `<span class="pill">${esc(categoria)}</span>` : ''}
 </section>
 <div class="wrap">
+  <div class="card" style="border:3px solid #173b8f">
+    <h2>ð¸ Prima carica documento e patente</h2>
+    <p class="notice">Carica le foto qui: il sistema prova a leggere i dati automaticamente. Dopo trovi i campi giÃ  compilati e puoi correggere tutto a mano.</p>
+    ${req.query && req.query.ocr_done ? `<p class="okbox"><b>â OCR eseguito.</b><br>Controlla i campi sotto e completa quelli mancanti.</p>` : ``}
+    <form method="POST" action="/prenota-ocr" enctype="multipart/form-data">
+      <input type="hidden" name="ref" value="${clienteWebVal(req,'ref')}">
+      <input type="hidden" name="categoria" value="${esc(categoria)}">
+      <input type="hidden" name="data_inizio" value="${esc(dataInizio)}">
+      <input type="hidden" name="ora_inizio" value="${clienteWebVal(req,'ora_inizio','08:30')}">
+      <input type="hidden" name="data_fine" value="${esc(dataFine)}">
+      <input type="hidden" name="ora_fine" value="${clienteWebVal(req,'ora_fine','18:00')}">
+      <input type="hidden" name="km_previsti" value="${esc(km)}">
+      <input type="hidden" name="telefono" value="${clienteWebVal(req,'telefono')}">
+      <div class="grid">
+        <div><label>Documento fronte</label><input class="file" type="file" name="documento_fronte" accept="image/*,application/pdf" capture="environment"></div>
+        <div><label>Documento retro</label><input class="file" type="file" name="documento_retro" accept="image/*,application/pdf" capture="environment"></div>
+        <div><label>Patente fronte</label><input class="file" type="file" name="patente_fronte" accept="image/*,application/pdf" capture="environment"></div>
+        <div><label>Patente retro</label><input class="file" type="file" name="patente_retro" accept="image/*,application/pdf" capture="environment"></div>
+      </div>
+      <button class="btn" type="submit">Leggi dati automaticamente</button>
+    </form>
+    <p class="small">Se l'OCR non legge tutto, puoi comunque compilare manualmente sotto.</p>
+  </div>
+
 <form method="POST" action="/prenota-cliente" enctype="multipart/form-data">
   <input type="hidden" name="ref" value="${clienteWebVal(req,'ref')}">
+  <input type="hidden" name="preupload_id" value="${clienteWebVal(req,'preupload_id')}">
   <div class="card">
     <h2>Mezzo e periodo</h2>
     <div class="grid">
@@ -3333,6 +3359,61 @@ app.get('/prenota', (req, res) => {
   res.send(clienteWebHtml(req));
 });
 
+
+app.post('/prenota-ocr', upload.fields([
+  {name:'documento_fronte', maxCount:1}, {name:'documento_retro', maxCount:1},
+  {name:'patente_fronte', maxCount:1}, {name:'patente_retro', maxCount:1}
+]), async (req, res) => {
+  try {
+    const b = req.body || {};
+    const uploaded = [];
+    const results = [];
+    for (const [field, arr] of Object.entries(req.files || {})) {
+      for (const f of (arr || [])) {
+        uploaded.push({ tipo: field, f });
+        try {
+          const dati = await estraiDatiDocumentoConAI(f.path, f.mimetype);
+          results.push(dati || {});
+        } catch (e) {
+          console.log('OCR prenota warning:', field, e.message);
+        }
+      }
+    }
+    if (!uploaded.length) {
+      return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Nessuna foto caricata</h1><p>Carica almeno documento o patente.</p><a href="javascript:history.back()">Torna</a>`);
+    }
+    const preuploadId = 'OCR' + Date.now() + Math.floor(Math.random()*9999);
+    PREN_OCR_UPLOADS[preuploadId] = uploaded;
+    setTimeout(() => { delete PREN_OCR_UPLOADS[preuploadId]; }, 6 * 60 * 60 * 1000).unref?.();
+
+    const m = mergeOcrObjects(results);
+    const q = new URLSearchParams();
+    // conserva dati pratica da WhatsApp
+    for (const k of ['ref','categoria','data_inizio','ora_inizio','data_fine','ora_fine','km_previsti','telefono']) {
+      if (b[k]) q.set(k, b[k]);
+    }
+    q.set('preupload_id', preuploadId);
+    q.set('ocr_done', '1');
+
+    // mappa OCR -> campi pagina cliente
+    const map = {
+      nome:'nome', cognome:'cognome', data_nascita:'data_nascita', luogo_nascita:'luogo_nascita',
+      codice_fiscale:'codice_fiscale', indirizzo:'indirizzo',
+      numero_documento:'documento_numero', data_rilascio:'documento_rilascio', data_scadenza:'documento_scadenza',
+      numero_patente:'patente_numero', categoria_patente:'categoria_patente'
+    };
+    for (const [src, dst] of Object.entries(map)) {
+      if (m[src]) q.set(dst, m[src]);
+    }
+    // se OCR riconosce patente con data_scadenza ma documento giÃ  pieno, non sovrascrivo. Serve comunque modifica manuale.
+    if (m.numero_patente && m.data_scadenza && !q.get('patente_scadenza')) q.set('patente_scadenza', m.data_scadenza);
+
+    res.redirect('/prenota?' + q.toString());
+  } catch (e) {
+    res.status(500).send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Errore OCR</h1><pre>${esc(e.stack || e.message)}</pre><p>Controlla OPENAI_API_KEY su Render.</p><a href="javascript:history.back()">Torna</a>`);
+  }
+});
+
 app.post('/prenota-cliente', upload.fields([
   {name:'documento_fronte', maxCount:1}, {name:'documento_retro', maxCount:1},
   {name:'patente_fronte', maxCount:1}, {name:'patente_retro', maxCount:1},
@@ -3384,6 +3465,10 @@ app.post('/prenota-cliente', upload.fields([
     const files = [];
     for (const [tipo, arr] of Object.entries(req.files || {})) {
       for (const f of (arr || [])) files.push({ tipo, f });
+    }
+    if (b.preupload_id && PREN_OCR_UPLOADS[b.preupload_id]) {
+      for (const item of PREN_OCR_UPLOADS[b.preupload_id]) files.push(item);
+      delete PREN_OCR_UPLOADS[b.preupload_id];
     }
     for (const item of files) {
       await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`,
