@@ -11,8 +11,10 @@ const moment = require('moment');
 const XLSX = require('xlsx');
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
+let twilio = null;
 let google = null;
-try { google = require('googleapis').google; } catch(e) { console.log('Google APIs non caricate:', e.message); }
+try { twilio = require('twilio'); } catch(e) { console.log('Twilio non installato:', e.message); }
+try { google = require('googleapis').google; } catch(e) { console.log('Google APIs non installato:', e.message); }
 
 const app = express();
 
@@ -205,14 +207,7 @@ function v67DefaultBirth(p){
 // V76 FIX ROUTE SYNTAX CARGOS + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
-  p = p || {};
-  return String(
-    p.record_cargos_cittadinanza_cod ||
-    p.cittadinanza_cod ||
-    p.conducente_cittadinanza_cod ||
-    process.env.CARGOS_CITTADINANZA_COD ||
-    '100000100'
-  ).trim();
+  return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
 }
 function v68SafeValidateCargos(p){
   try {
@@ -1005,7 +1000,6 @@ function page(title, content) {
 <head>
 <meta charset="utf-8">
 <title>${esc(title)}</title>
-<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{--red:#c60000;--dark:#070707;--soft:#f4f4f4}
@@ -1045,35 +1039,10 @@ canvas{border:2px solid #333;background:white;width:100%;height:250px;touch-acti
 .badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}
 pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;padding:12px;border-radius:8px;overflow:auto}
 @media(max-width:700px){.grid{grid-template-columns:1fr}main{padding:10px}header h1{font-size:24px}.tile{font-size:19px;min-height:100px}th,td{font-size:12px;padding:6px}}
-
-/* DP RENT APP - grafica aggiornata */
-:root{--red:#d80000;--red2:#a90000;--black:#090909;--soft:#f6f7fb;--card:#ffffff;--line:#e8e8ef;--text:#191919}
-body{background:linear-gradient(180deg,#f7f7fb 0%,#ffffff 100%);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}
-header{background:linear-gradient(135deg,#070707,#202020);padding:22px 26px;box-shadow:0 8px 26px rgba(0,0,0,.18);display:flex;align-items:center;gap:16px}
-header h1{letter-spacing:3px;font-size:34px;margin:0;color:#fff}
-nav{background:linear-gradient(135deg,var(--red),var(--red2));padding:14px 18px;display:flex;gap:10px;flex-wrap:wrap;box-shadow:0 10px 22px rgba(216,0,0,.20)}
-nav a{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:11px 15px;color:#fff;text-decoration:none;font-weight:800}
-nav a:hover{background:#fff;color:var(--red)}
-main{padding:24px;max-width:1500px;margin:0 auto}
-.box{background:var(--card);border:1px solid var(--line);border-radius:22px;padding:22px;margin:16px 0;box-shadow:0 12px 32px rgba(0,0,0,.08)}
-table{background:#fff;border-radius:18px;overflow:hidden;border-collapse:separate;border-spacing:0;width:100%;box-shadow:0 10px 26px rgba(0,0,0,.06)}
-th{background:#171717;color:#fff;padding:12px;text-align:left}
-td{border-bottom:1px solid var(--line);padding:11px;vertical-align:top}
-tr:hover td{background:#fff7f7}
-input,select,textarea{background:#fff;border:1px solid #d8d8e0;border-radius:12px;padding:13px}
-button,.btn{border-radius:13px;padding:12px 17px;box-shadow:0 6px 15px rgba(216,0,0,.18)}
-.btn2{background:#2d2d32!important}.btn3{background:#087a34!important}.bad,.btn.bad{color:#fff!important;background:#a30000!important}
-.hero{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:15px}
-.tile{background:linear-gradient(135deg,#fff,#fff5f5);border:1px solid #ffe0e0;border-radius:22px;box-shadow:0 12px 30px rgba(0,0,0,.08);padding:22px;min-height:110px;text-decoration:none;color:#111;font-weight:900;font-size:21px}
-.tile span{display:block;font-size:34px;margin-bottom:8px}
-.actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-pre{border-radius:16px;padding:18px}
-@media(max-width:700px){header{padding:18px}header h1{font-size:30px}nav{gap:8px}nav a{font-size:18px;padding:12px 14px}main{padding:12px}.box{border-radius:20px;padding:18px}table{font-size:13px}.hero{grid-template-columns:1fr 1fr}.tile{font-size:18px;min-height:95px;padding:16px}}
-
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP</h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V76 FIX ROUTE SYNTAX CARGOS</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1081,7 +1050,6 @@ pre{border-radius:16px;padding:18px}
 <a href="/import-mezzi">Import Excel</a>
 <a href="/nuova-prenotazione">Nuova prenotazione</a>
 <a href="/clienti">Clienti</a>
-<a href="/cliente-nuovo">Nuovo cliente</a>
 <a href="/prenotazioni">Storico</a>
 <a href="/planning">Planning</a>
 <a href="/prenota">Pagina cliente</a>
@@ -1507,28 +1475,23 @@ async function generaPdfContratto(id, opts = {}) {
   let yLeft = y, yRight = y;
   yLeft = section(doc, 'ANAGRAFICA CLIENTE', 45, yLeft, 245);
   row(doc, 'Cliente', `${p.nome || ''} ${p.cognome || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Nascita', `${p.data_nascita || ''} ${p.luogo_nascita || ''}`, 55, yLeft, 220); yLeft += 18;
   row(doc, 'Telefono', p.telefono || '', 55, yLeft, 220); yLeft += 18;
   row(doc, 'Email', p.email || '', 55, yLeft, 220); yLeft += 18;
   row(doc, 'Codice fiscale', p.codice_fiscale || '', 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Indirizzo', `${p.indirizzo || ''} ${p.citta || ''} ${p.provincia || ''} ${p.cap || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Documento', `${p.documento_tipo || ''} ${p.documento_numero || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Doc rilascio/scad.', `${p.documento_rilascio || p.documento_data_rilascio || ''} / ${p.documento_scadenza || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Fatturazione', `${p.tipo_cliente || ''} ${p.ragione_sociale || ''} ${p.piva || p.partita_iva || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'PEC / SDI', `${p.pec || ''} ${p.sdi || p.codice_sdi || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Sede/fatturazione', `${p.sede_legale || p.indirizzo_fatturazione || ''} ${p.citta_fatturazione || ''}`, 55, yLeft, 220); yLeft += 18;
+  row(doc, 'Indirizzo', `${p.indirizzo || ''} ${p.citta || ''} ${p.cap || ''}`, 55, yLeft, 220); yLeft += 18;
+  row(doc, 'Fatturazione', `${p.tipo_cliente || ''} ${p.ragione_sociale || ''} ${p.piva || ''}`, 55, yLeft, 220); yLeft += 18;
+  row(doc, 'PEC / SDI', `${p.pec || ''} ${p.sdi || ''}`, 55, yLeft, 220); yLeft += 18;
 
-  yRight = section(doc, 'CONDUCENTI E PATENTI', 310, yRight, 245);
+  yRight = section(doc, 'CONDUCENTI', 310, yRight, 245);
   row(doc, 'Conducente 1', p.conducente1 || `${p.nome || ''} ${p.cognome || ''}`, 320, yRight, 220); yRight += 18;
-  row(doc, 'Patente 1', `${p.patente1 || p.patente_numero || ''} cat. ${p.categoria_patente || ''}`, 320, yRight, 220); yRight += 18;
-  row(doc, 'Patente ril./scad.', `${p.patente_rilascio || p.patente_data_rilascio || ''} / ${p.patente1_scadenza || p.patente_scadenza || ''}`, 320, yRight, 220); yRight += 18;
-  row(doc, 'Conducente 2', p.conducente2 || `${p.conducente2_nome || ''} ${p.conducente2_cognome || ''}`, 320, yRight, 220); yRight += 18;
-  row(doc, 'Patente 2', `${p.patente2 || p.conducente2_patente || ''} scad. ${p.patente2_scadenza || ''}`, 320, yRight, 220); yRight += 18;
-  row(doc, 'Note cliente', p.note_cliente || p.note || '', 320, yRight, 220); yRight += 18;
+  row(doc, 'Patente 1', `${p.patente1 || ''} scad. ${p.patente1_scadenza || ''}`, 320, yRight, 220); yRight += 18;
+  row(doc, 'Conducente 2', p.conducente2 || '', 320, yRight, 220); yRight += 18;
+  row(doc, 'Patente 2', `${p.patente2 || ''} scad. ${p.patente2_scadenza || ''}`, 320, yRight, 220); yRight += 18;
 
   y = Math.max(yLeft, yRight) + 10;
   let yVeh = y, yCost = y;
   yVeh = section(doc, 'VEICOLO E NOLEGGIO', 45, yVeh, 245);
+  row(doc, 'Targa', p.targa || '', 55, yVeh, 220); yVeh += 18;
   row(doc, 'Mezzo', p.descrizione_pubblica || `${p.marca || ''} ${p.modello || ''}`, 55, yVeh, 220); yVeh += 18;
   row(doc, 'Periodo', `${p.data_inizio} ${p.ora_inizio || ''} / ${p.data_fine} ${p.ora_fine || ''}`, 55, yVeh, 220); yVeh += 18;
   row(doc, 'Giorni', String(p.giorni || ''), 55, yVeh, 220); yVeh += 18;
@@ -1791,22 +1754,44 @@ function patchCargosVehicleRecordV76(p) {
 }
 
 async function buildCargosRecordForContract(id) {
-  // V77 FIX: usa il builder V40/V76 che ha giÃ  passato il check Ca.R.G.O.S.
-  // Evita il vecchio builder che lasciava vuoto CITTADINANZA_COD e usava date/nomi campi non allineati.
-  const p = await new Promise((resolve, reject) => {
-    getPrenotazioneCompleta(id, (err, row) => err ? reject(err) : resolve(row));
-  });
+  // V76 patch veicolo
+
+  // buildCargosRecordForContract__v72patched
+  // V76 rimosso: p non ancora inizializzato
+
+  const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [id]);
   if (!p) throw new Error('Contratto non trovato');
 
-  const patched = patchCargosVehicleTypeIntoObjectV76(
-    patchCargosVehicleRecordV76(cargosPatchDefaultsV76(p))
-  );
+  
+  
+  patchCargosVehicleRecordV76(p);
+Object.assign(p, cargosPatchDefaultsV76(p));
+  patchCargosVehicleTypeIntoObjectV76(p);
+const fields = [
+    cargosPad(p.codice,50), cargosDateTime(p.created_at || moment(), moment().format('HH:mm')),
+    cargosPad(process.env.CARGOS_TIPO_PAGAMENTO || '1',1,'number'),
+    cargosDateTime(p.data_inizio,p.ora_inizio || '08:30'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
+    cargosDateTime(p.data_fine,p.ora_fine || '18:00'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
+    cargosPad(process.env.CARGOS_OPERATORE_ID || '',50), cargosPad(process.env.CARGOS_AGENZIA_ID || '',30), cargosPad(process.env.CARGOS_AGENZIA_NOME || AZIENDA.nome,70),
+    cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150), cargosPad(AZIENDA.telefono,20,'number'),
+    cargosPad(cargosTipoVeicoloFinaleV76(p),1), cargosPad(cargosMarcaFinaleV76(p) || p.marca || '',50), cargosPad(cargosModelloFinaleV76(p) || p.modello || '',100), cargosPad(p.targa || '',15),
+    cargosPad('',50), cargosPad('',1,'number'), cargosPad('',1,'number'),
+    cargosPad(p.cognome || '',50), cargosPad(p.nome || '',30), cargosDate(p.data_nascita || ''),
+    cargosPad(process.env.CARGOS_NASCITA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(process.env.CARGOS_CITTADINANZA_COD || '',9,'number'),
+    cargosPad(process.env.CARGOS_RESIDENZA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(p.indirizzo || '',150),
+    cargosPad(process.env.CARGOS_TIPO_DOCUMENTO || 'CI',5),
+    cargosPad(process.env.CARGOS_DOC_NUMERO_FALLBACK || '',20),
+    cargosPad(process.env.CARGOS_DOC_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(p.patente1 || '',20),
+    cargosPad(process.env.CARGOS_PATENTE_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(p.telefono || '',20),
+    cargosPad('',50), cargosPad('',30), cargosDate(''), cargosPad('',9,'number'), cargosPad('',9,'number'),
+    cargosPad('',5), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20)
+  ];
 
-  // default obbligatorio se non presente in env o form
-  patched.record_cargos_cittadinanza_cod =
-    String(patched.record_cargos_cittadinanza_cod || patched.cittadinanza_cod || patched.conducente_cittadinanza_cod || process.env.CARGOS_CITTADINANZA_COD || '100000100').trim();
-
-  const record = buildCargosFixedRecordV40(patched);
+  const record = fields.join('');
   if (record.length !== 1505) throw new Error(`Record Ca.R.G.O.S. lunghezza errata: ${record.length}, attesa 1505`);
   return record;
 }
@@ -2259,7 +2244,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2308,6 +2293,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V76 FIX ROUTE SYNTAX CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2420,12 +2406,10 @@ app.get('/mezzi-web', async (req, res) => {
       <td>${esc(m.km_inclusi)}</td>
       <td>${alertBadge(m)}</td>
       <td>${esc(m.stato)}</td>
-      <td><div class="actions"><a class="btn btn2" href="/mezzo/${m.id}">Apri</a><a class="btn btn2" href="/mezzi/${m.id}/modifica">Modifica</a><a class="btn bad" href="/mezzi/${m.id}/elimina">Elimina</a></div></td>
     </tr>`).join('');
   res.send(page('Mezzi', `
     <h2>Elenco mezzi</h2>
-    <div class="actions"><a class="btn" href="/mezzi/nuovo">Nuovo mezzo</a></div>
-    <table><tr><th>ID</th><th>Targa</th><th>Marca</th><th>Modello</th><th>Categoria</th><th>Descrizione pubblica</th><th>Prezzo</th><th>Km/giorno</th><th>Alert</th><th>Stato</th><th>Azioni</th></tr>${trs}</table>
+    <table><tr><th>ID</th><th>Targa</th><th>Marca</th><th>Modello</th><th>Categoria</th><th>Descrizione pubblica</th><th>Prezzo</th><th>Km/giorno</th><th>Alert</th><th>Stato</th></tr>${trs}</table>
   `));
 });
 
@@ -2469,7 +2453,7 @@ app.get('/mezzo/:id', async (req, res) => {
         <button>Carica file mezzo</button>
       </form>
       <ul>${lista}</ul>
-      <div class="actions"><a class="btn" href="/nuova-prenotazione?mezzo_id=${m.id}">Prenota questo mezzo</a><a class="btn btn2" href="/mezzi/${m.id}/modifica">Modifica mezzo</a><a class="btn bad" href="/mezzi/${m.id}/elimina">Elimina mezzo</a></div>
+      <a class="btn" href="/nuova-prenotazione?mezzo_id=${m.id}">Prenota questo mezzo</a>
     </div>
   `));
 });
@@ -2740,69 +2724,6 @@ app.post('/ocr-pro/applica', (req, res) => {
   salvaClienteStorico(dati, () => res.redirect('/nuova-prenotazione?ocr=' + encodeURIComponent(id)));
 });
 
-
-// =========================
-// V77 FIX: pagine manuali e redirect anti Cannot GET
-// =========================
-app.get('/prenota-admin', (req, res) => res.redirect('/nuova-prenotazione'));
-app.get('/ocr-pro/applica', (req, res) => res.redirect('/cliente-nuovo'));
-
-function clienteManualeForm(action, c = {}, titolo = 'Nuovo cliente manuale') {
-  const qv = (k, d='') => esc((c && c[k]) || d || '');
-  return `<div class="box">
-    <h2>${esc(titolo)}</h2>
-    <p class="notice">Puoi inserire il cliente tutto a mano, oppure usare OCR. Dopo il salvataggio puoi creare subito preventivo/contratto senza reinserire i dati.</p>
-    <div class="actions">
-      <a class="btn btn3" href="/ocr-pro">Usa OCR documento/patente</a>
-      <a class="btn btn2" href="/clienti">Archivio clienti</a>
-    </div>
-    <form method="POST" action="${action}">
-      <div class="grid">
-        <label>Nome<input name="nome" value="${qv('nome')}" required></label>
-        <label>Cognome<input name="cognome" value="${qv('cognome')}" required></label>
-        <label>Telefono<input name="telefono" value="${qv('telefono')}" required></label>
-        <label>Email<input type="email" name="email" value="${qv('email')}"></label>
-        <label>Codice fiscale<input name="codice_fiscale" value="${qv('codice_fiscale')}"></label>
-        <label>Data nascita<input type="date" name="data_nascita" value="${qv('data_nascita')}"></label>
-        <label>Luogo nascita<input name="luogo_nascita" value="${qv('luogo_nascita')}"></label>
-        <label>Indirizzo<input name="indirizzo" value="${qv('indirizzo')}"></label>
-        <label>CittÃ <input name="citta" value="${qv('citta')}"></label>
-        <label>CAP<input name="cap" value="${qv('cap')}"></label>
-        <label>Numero documento<input name="documento_numero" value="${qv('documento_numero')}"></label>
-        <label>Scadenza documento<input type="date" name="documento_scadenza" value="${qv('documento_scadenza')}"></label>
-        <label>Numero patente<input name="patente_numero" value="${qv('patente_numero')}"></label>
-        <label>Scadenza patente<input type="date" name="patente_scadenza" value="${qv('patente_scadenza')}"></label>
-        <label>Categoria patente<input name="categoria_patente" value="${qv('categoria_patente')}"></label>
-      </div>
-      <label>Note<textarea name="note_cliente">${qv('note_cliente') || qv('note')}</textarea></label>
-      <button class="btn" type="submit">Salva cliente</button>
-      <a class="btn btn2" href="/clienti">Annulla</a>
-    </form>
-  </div>`;
-}
-
-app.get('/cliente-nuovo', (req, res) => {
-  const tel = String(req.query.from || '').replace(/^whatsapp:/,'').replace(/^\+39/,'').replace(/^39/,'');
-  res.send(page('Nuovo cliente', clienteManualeForm('/cliente-nuovo', { telefono: tel }, 'Nuovo cliente manuale')));
-});
-
-app.post('/cliente-nuovo', (req, res) => {
-  const b = req.body || {};
-  salvaClienteStorico({
-    nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email,
-    codice_fiscale:b.codice_fiscale, indirizzo:b.indirizzo, citta:b.citta, cap:b.cap,
-    data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
-    documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
-    patente_numero:b.patente_numero, patente1:b.patente_numero,
-    patente_scadenza:b.patente_scadenza, patente1_scadenza:b.patente_scadenza,
-    categoria_patente:b.categoria_patente, note_cliente:b.note_cliente
-  }, (err, id) => {
-    if (err) return res.status(500).send(page('Errore salvataggio cliente', `<div class="box"><h2 class="bad">Errore salvataggio cliente</h2><pre>${esc(err.message)}</pre><a class="btn" href="/cliente-nuovo">Torna</a></div>`));
-    if (id) return res.redirect('/nuova-da-cliente/' + id);
-    res.redirect('/clienti');
-  });
-});
-
 app.get('/clienti', (req, res) => {
   const q = String(req.query.q || '').trim();
   let sql = `SELECT * FROM clienti WHERE 1=1`;
@@ -2820,12 +2741,12 @@ app.get('/clienti', (req, res) => {
         <td>${esc(c.codice_fiscale||'')}</td>
         <td>${esc(c.documento_numero||'')}<br>Scad. ${esc(c.documento_scadenza||'')}</td>
         <td>${esc(c.patente_numero||'')}<br>Scad. ${esc(c.patente_scadenza||'')}</td>
-        <td><div class="actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a><a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica</a><a class="btn bad" href="/cliente/${c.id}/elimina">Elimina</a></div></td>
+        <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a></td>
       </tr>`).join('');
     res.send(page('Clienti', `
       <div class="box"><h2>Storico clienti</h2>
       <form method="GET" action="/clienti"><input name="q" placeholder="Cerca nome, telefono, CF, patente" value="${esc(q)}"><button>Cerca</button></form>
-      <a class="btn btn3" href="/ocr-pro">Nuovo cliente con OCR PRO</a> <a class="btn" href="/cliente-nuovo">Nuovo cliente manuale</a></div>
+      <a class="btn btn3" href="/ocr-pro">Nuovo cliente con OCR PRO</a></div>
       <table><tr><th>Cliente</th><th>Contatti</th><th>CF</th><th>Documento</th><th>Patente</th><th>Azione</th></tr>${trs || '<tr><td colspan="6">Nessun cliente.</td></tr>'}</table>
     `));
   });
@@ -2842,60 +2763,10 @@ app.get('/cliente/:id', (req, res) => {
       <p><b>Documento:</b> ${esc(c.documento_numero||'')} - scad. ${esc(c.documento_scadenza||'')}</p>
       <p><b>Patente:</b> ${esc(c.patente_numero||'')} - scad. ${esc(c.patente_scadenza||'')} - cat. ${esc(c.categoria_patente||'')}</p>
       <p><b>Note:</b> ${esc(c.note||'')}</p>
-      <div class="actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto da cliente</a>
-      <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica cliente</a>
-      <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina cliente</a>
-      <a class="btn btn2" href="/clienti">Torna clienti</a></div>
+      <a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto da cliente</a>
+      <a class="btn btn2" href="/clienti">Torna clienti</a>
     </div>`));
   });
-});
-
-
-app.get('/cliente/:id/modifica', async (req,res)=>{
-  const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
-  if(!c) return res.redirect('/clienti');
-  res.send(page('Modifica cliente', `<div class="box"><h2>Modifica cliente</h2>
-    <form method="post" action="/cliente/${c.id}/modifica">
-      <div class="grid">
-        <label>Nome<input name="nome" value="${esc(c.nome)}" required></label>
-        <label>Cognome<input name="cognome" value="${esc(c.cognome)}" required></label>
-        <label>Telefono<input name="telefono" value="${esc(c.telefono)}"></label>
-        <label>Email<input name="email" value="${esc(c.email)}"></label>
-        <label>Codice fiscale<input name="codice_fiscale" value="${esc(c.codice_fiscale)}"></label>
-        <label>Data nascita<input type="date" name="data_nascita" value="${esc(v67IsoDate(c.data_nascita))}"></label>
-        <label>Luogo nascita<input name="luogo_nascita" value="${esc(c.luogo_nascita)}"></label>
-        <label>Indirizzo<input name="indirizzo" value="${esc(c.indirizzo)}"></label>
-        <label>CittÃ <input name="citta" value="${esc(c.citta)}"></label>
-        <label>CAP<input name="cap" value="${esc(c.cap)}"></label>
-        <label>Numero documento<input name="documento_numero" value="${esc(c.documento_numero)}"></label>
-        <label>Scadenza documento<input type="date" name="documento_scadenza" value="${esc(v67IsoDate(c.documento_scadenza))}"></label>
-        <label>Numero patente<input name="patente_numero" value="${esc(c.patente_numero)}"></label>
-        <label>Scadenza patente<input type="date" name="patente_scadenza" value="${esc(v67IsoDate(c.patente_scadenza))}"></label>
-        <label>Categoria patente<input name="categoria_patente" value="${esc(c.categoria_patente)}"></label>
-      </div>
-      <label>Note<textarea name="note">${esc(c.note)}</textarea></label>
-      <button class="btn" type="submit">Salva cliente</button>
-      <a class="btn btn2" href="/cliente/${c.id}">Annulla</a>
-    </form></div>`));
-});
-
-app.post('/cliente/:id/modifica', async (req,res)=>{
-  const b=req.body||{};
-  await run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[
-    v62Val(b.nome),v62Val(b.cognome),v62Val(b.telefono),v62Val(b.email),v62Val(b.codice_fiscale).toUpperCase(),v62Val(b.indirizzo),v62Val(b.citta),v62Val(b.cap),v62Val(b.data_nascita),v62Val(b.luogo_nascita),v62Val(b.documento_numero),v62Val(b.documento_scadenza),v62Val(b.patente_numero),v62Val(b.patente_scadenza),v62Val(b.categoria_patente),v62Val(b.note),req.params.id
-  ]);
-  res.redirect(`/cliente/${req.params.id}`);
-});
-
-app.get('/cliente/:id/elimina', async (req,res)=>{
-  const c=await get(`SELECT * FROM clienti WHERE id=?`,[req.params.id]);
-  if(!c) return res.redirect('/clienti');
-  res.send(page('Elimina cliente', `<div class="box"><h2 class="bad">Eliminare cliente ${esc(c.nome)} ${esc(c.cognome)}?</h2><p>I contratti giÃ  creati restano nello storico perchÃ© hanno i dati salvati dentro il contratto.</p><form method="post" action="/cliente/${c.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina cliente</button><a class="btn btn2" href="/cliente/${c.id}">Annulla</a></form></div>`));
-});
-
-app.post('/cliente/:id/elimina', async (req,res)=>{
-  await run(`DELETE FROM clienti WHERE id=?`,[req.params.id]);
-  res.redirect('/clienti');
 });
 
 
@@ -3238,7 +3109,7 @@ app.post('/prenota-admin', async (req, res) => {
     const result = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${placeholders})`, cols.map(k=>data[k]));
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
-    res.send(actionScreen(result.lastID, 'Contratto creato', `Codice: <b>${cod}</b><br>Mezzo: <b>${esc(data.marca)} ${esc(data.modello)}</b><br>Totale: <b>â¬ ${euro(calc.totale)}</b>`));
+    res.send(actionScreen(result.lastID, 'Contratto creato', `Codice: <b>${cod}</b><br>Mezzo: <b>${esc(data.targa)} ${esc(data.marca)} ${esc(data.modello)}</b><br>Totale: <b>â¬ ${euro(calc.totale)}</b>`));
   } catch (e) {
     res.status(500).send(page('Errore prenotazione', `<div class="box"><h2 class="bad">Errore prenotazione</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
   }
@@ -4009,7 +3880,7 @@ app.get('/prenotazioni', async (req, res) => {
   if (al) { sql += ` AND date(p.data_fine)<=date(?)`; params.push(al); }
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><div class="actions"><a class="btn btn2" href="/contratto/${p.id}/gestisci">Apri</a><a class="btn" href="/prenotazione/${p.id}/modifica">Modifica</a><a class="btn btn2" href="/contratto/${p.id}">PDF</a><a class="btn btn2" href="/nexi/${p.id}">Nexi</a><a class="btn bad" href="/prenotazione/${p.id}/elimina">Elimina</a></div></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
   res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${trs}</table>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
@@ -4384,9 +4255,16 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     console.log('Errore copia documento in cartella contratto:', e.message);
   }
 
-  // V77 FIX DRIVE: non caricare piÃ¹ qui con Apps Script perchÃ© creava cartelle/PDF duplicati.
-  // Salviamo prima l'allegato nel DB, poi syncContrattoDriveV63 lo carica nella cartella unica del contratto.
-  driveRes = null;
+  try {
+    driveRes = await uploadFileToDrive(
+      finalPath,
+      `${Date.now()}_${req.body.tipo}_${req.file.originalname}`,
+      req.file.mimetype,
+      `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`
+    );
+  } catch (e) {
+    console.log('Errore upload documento Drive:', e.message);
+  }
 
   await run(
     `INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
@@ -4402,9 +4280,10 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     ]
   );
 
-  // V77 FIX DRIVE: una sola sincronizzazione. Nella cartella Drive deve restare un solo PDF + foto/documenti.
-  try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('Drive sync V77:', e.message); }
-  res.redirect(`/documenti/${req.params.id}`);
+  // V63: sincronizza foto nella stessa cartella Drive e sostituisce una sola copia PDF.
+  try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('Drive sync V63:', e.message); }
+  try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('V63 sync foto warning:', e.message); }
+    res.redirect(`/documenti/${req.params.id}`);
 });
 
 app.get('/checkout/:id', async (req, res) => {
@@ -5362,10 +5241,6 @@ async function syncContrattoDriveV63(prenotazioneId) {
       [folder.id, folder.webViewLink || null, prenotazioneId]
     );
 
-    // Prima carico le foto/documenti locali nella cartella unica del contratto.
-    await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
-
-    // Poi sostituisco il PDF: deve restarne sempre uno solo.
     const pdf = await generaPdfContratto(prenotazioneId, { forceDrive: false });
     const pdfName = pdfFileNameForContract(p);
 
@@ -5385,6 +5260,7 @@ async function syncContrattoDriveV63(prenotazioneId) {
       );
     }
 
+    await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
     return { folder, pdf: uploadedPdf };
   } catch(e) {
     console.log('V63 syncContrattoDrive error:', e.message);
@@ -5497,16 +5373,15 @@ app.get('/admin/fix-tutto-v60',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 app.get('/admin/fix-tutto-v58',(req,res)=>res.redirect('/admin/fix-tutto-v62'));
 
 
-app.get('/prenotazione/:id/elimina',async(req,res)=>{const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);res.send(page('Elimina contratto',`<div class="box"><h2 class="bad">Eliminare contratto ${esc(p?.codice||req.params.id)}?</h2><form method="post" action="/prenotazione/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina</button><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Annulla</a></form></div>`));});
-app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM allegati WHERE prenotazione_id=?`,[req.params.id]).catch(()=>{});await run(`DELETE FROM prenotazioni WHERE id=?`,[req.params.id]);res.redirect('/prenotazioni');});
+app.get('/prenotazione/:id/elimina',async(req,res)=>{const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);res.send(page('Elimina contratto',`<div class="box"><h2 class="bad">Eliminare contratto ${esc(p?.codice||req.params.id)}?</h2><form method="post" action="/prenotazione/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina</button><a class="btn btn2" href="/prenotazione/${req.params.id}">Annulla</a></form></div>`));});
+app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM allegati WHERE prenotazione_id=?`,[req.params.id]).catch(()=>{});await run(`DELETE FROM prenotazioni WHERE id=?`,[req.params.id]);res.redirect('/');});
 app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=preventivo'));
 app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=?`,[req.params.id]);res.redirect(`/prenotazione/${req.params.id}`);});
 
 app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="furgone">Furgone</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
 app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),'attivo',v62Val(b.note)]);res.redirect('/mezzi');});
 app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km<input name="km" value="${esc(m.km||m.km_attuali)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato<select name="stato"><option value="attivo" ${m.stato!=='non_attivo'?'selected':''}>Attivo</option><option value="non_attivo" ${m.stato==='non_attivo'?'selected':''}>Non attivo</option></select></label></div><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
-app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,categoria=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.tipo || b.categoria),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),v62Val(b.stato||'attivo'),v62Val(b.note),req.params.id]);res.redirect('/mezzi-web');});
-app.get('/mezzi/:id/elimina',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.redirect('/mezzi-web');res.send(page('Elimina mezzo',`<div class="box"><h2 class="bad">Eliminare mezzo ${esc(m.targa)}?</h2><p>Attenzione: se ci sono prenotazioni collegate, resteranno nello storico con i dati giÃ  salvati nel contratto.</p><form method="post" action="/mezzi/${req.params.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina mezzo</button><a class="btn btn2" href="/mezzo/${req.params.id}">Annulla</a></form></div>`));});
+app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),v62Val(b.stato||'attivo'),v62Val(b.note),v62Val(b.data_nascita),v62Val(b.luogo_nascita),v62Val(b.cittadinanza_cod||'100000100'),v62Val(b.documento_tipo||'IDENT'),v62Val(b.documento_numero),v62Val(b.documento_scadenza),v62Val(b.patente_numero),v62Val(b.patente_scadenza),req.params.id]);res.redirect('/mezzi');});
 app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi');});
 
 
@@ -5753,695 +5628,310 @@ app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v76
 app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v76'));
 
 
-// =========================
-// V78 TWILIO DP RENT: PREVENTIVO -> CONFERMA -> PAGINA CLIENTE
-// =========================
-const v78WaSessions = {};
-let v78TwilioClient = null;
-try {
-  const twilioSdkV78 = require('twilio');
-  if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) v78TwilioClient = twilioSdkV78(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-} catch(e) { console.log('Twilio SDK non caricato V78:', e.message); }
-const V78_TWILIO_FROM = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+390744817108';
-const V78_INTERNAL_NUMBERS = String(process.env.INTERNAL_GENERAL_NUMBERS || 'whatsapp:+393287377675,whatsapp:+393472733226,whatsapp:+393494040073').split(/[;,\n]/).map(x=>x.trim()).filter(Boolean).map(x=>x.startsWith('whatsapp:')?x:'whatsapp:'+x);
-async function v78SendInternal(numbers, body) {
-  if (!v78TwilioClient) { console.log('V78 NOTIFICA STAFF:\n' + body); return; }
-  for (const to of (numbers && numbers.length ? numbers : V78_INTERNAL_NUMBERS)) {
-    try { await v78TwilioClient.messages.create({ from: V78_TWILIO_FROM, to, body: v78AsciiText(body).slice(0,1500) }); }
-    catch(e) { console.log('V78 errore notifica staff', to, e.message); }
+
+// =====================================================
+// V87 - WHATSAPP DP BOT INTEGRATO SU APP COMPLETA V76
+// - non sostituisce dashboard
+// - ciao/menu apre menu con emoji
+// - notifiche ai 3 numeri
+// - Google Calendar solo officina
+// - no MyAppy / no Calendly
+// =====================================================
+const DP_BOT_SESSIONS = {};
+const DP_BOT_DONE_SIDS = new Map();
+const DP_TWILIO_WHATSAPP_NUMBER = process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+390744817108';
+const DP_STAFF_NUMBERS = dpParseNumbers(process.env.INTERNAL_GENERAL_NUMBERS || process.env.STAFF_WHATSAPP_NUMBERS, [
+  'whatsapp:+393287377675',
+  'whatsapp:+393472733226',
+  'whatsapp:+393494040073'
+]);
+const DP_OFFICINA_NUMBERS = dpParseNumbers(process.env.INTERNAL_OFFICINA_NUMBERS, DP_STAFF_NUMBERS);
+const DP_AUTOSUPERMARKET_URL = 'https://autosupermarket.it/concessionario/trasporti-dp-srl/annunci';
+
+const dpTwilioClient = (twilio && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
+  ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
+  : null;
+
+function dpParseNumbers(value, fallback){
+  if(!value) return fallback;
+  return String(value).split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean).map(n=>n.startsWith('whatsapp:') ? n : 'whatsapp:' + n);
+}
+function dpClean(v){ return String(v || '').trim(); }
+function dpNorm(v){ return dpClean(v).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,''); }
+function dpXml(v){ return String(v || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;'); }
+function dpWa(text){ return String(text || '').normalize('NFC').trim(); }
+function dpYesNo(v){
+  const t = dpNorm(v);
+  if(['si','s','ok','confermo','yes','certo'].includes(t)) return 'SI';
+  if(['no','n','annulla'].includes(t)) return 'NO';
+  return '';
+}
+function dpSession(from, profileName){
+  if(!DP_BOT_SESSIONS[from] || Date.now() - (DP_BOT_SESSIONS[from].ts || 0) > 2*60*60*1000){
+    DP_BOT_SESSIONS[from] = { state:'menu', data:{}, profileName: profileName || 'Cliente', ts: Date.now() };
   }
+  DP_BOT_SESSIONS[from].ts = Date.now();
+  return DP_BOT_SESSIONS[from];
 }
-
-
-function v78AsciiText(message) {
-  return String(message || '')
-    .replace(/â¬/g, 'EUR ')
-    .replace(/[âââ]/g, '-')
-    .replace(/[ââ]/g, '"')
-    .replace(/[ââ]/g, "'")
-    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '')
-    .replace(/[ \t]+\n/g, '\n')
-    .trim();
+function dpReset(from, profileName){
+  DP_BOT_SESSIONS[from] = { state:'menu', data:{}, profileName: profileName || 'Cliente', ts: Date.now() };
+  return DP_BOT_SESSIONS[from];
 }
-
-function v78TwilioXml(message) {
-  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc(v78AsciiText(message))}</Message></Response>`;
+function dpMenu(name){
+  return `â *Ciao ${name || 'Cliente'}*\n\nð *DP RENT / TRASPORTI DP*\n\nScegli il servizio:\n\n1ï¸â£ ð§ Officina\n2ï¸â£ ð Noleggio\n3ï¸â£ ð Vendita auto\n4ï¸â£ ð Trasporto veicoli\n5ï¸â£ ð¬ Altre richieste\n\nâï¸ Scrivi solo il numero.\nEsempio: *2*`;
 }
-
-function v78BaseUrl(req) {
-  return String(process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/+$/, '');
+function dpIsMenuKeyword(body){
+  const t = dpNorm(body);
+  return ['ciao','salve','buongiorno','buonasera','menu','start','inizio','info','informazioni','aiuto'].includes(t);
 }
-
-function v78CleanPhone(from) {
-  return String(from || '').replace(/^whatsapp:/, '').replace(/^\+39/, '').replace(/^39/, '').replace(/\D/g, '');
+function dpAlreadySid(sid){
+  if(!sid) return false;
+  if(DP_BOT_DONE_SIDS.has(sid)) return true;
+  DP_BOT_DONE_SIDS.set(sid, Date.now());
+  const now = Date.now();
+  for(const [k,ts] of DP_BOT_DONE_SIDS.entries()) if(now-ts > 15*60*1000) DP_BOT_DONE_SIDS.delete(k);
+  return false;
 }
-
-function v78CategoryFromText(t) {
-  const s = String(t || '').toLowerCase();
-  if (s.includes('9') || s.includes('pulmino') || s.includes('persone') || s.includes('posti')) return '9_POSTI';
-  if (s.includes('dacia') || s.includes('economica')) return 'AUTO_DACIA';
-  if (s.includes('golf') || s.includes('auto')) return 'AUTO_GOLF';
-  if (s.includes('escavat')) return 'ESCAVATORE';
-  if (s.includes('piatta') || s.includes('semov')) return 'SEMOVENTE';
-  return 'FURGONE';
-}
-
-function v78CategoryLabel(cat) {
-  return ({
-    FURGONE: 'Furgone cargo/merci',
-    '9_POSTI': 'Pulmino 9 posti',
-    AUTO_DACIA: 'Auto economica',
-    AUTO_GOLF: 'Auto categoria Golf',
-    ESCAVATORE: 'Escavatore',
-    SEMOVENTE: 'Piattaforma / semovente'
-  })[cat] || cat || 'Mezzo DP RENT';
-}
-
-function v78ParseDateRange(text) {
-  const s = String(text || '').trim().replace(/\s+/g, ' ');
-  const m = s.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?\s*(?:-|al|a)\s*(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/i);
-  if (!m) return null;
-  const nowY = new Date().getFullYear();
-  let y1 = m[3] ? Number(m[3]) : nowY;
-  let y2 = m[6] ? Number(m[6]) : y1;
-  if (y1 < 100) y1 += 2000;
-  if (y2 < 100) y2 += 2000;
-  const d1 = moment(`${y1}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`, 'YYYY-MM-DD', true);
-  let d2 = moment(`${y2}-${String(m[5]).padStart(2,'0')}-${String(m[4]).padStart(2,'0')}`, 'YYYY-MM-DD', true);
-  if (!d1.isValid() || !d2.isValid()) return null;
-  if (d2.isBefore(d1)) d2 = d2.add(1, 'year');
-  return {
-    data_inizio: d1.format('YYYY-MM-DD'),
-    data_fine: d2.format('YYYY-MM-DD'),
-    label: `${d1.format('DD/MM/YYYY')} - ${d2.format('DD/MM/YYYY')}`
-  };
-}
-
-function v78ExtractKm(text) {
-  const m = String(text || '').replace(/\./g, '').match(/\d{1,6}/);
-  return m ? Number(m[0]) : 0;
-}
-
-function v78NewSession() {
-  return { state: 'menu', requestedVehicle: '', categoria: '', data_inizio: '', data_fine: '', km_previsti: 150, mezzo: null, calc: null, ref: '' };
-}
-
-function v78Session(from) {
-  if (!v78WaSessions[from]) v78WaSessions[from] = v78NewSession();
-  return v78WaSessions[from];
-}
-
-function v78Menu() {
-  return `ð *DP RENT / TRASPORTI DP*
-
-Scegli il servizio:
-
-1ï¸â£ ð§ Officina
-2ï¸â£ ð Noleggio
-3ï¸â£ ð° Vendita auto
-4ï¸â£ ð Trasporto veicoli
-5ï¸â£ ð¬ Altre richieste / assistente DP
-
-âï¸ Scrivi solo il numero.
-Esempio: *2*`;
-}
-
-function v86IsMenuKeyword(body) {
-  const b = String(body || '').trim().toLowerCase();
-  return ['ciao','salve','buongiorno','buonasera','buona sera','menu','start','inizio','reset','info','informazioni','aiuto'].includes(b);
-}
-
-function v86NewPractice(prefix) {
-  const d = moment().format('YYYYMMDD');
-  const n = Math.floor(Math.random() * 9000 + 1000);
-  return `${prefix}-${d}-${n}`;
-}
-
-async function v86CreateCalendarEventOfficina(pratica, from, testo) {
-  try {
-    if (!google) return { ok:false, error:'googleapis non installato' };
-    const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
-    const email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || '';
-    let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
-    if (!email || !privateKey) return { ok:false, error:'ENV Calendar mancanti' };
-    privateKey = privateKey.replace(/\\n/g, '\n');
-    const auth = new google.auth.JWT({
-      email,
-      key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/calendar']
-    });
-    const calendar = google.calendar({ version: 'v3', auth });
-    const parsed = v86ExtractFirstDate(testo);
-    const start = parsed || moment().add(1, 'day').hour(9).minute(0).second(0);
-    const end = start.clone().add(45, 'minutes');
-    const event = await calendar.events.insert({
-      calendarId,
-      requestBody: {
-        summary: `OFFICINA DP - ${pratica}`,
-        description: `Richiesta WhatsApp officina
-
-Pratica: ${pratica}
-Cliente: ${from}
-
-${testo}`,
-        start: { dateTime: start.format('YYYY-MM-DDTHH:mm:ss'), timeZone: 'Europe/Rome' },
-        end: { dateTime: end.format('YYYY-MM-DDTHH:mm:ss'), timeZone: 'Europe/Rome' }
-      }
-    });
-    return { ok:true, id:event.data.id };
-  } catch(e) {
-    console.log('Errore Calendar officina:', e.message);
-    return { ok:false, error:e.message };
+async function dpNotify(numbers, body){
+  console.log('DP_NOTIFY:', numbers, body);
+  if(!dpTwilioClient){ console.log('Twilio non configurato, notifica non inviata'); return false; }
+  for(const to of numbers){
+    try{
+      await dpTwilioClient.messages.create({ from: DP_TWILIO_WHATSAPP_NUMBER, to, body: dpWa(body) });
+      console.log('Notifica WhatsApp inviata a', to);
+    }catch(e){
+      console.error('Errore notifica WhatsApp', to, e.message, e.code || '');
+    }
   }
+  return true;
 }
-
-function v86ExtractFirstDate(text) {
-  const s = String(text || '');
-  const m = s.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/);
-  if (!m) return null;
+function dpExtractDate(text){
+  const t = dpClean(text);
+  let m = t.match(/(\d{1,2})[\/\-.](\d{1,2})(?:[\/\-.](\d{2,4}))?/);
+  if(!m) return null;
   let y = m[3] ? Number(m[3]) : new Date().getFullYear();
-  if (y < 100) y += 2000;
-  const d = moment(`${y}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')} 09:00`, 'YYYY-MM-DD HH:mm', true);
-  return d.isValid() ? d : null;
+  if(y < 100) y += 2000;
+  const d = new Date(y, Number(m[2])-1, Number(m[1]), 9, 0, 0);
+  if(isNaN(d.getTime())) return null;
+  return d;
 }
-
-async function v86DpAssistantReply(text) {
-  const clean = String(text || '').trim();
-  if (!process.env.OPENAI_API_KEY) {
-    return `Ho ricevuto la tua richiesta: "${clean}".
-
-La giro subito allo staff DP, ti ricontatteremo appena possibile.`;
-  }
-  try {
-    const r = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
-      body: JSON.stringify({
-        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
-        messages: [
-          { role:'system', content:'Sei l assistente WhatsApp di Trasporti DP / DP RENT. Rispondi in italiano, breve, professionale e utile. Non inventare prezzi o disponibilita. Per noleggio, vendita, officina o trasporto invita a usare il menu o spiega che lo staff ricontattera.' },
-          { role:'user', content: clean }
-        ],
-        temperature: 0.4,
-        max_tokens: 220
-      })
-    });
-    const data = await r.json();
-    return data?.choices?.[0]?.message?.content || `Ho ricevuto la richiesta. La giro allo staff DP.`;
-  } catch(e) {
-    return `Ho ricevuto la tua richiesta. La giro subito allo staff DP, ti ricontatteremo appena possibile.`;
-  }
+function dpDateIso(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+function dpDateIt(d){ return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
+function dpExtractRange(text){
+  const m = dpClean(text).match(/(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?).*?(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?)/);
+  if(!m){ const one = dpExtractDate(text); return one ? { start: one, end: one } : null; }
+  const s = dpExtractDate(m[1]);
+  const e = dpExtractDate(m[2]);
+  if(!s || !e || e < s) return null;
+  return { start:s, end:e };
 }
-
-async function v78FindAvailableMezzo(categoria, data_inizio, data_fine) {
-  let mezzi = await all(`SELECT * FROM mezzi WHERE (categoria=? OR tipo=? OR tipo=?) AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`, [categoria, categoria, categoria.toLowerCase()]);
-  if (!mezzi.length && categoria === 'FURGONE') mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%furg%' OR categoria LIKE '%FURG%') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
-  if (!mezzi.length && categoria === '9_POSTI') mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%pulmino%' OR modello LIKE '%transit%' OR posti LIKE '%9%' OR categoria='9_POSTI') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
-  if (!mezzi.length && (categoria === 'AUTO_DACIA' || categoria === 'AUTO_GOLF')) mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%auto%' OR categoria LIKE 'AUTO_%') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
-  for (const m of mezzi) {
-    const occ = await queryDisponibilita(m.id, data_inizio, data_fine);
-    if (!occ) return m;
+function dpDays(a,b){ return Math.round((new Date(b.getFullYear(),b.getMonth(),b.getDate()) - new Date(a.getFullYear(),a.getMonth(),a.getDate()))/86400000)+1; }
+function dpExtractKm(text){ const m = String(text||'').replace(/\./g,'').match(/\d{1,6}/); return m ? Number(m[0]) : 150; }
+function dpCategoryFromChoice(txt){
+  const t = dpNorm(txt);
+  if(t === '1' || t.includes('furg')) return { label:'Furgone cargo/merci', cats:['FURGONE','FURGONI','F1-VAN','F2-PC','F3-PL'] };
+  if(t === '2' || t.includes('pulmino') || t.includes('9') || t.includes('posti')) return { label:'Pulmino 8/9 posti', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
+  if(t === '3' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', cats:['AUTO_DACIA','AUTO','A1 - Compact Eco'] };
+  if(t === '4' || t.includes('golf')) return { label:'Auto categoria Golf', cats:['AUTO_GOLF','AUTO','A2 - Compact'] };
+  if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', cats:['ESCAVATORE','X-ESC'] };
+  return null;
+}
+async function dpFindAvailableVehicle(catInfo, startIso, endIso){
+  let mezzi = [];
+  try{
+    const qs = catInfo.cats.map(()=>'?').join(',');
+    mezzi = await all(`SELECT * FROM mezzi WHERE categoria IN (${qs}) OR tipo IN (${qs}) OR modello LIKE ? OR marca LIKE ? ORDER BY id ASC`, [...catInfo.cats, ...catInfo.cats, `%${catInfo.label.split(' ')[0]}%`, `%${catInfo.label.split(' ')[0]}%`]);
+  }catch(e){ console.error('Errore select mezzi:', e.message); }
+  if(!mezzi.length){
+    try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){}
+  }
+  for(const m of mezzi){
+    try{
+      const occ = await queryDisponibilita(m.id, startIso, endIso);
+      if(!occ) return m;
+    }catch(e){ return m; }
   }
   return null;
 }
-
-async function v78FindAvailableMezzi(categoria, data_inizio, data_fine) {
-  let mezzi = await all(`SELECT * FROM mezzi WHERE (categoria=? OR tipo=? OR tipo=?) AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`, [categoria, categoria, categoria.toLowerCase()]);
-  if (!mezzi.length && categoria === 'FURGONE') mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%furg%' OR categoria LIKE '%FURG%') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
-  if (!mezzi.length && categoria === '9_POSTI') mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%pulmino%' OR modello LIKE '%transit%' OR posti LIKE '%9%' OR categoria='9_POSTI') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
-  if (!mezzi.length && (categoria === 'AUTO_DACIA' || categoria === 'AUTO_GOLF')) mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%auto%' OR categoria LIKE 'AUTO_%') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
-
-  const disponibili = [];
-  for (const m of mezzi) {
-    const occ = await queryDisponibilita(m.id, data_inizio, data_fine);
-    if (!occ) disponibili.push(m);
-  }
-  return disponibili;
-}
-
-function v78YesNo(value) {
-  const t = String(value || '')
-    .trim()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-  if (['si','s','ok','confermo','yes'].includes(t)) return 'SI';
-  if (['no','n','annulla','annullo'].includes(t)) return 'NO';
-  return '';
-}
-
-function v78PublicMezziList(mezzi, data_inizio, data_fine, km_previsti) {
-  return mezzi.slice(0, 8).map((m, i) => {
-    const calc = calcolaTotale(m, data_inizio, data_fine, '08:30', '18:00', km_previsti);
-    return `${i + 1}) ${descrizionePubblica(m)} - â¬ ${euro(calc.totale)}`;
-  }).join('\n');
-}
-
-async function v78EnsurePracticeTable() {
-  await run(`CREATE TABLE IF NOT EXISTS whatsapp_pratiche (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    ref TEXT UNIQUE,
-    telefono TEXT,
-    from_whatsapp TEXT,
-    categoria TEXT,
-    mezzo_id INTEGER,
-    data_inizio TEXT,
-    data_fine TEXT,
-    ora_inizio TEXT,
-    ora_fine TEXT,
-    km_previsti TEXT,
-    totale REAL,
-    stato TEXT,
-    cliente_id INTEGER,
-    prenotazione_id INTEGER,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP
-  )`).catch(()=>{});
-}
-
-function v78Ref() {
-  return 'WA' + Date.now().toString(36).toUpperCase() + Math.floor(Math.random()*9999).toString().padStart(4,'0');
-}
-
-async function v78CreatePractice(from, s) {
-  await v78EnsurePracticeTable();
-  const ref = v78Ref();
-  await run(`INSERT INTO whatsapp_pratiche (ref,telefono,from_whatsapp,categoria,mezzo_id,data_inizio,data_fine,ora_inizio,ora_fine,km_previsti,totale,stato) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, [
-    ref, v78CleanPhone(from), from, s.categoria, s.mezzo.id, s.data_inizio, s.data_fine, '08:30', '18:00', String(s.km_previsti || 150), Number(s.calc?.totale || 0), 'preventivo_confermato'
-  ]);
-  return ref;
-}
-
-function v78ClienteWebCss() {
-  return `<style>
-    body{margin:0;background:#eef3fb;font-family:Inter,Arial,sans-serif;color:#172033}.wrap{max-width:980px;margin:0 auto;padding:22px}.hero{background:linear-gradient(135deg,#0b1b3f,#1646a0);color:white;border-radius:28px;padding:28px;box-shadow:0 18px 45px #0b1b3f33}.hero h1{margin:0;font-size:34px}.hero p{opacity:.92;font-size:17px}.card{background:white;border-radius:24px;padding:22px;margin-top:18px;box-shadow:0 12px 34px #0b1b3f18;border:1px solid #e4eaf5}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}label{display:block;font-weight:800;font-size:13px;color:#35415a}input,select,textarea{width:100%;box-sizing:border-box;margin-top:7px;border:1px solid #ccd7ea;border-radius:14px;padding:13px;font-size:16px;background:#f9fbff}textarea{min-height:90px}.section{font-size:20px;font-weight:900;margin:8px 0 14px}.pill{display:inline-block;background:#eaf2ff;color:#113c88;border-radius:999px;padding:9px 13px;font-weight:900;margin:5px 5px 0 0}.btn{border:0;border-radius:18px;padding:16px 20px;font-size:17px;font-weight:900;background:#1155cc;color:white;box-shadow:0 12px 25px #1155cc44;cursor:pointer}.btn2{display:inline-block;text-decoration:none;background:#fff;color:#1155cc;border:2px solid #1155cc}.notice{background:#fff8df;border:1px solid #ffe08a;border-radius:18px;padding:14px;margin-top:12px}.ok{background:#eafaf0;border:1px solid #bdebcf}.bad{background:#fff0f0;border:1px solid #ffc6c6}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}@media(max-width:760px){.grid{grid-template-columns:1fr}.hero h1{font-size:28px}.wrap{padding:12px}.card{padding:16px;border-radius:20px}.hero{border-radius:22px;padding:22px}}
-  </style>`;
-}
-
-function v78CustomerPage(title, body) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>${v78ClienteWebCss()}</head><body><div class="wrap">${body}</div></body></html>`;
-}
-
-app.get('/cliente-web', async (req, res) => {
-  try {
-    await v78EnsurePracticeTable();
-    const ref = String(req.query.ref || '').trim();
-    const pratica = await get(`SELECT * FROM whatsapp_pratiche WHERE ref=?`, [ref]);
-    if (!pratica) return res.status(404).send(v78CustomerPage('Pratica non trovata', `<div class="card bad"><h2>Pratica non trovata</h2><p>Chiedi un nuovo link a DP RENT.</p></div>`));
-    const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [pratica.mezzo_id]);
-    res.send(v78CustomerPage('DP RENT - Dati cliente', `
-      <div class="hero"><h1>DP RENT</h1><p>Preventivo confermato. Ora compila tutti i dati per preparare contratto e pratica interna.</p><span class="pill">${esc(ref)}</span><span class="pill">${esc(v78CategoryLabel(pratica.categoria))}</span><span class="pill">EUR ${euro(pratica.totale)}</span></div>
-      <div class="card ok"><b>Mezzo prenotabile:</b> ${esc(descrizionePubblica(mezzo || {}))}<br><b>Periodo:</b> ${esc(pratica.data_inizio)} - ${esc(pratica.data_fine)}<br><b>Km previsti:</b> ${esc(pratica.km_previsti || '')}</div>
-      <div class="card"><div class="section">Carica foto documento/patente</div><p class="notice">Puoi caricare foto qui sotto come allegati, ma i dati vanno comunque controllati/compilati. L'ufficio DP controllerÃ  tutto prima del contratto definitivo.</p><form method="post" action="/cliente-web/${esc(ref)}/salva" enctype="multipart/form-data">
-        <div class="grid">
-          <label>Nome<input name="nome" required></label><label>Cognome<input name="cognome" required></label>
-          <label>Telefono<input name="telefono" value="${esc(pratica.telefono || '')}" required></label><label>Email<input type="email" name="email"></label>
-          <label>Codice fiscale<input name="codice_fiscale" required></label><label>Cittadinanza<select name="cittadinanza_cod"><option value="100000100">Italiana</option><option value="">Altro / da verificare</option></select></label>
-          <label>Data nascita<input type="date" name="data_nascita" required></label><label>Luogo nascita<input name="luogo_nascita" required></label>
-          <label>Indirizzo residenza<input name="indirizzo" required></label><label>CittÃ <input name="citta" required></label>
-          <label>CAP<input name="cap" required></label><label>Provincia<input name="provincia" maxlength="2"></label>
-          <label>Tipo documento<select name="documento_tipo"><option value="IDENT">Carta identitÃ </option><option value="IDELE">Carta identitÃ  elettronica</option><option value="PASOR">Passaporto</option><option value="PATEN">Patente</option></select></label><label>Numero documento<input name="documento_numero" required></label>
-          <label>Data rilascio documento<input type="date" name="documento_rilascio"></label><label>Scadenza documento<input type="date" name="documento_scadenza" required></label>
-          <label>Numero patente<input name="patente_numero" required></label><label>Categoria patente<input name="categoria_patente" value="B"></label>
-          <label>Data rilascio patente<input type="date" name="patente_rilascio"></label><label>Scadenza patente<input type="date" name="patente_scadenza" required></label>
-          <label>Fatturazione<select name="tipo_cliente"><option value="privato">Privato</option><option value="azienda">Azienda</option></select></label><label>Ragione sociale<input name="ragione_sociale"></label>
-          <label>Partita IVA<input name="partita_iva"></label><label>PEC<input name="pec"></label>
-          <label>Codice SDI<input name="codice_sdi"></label><label>Sede / indirizzo fatturazione<input name="sede_fatturazione"></label>
-          <label>CittÃ  fatturazione<input name="citta_fatturazione"></label><label>CAP fatturazione<input name="cap_fatturazione"></label>
-          <label>Provincia fatturazione<input name="provincia_fatturazione" maxlength="2"></label><label>Secondo autista<input name="conducente2_nome" placeholder="Nome e cognome se presente"></label>
-          <label>Patente secondo autista<input name="conducente2_patente"></label>
-        </div>
-        <div class="card" style="box-shadow:none;margin-top:14px;background:#f8fbff">
-          <div class="section">Foto documenti</div>
-          <p class="notice">Carica anche piÃ¹ foto: documento fronte, documento retro e patente. Da iPhone puoi usare "Scatta foto" su ogni campo.</p>
-          <div class="grid">
-            <label>Documento fronte<input type="file" name="documento_fronte" accept="image/*,.pdf" capture="environment"></label>
-            <label>Documento retro<input type="file" name="documento_retro" accept="image/*,.pdf" capture="environment"></label>
-            <label>Patente fronte<input type="file" name="patente_fronte" accept="image/*,.pdf" capture="environment"></label>
-            <label>Patente retro<input type="file" name="patente_retro" accept="image/*,.pdf" capture="environment"></label>
-            <label>Altri allegati<input type="file" name="files" multiple accept="image/*,.pdf"></label>
-          </div>
-        </div>
-        <div class="grid">
-        </div>
-        <label>Note<textarea name="note" placeholder="Scrivi esigenze particolari, orari ritiro/consegna, ecc."></textarea></label>
-        <div class="actions"><button class="btn" type="submit">Invia dati a DP RENT</button><a class="btn btn2" href="/">Annulla</a></div>
-      </form></div>
-    `));
-  } catch(e) {
-    res.status(500).send(v78CustomerPage('Errore', `<div class="card bad"><pre>${esc(e.message)}</pre></div>`));
-  }
-});
-
-const v78UploadClienteWeb = (typeof upload !== 'undefined') ? upload.fields([
-  { name: 'documento_fronte', maxCount: 1 },
-  { name: 'documento_retro', maxCount: 1 },
-  { name: 'patente_fronte', maxCount: 1 },
-  { name: 'patente_retro', maxCount: 1 },
-  { name: 'files', maxCount: 10 }
-]) : (req,res,next)=>next();
-
-function v79ClienteWebFiles(req) {
-  const out = [];
-  if (req.file) out.push({ tipo: 'allegato_cliente', file: req.file });
-  if (Array.isArray(req.files)) {
-    req.files.forEach(f => out.push({ tipo: 'allegato_cliente', file: f }));
-    return out;
-  }
-  const map = req.files || {};
-  Object.keys(map).forEach(k => {
-    (map[k] || []).forEach(f => out.push({ tipo: k, file: f }));
-  });
-  return out;
-}
-app.post('/cliente-web/:ref/salva', v78UploadClienteWeb, async (req, res) => {
-  try {
-    await ensureBookingColumnsV77();
-    await v78EnsurePracticeTable();
-    const pratica = await get(`SELECT * FROM whatsapp_pratiche WHERE ref=?`, [req.params.ref]);
-    if (!pratica) return res.status(404).send(v78CustomerPage('Pratica non trovata', `<div class="card bad">Pratica non trovata</div>`));
-    const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [pratica.mezzo_id]);
-    if (!mezzo) throw new Error('Mezzo non trovato per la pratica');
-    const b = req.body || {};
-    const occ = await queryDisponibilita(mezzo.id, pratica.data_inizio, pratica.data_fine);
-    if (occ) return res.send(v78CustomerPage('Non disponibile', `<div class="card bad"><h2>Mezzo non piÃ¹ disponibile</h2><p>Nel frattempo Ã¨ stato occupato. Contatta DP RENT per nuove date.</p></div>`));
-
-    const calc = calcolaTotale(mezzo, pratica.data_inizio, pratica.data_fine, '08:30', '18:00', pratica.km_previsti || 150);
-    let clienteId = null;
-    await new Promise(resolve => salvaClienteStorico({
-      nome:b.nome,cognome:b.cognome,telefono:b.telefono,email:b.email,codice_fiscale:b.codice_fiscale,
-      indirizzo:b.indirizzo,citta:b.citta,cap:b.cap,provincia:b.provincia,data_nascita:b.data_nascita,luogo_nascita:b.luogo_nascita,
-      documento_numero:b.documento_numero,documento_scadenza:b.documento_scadenza,patente_numero:b.patente_numero,patente1:b.patente_numero,
-      patente_scadenza:b.patente_scadenza,patente1_scadenza:b.patente_scadenza,categoria_patente:b.categoria_patente,note_cliente:b.note
-    }, (err,id)=>{ clienteId=id||null; resolve(); }));
-
-    const data = {
-      cliente_id:clienteId, codice:'TEMP', nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email,
-      codice_fiscale:b.codice_fiscale, cf:b.codice_fiscale, indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, provincia:b.provincia,
-      data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita, cittadinanza_cod:b.cittadinanza_cod || '100000100', conducente_cittadinanza_cod:b.cittadinanza_cod || '100000100',
-      documento_tipo:b.documento_tipo || 'IDENT', documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
-      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
-      tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, partita_iva:b.partita_iva, piva:b.partita_iva, pec:b.pec, codice_sdi:b.codice_sdi, sdi:b.codice_sdi,
-      conducente2_nome:b.conducente2_nome, conducente2_patente:b.conducente2_patente,
-      mezzo_id:mezzo.id, targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '', tipo:mezzo.tipo || '', categoria:mezzo.categoria || mezzo.tipo || pratica.categoria,
-      data_inizio:pratica.data_inizio, data_fine:pratica.data_fine, ora_inizio:'08:30', ora_fine:'18:00', giorni:calc.giorni,
-      km_previsti:Number(pratica.km_previsti || 150), extra_fuori_orario:calc.extra_fuori_orario, extra_km:calc.extraKm,
-      imponibile:calc.imponibile, iva:calc.iva, totale:calc.totale, cauzione:mezzo.cauzione || CAUZIONE,
-      cauzione_richiesta:'si', cauzione_ricevuta:'no', cauzione_importo:mezzo.cauzione || CAUZIONE, cauzione_metodo:'', cauzione_restituita:'no',
-      carburante_uscita:'4/4 pieno', stato:'preventivo', tipo_record:'preventivo', note:`Da WhatsApp ${pratica.ref}. ${b.note || ''}`
+async function dpCreateCalendarEventOfficina(from, profileName, text){
+  try{
+    if(!google) return { ok:false, error:'googleapis non installato' };
+    const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
+    const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
+    let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
+    if(!clientEmail || !privateKey) return { ok:false, error:'ENV Google mancanti' };
+    privateKey = privateKey.replace(/\\n/g, '\n');
+    const auth = new google.auth.JWT(clientEmail, null, privateKey, ['https://www.googleapis.com/auth/calendar']);
+    const calendar = google.calendar({ version:'v3', auth });
+    const d = dpExtractDate(text) || new Date(Date.now()+24*60*60*1000);
+    const start = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 9, 0, 0);
+    const end = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 10, 0, 0);
+    const event = {
+      summary: `OFFICINA DP - ${profileName || 'Cliente WhatsApp'}`,
+      description: `Richiesta da WhatsApp: ${from}\n\n${text}`,
+      start: { dateTime: start.toISOString(), timeZone: 'Europe/Rome' },
+      end: { dateTime: end.toISOString(), timeZone: 'Europe/Rome' }
     };
-    const cols = Object.keys(data);
-    const result = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`, cols.map(k => data[k]));
-    const cod = codicePratica(result.lastID);
-    await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
-    await run(`UPDATE whatsapp_pratiche SET cliente_id=?, prenotazione_id=?, stato=? WHERE ref=?`, [clienteId, result.lastID, 'dati_cliente_compilati', pratica.ref]);
-
-    // Allegati caricati dal cliente: salvo TUTTE le foto/documenti e poi sincronizzo su Drive.
-    const uploadedClienteFiles = v79ClienteWebFiles(req);
-    if (uploadedClienteFiles.length) {
-      for (const item of uploadedClienteFiles) {
-        const f = item.file;
-        await run(`INSERT INTO allegati (prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?)`, [
-          result.lastID,
-          item.tipo || 'documento_cliente_web',
-          f.filename,
-          f.originalname,
-          f.path,
-          f.mimetype,
-          f.size
-        ]).catch((e)=>{ console.log('insert allegato cliente web:', e.message); });
-      }
-    }
-
-    // Sincronizzo sempre: crea cartella Drive, PDF e allegati; se ci sono piÃ¹ foto le carica tutte.
-    try { await syncContrattoDriveV63(result.lastID); } catch(e) { console.log('sync drive cliente web:', e.message); }
-
-    try {
-      await v78SendInternal(V78_INTERNAL_NUMBERS, `â DATI CLIENTE WHATSAPP COMPILATI\n\nPratica: ${pratica.ref}\nContratto/preventivo: ${cod}\nCliente: ${b.nome} ${b.cognome}\nTel: ${b.telefono}\nMezzo: ${descrizionePubblica(mezzo || {})}\nPeriodo: ${pratica.data_inizio} - ${pratica.data_fine}\nTotale: â¬ ${euro(calc.totale)}\n\nApri: ${v78BaseUrl(req)}/contratto/${result.lastID}/gestisci`);
-    } catch(e) {}
-
-    res.send(v78CustomerPage('Dati inviati', `<div class="hero"><h1>Grazie, dati inviati</h1><p>DP RENT controllerÃ  i dati e ti confermerÃ  il contratto.</p></div><div class="card ok"><b>Codice pratica:</b> ${esc(cod)}<br><b>Preventivo:</b> EUR ${euro(calc.totale)}<br><b>Periodo:</b> ${esc(pratica.data_inizio)} - ${esc(pratica.data_fine)}</div>`));
-  } catch(e) {
-    res.status(500).send(v78CustomerPage('Errore salvataggio', `<div class="card bad"><h2>Errore salvataggio</h2><pre>${esc(e.stack || e.message)}</pre></div>`));
+    const r = await calendar.events.insert({ calendarId, requestBody: event });
+    console.log('Evento Calendar creato:', r.data && r.data.htmlLink);
+    return { ok:true, link: r.data && r.data.htmlLink };
+  }catch(e){
+    console.error('Errore Google Calendar:', e.message);
+    return { ok:false, error:e.message };
   }
-});
-
-app.post('/whatsapp', async (req, res) => {
-  try {
-    const bodyRaw = String(req.body.Body || '').trim();
-    const body = bodyRaw.toLowerCase();
-    const from = String(req.body.From || '');
-    const base = v78BaseUrl(req);
-    let s = v78Session(from);
-
-    // Saluti e parole generiche aprono SEMPRE il menu. ChatGPT solo scegliendo 5.
-    if (v86IsMenuKeyword(bodyRaw)) {
-      v78WaSessions[from] = v78NewSession();
-      return res.type('text/xml').send(v78TwilioXml(v78Menu()));
-    }
-
-    if (s.state === 'menu') {
-      if (body === '1' || body.includes('officina')) {
-        s.state = 'officina_wait';
-        return res.type('text/xml').send(v78TwilioXml(`ð§ *DP SERVICE / Officina*
-
-Scrivici in un unico messaggio:
-- targa
-- mezzo
-- problema/intervento
-- giorno preferito
-
-Ti richiamiamo appena possibile.`));
-      }
-
-      if (body === '2' || body.includes('noleggio')) {
-        s.state = 'ask_vehicle';
-        return res.type('text/xml').send(v78TwilioXml(`ð *DP RENT - Noleggio*
-
-Che mezzo ti serve?
-Esempio: furgone, pulmino 9 posti, auto.`));
-      }
-
-      if (body === '3' || body.includes('vendita')) {
-        s.state = 'vendita_wait';
-        return res.type('text/xml').send(v78TwilioXml(`ð° *DP AUTO - Vendita auto*
-
-Guarda le auto disponibili qui:
-https://autosupermarket.it/concessionario/trasporti-dp-srl/annunci
-
-Se cerchi qualcosa in particolare, scrivici modello, budget, permuta e finanziamento sÃ¬/no.
-La richiesta verrÃ  inviata al reparto vendite.`));
-      }
-
-      if (body === '4' || body.includes('trasporto')) {
-        s.state = 'trasporto_wait';
-        return res.type('text/xml').send(v78TwilioXml(`ð *Trasporto veicoli*
-
-Scrivi in un unico messaggio:
-- marca e modello
-- marciante o non marciante
-- luogo ritiro
-- luogo consegna
-- contatto
-
-Prepariamo la quotazione.`));
-      }
-
-      if (body === '5' || body.includes('altre')) {
-        s.state = 'altro_wait';
-        return res.type('text/xml').send(v78TwilioXml(`ð¬ *Assistente DP*
-
-Scrivi pure la tua richiesta.
-Ti rispondo subito e invio comunque tutto allo staff DP.`));
-      }
-
-      return res.type('text/xml').send(v78TwilioXml(v78Menu()));
-    }
-
-    if (s.state === 'officina_wait') {
-      const pratica = v86NewPractice('OFF');
-      const cal = await v86CreateCalendarEventOfficina(pratica, from, bodyRaw);
-      await v78SendInternal(V78_INTERNAL_NUMBERS, `NUOVA RICHIESTA OFFICINA
-
-Pratica: ${pratica}
-WhatsApp: ${from}
-
-${bodyRaw}
-
-Calendar: ${cal.ok ? 'evento creato' : 'NON creato - ' + (cal.error || '-')}`);
-      v78WaSessions[from] = v78NewSession();
-      return res.type('text/xml').send(v78TwilioXml(`â Richiesta officina inviata.
-Codice pratica: ${pratica}
-Ti richiamiamo appena possibile.`));
-    }
-
-    if (s.state === 'vendita_wait') {
-      const pratica = v86NewPractice('VEN');
-      await v78SendInternal(V78_INTERNAL_NUMBERS, `NUOVA RICHIESTA VENDITA AUTO
-
-Pratica: ${pratica}
-WhatsApp: ${from}
-
-${bodyRaw}`);
-      v78WaSessions[from] = v78NewSession();
-      return res.type('text/xml').send(v78TwilioXml(`â Richiesta vendita inviata.
-Codice pratica: ${pratica}
-Il reparto vendite ti ricontatterÃ  appena possibile.`));
-    }
-
-    if (s.state === 'trasporto_wait') {
-      const pratica = v86NewPractice('TRA');
-      await v78SendInternal(V78_INTERNAL_NUMBERS, `NUOVA RICHIESTA TRASPORTO VEICOLI
-
-Pratica: ${pratica}
-WhatsApp: ${from}
-
-${bodyRaw}`);
-      v78WaSessions[from] = v78NewSession();
-      return res.type('text/xml').send(v78TwilioXml(`â Richiesta trasporto inviata.
-Codice pratica: ${pratica}
-Prepariamo la quotazione e ti ricontattiamo.`));
-    }
-
-    if (s.state === 'altro_wait') {
-      const pratica = v86NewPractice('GEN');
-      const reply = await v86DpAssistantReply(bodyRaw);
-      await v78SendInternal(V78_INTERNAL_NUMBERS, `NUOVA RICHIESTA GENERICA / ASSISTENTE DP
-
-Pratica: ${pratica}
-WhatsApp: ${from}
-
-Cliente:
-${bodyRaw}
-
-Risposta bot:
-${reply}`);
-      v78WaSessions[from] = v78NewSession();
-      return res.type('text/xml').send(v78TwilioXml(`${reply}
-
-Codice pratica: ${pratica}`));
-    }
-
-    if (s.state === 'ask_vehicle') {
-      s.requestedVehicle = bodyRaw;
-      s.categoria = v78CategoryFromText(bodyRaw);
-      s.state = 'ask_dates';
-      return res.type('text/xml').send(v78TwilioXml(`Perfetto: *${v78CategoryLabel(s.categoria)}*.
-
-Ora scrivi le date.
-Esempio: 20/05 - 22/05`));
-    }
-
-    if (s.state === 'ask_dates') {
-      const range = v78ParseDateRange(bodyRaw);
-      if (!range) return res.type('text/xml').send(v78TwilioXml('Date non valide. Scrivile cosÃ¬: 20/05 - 22/05'));
-      s.data_inizio = range.data_inizio;
-      s.data_fine = range.data_fine;
-      s.dateLabel = range.label;
-      s.state = 'ask_km';
-      return res.type('text/xml').send(v78TwilioXml('Quanti km prevedi di fare? Esempio: 400'));
-    }
-
-    if (s.state === 'ask_km') {
-      const km = v78ExtractKm(bodyRaw);
-      if (!km) return res.type('text/xml').send(v78TwilioXml('Scrivi solo i km previsti. Esempio: 400'));
-      s.km_previsti = km;
-      const mezzi = await v78FindAvailableMezzi(s.categoria, s.data_inizio, s.data_fine);
-      if (!mezzi.length) {
-        s.state = 'ask_dates';
-        return res.type('text/xml').send(v78TwilioXml(`Mi dispiace, al momento non risulta disponibile un ${v78CategoryLabel(s.categoria)} per quelle date.
-
-Vuoi provare altre date? Scrivi tipo: 24/05 - 26/05`));
-      }
-      s.mezziDisponibili = mezzi.slice(0, 8);
-      s.state = 'choose_model';
-      await v78SendInternal(V78_INTERNAL_NUMBERS, `RICHIESTA PREVENTIVO NOLEGGIO WHATSAPP
-
-WhatsApp: ${from}
-Categoria: ${v78CategoryLabel(s.categoria)}
-Richiesta: ${s.requestedVehicle || '-'}
-Periodo: ${s.data_inizio} - ${s.data_fine}
-Km: ${s.km_previsti}
-
-Mezzi disponibili interni:
-${s.mezziDisponibili.map((m,i)=>`${i+1}) ${m.targa || '-'} ${m.marca || ''} ${m.modello || ''}`).join('\n')}`);
-      return res.type('text/xml').send(v78TwilioXml(`â Disponibile. Scegli il modello:
-
-${v78PublicMezziList(s.mezziDisponibili, s.data_inizio, s.data_fine, s.km_previsti)}
-
-Scrivi solo il numero del modello scelto.`));
-    }
-
-    if (s.state === 'choose_model') {
-      const scelta = Number(String(bodyRaw || '').trim());
-      const mezzo = s.mezziDisponibili && s.mezziDisponibili[scelta - 1];
-      if (!mezzo) return res.type('text/xml').send(v78TwilioXml('Scelta non valida. Scrivi solo il numero del modello, esempio: 1'));
-      s.mezzo = mezzo;
-      s.calc = calcolaTotale(mezzo, s.data_inizio, s.data_fine, '08:30', '18:00', s.km_previsti);
-      s.state = 'confirm_quote';
-      return res.type('text/xml').send(v78TwilioXml(`â Disponibile
-
-Mezzo: *${descrizionePubblica(mezzo)}*
-Periodo: ${s.dateLabel}
-Km previsti: ${s.km_previsti}
-
-Preventivo: EUR ${euro(s.calc.totale)}
-Caparra: EUR ${euro(mezzo.cauzione || CAUZIONE)} gestita separatamente.
-
-Confermi il preventivo? Rispondi *SI* oppure *NO*.`));
-    }
-
-    if (s.state === 'confirm_quote') {
-      const conferma = v78YesNo(bodyRaw);
-      if (conferma === 'NO') {
-        v78WaSessions[from] = v78NewSession();
-        await v78SendInternal(V78_INTERNAL_NUMBERS, `PREVENTIVO NOLEGGIO ANNULLATO
-
-WhatsApp: ${from}
-Categoria: ${v78CategoryLabel(s.categoria)}
-Periodo: ${s.data_inizio || '-'} - ${s.data_fine || '-'}`);
-        return res.type('text/xml').send(v78TwilioXml('Preventivo annullato. Scrivi menu per ricominciare.'));
-      }
-      if (conferma !== 'SI') return res.type('text/xml').send(v78TwilioXml('Rispondi SI per confermare oppure NO per annullare.'));
-      const ref = await v78CreatePractice(from, s);
-      const link = `${base}/cliente-web?ref=${encodeURIComponent(ref)}`;
-      await v78SendInternal(V78_INTERNAL_NUMBERS, `PREVENTIVO NOLEGGIO CONFERMATO
-
-WhatsApp: ${from}
-Categoria: ${v78CategoryLabel(s.categoria)}
-Mezzo interno: ${s.mezzo.targa || ''} ${s.mezzo.marca || ''} ${s.mezzo.modello || ''}
-Mezzo cliente: ${descrizionePubblica(s.mezzo)}
-Periodo: ${s.data_inizio} - ${s.data_fine}
-Km: ${s.km_previsti}
-Totale: EUR ${euro(s.calc.totale)}
-Link cliente: ${link}`);
-      v78WaSessions[from] = v78NewSession();
-      return res.type('text/xml').send(v78TwilioXml(`Perfetto.
-
-Per completare la pratica apri questo link e inserisci tutti i dati richiesti.
-Puoi compilare manualmente e caricare foto documento/patente.
-
-${link}
-
-DP RENT controllerÃ  i dati prima del contratto definitivo.`));
-    }
-
-    v78WaSessions[from] = v78NewSession();
-    return res.type('text/xml').send(v78TwilioXml(v78Menu()));
-  } catch(e) {
-    console.error('V86 WhatsApp error:', e);
-    return res.type('text/xml').send(v78TwilioXml('Errore tecnico momentaneo. Scrivi menu e riprova.'));
+}
+async function dpChatGPTAnswer(message){
+  if(!process.env.OPENAI_API_KEY){
+    return 'Ho ricevuto la richiesta. La inoltro subito allo staff DP, ti risponderemo appena possibile.';
   }
-});
+  try{
+    const r = await fetch('https://api.openai.com/v1/chat/completions', {
+      method:'POST',
+      headers:{ 'Authorization':'Bearer '+process.env.OPENAI_API_KEY, 'Content-Type':'application/json' },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || 'gpt-4o-mini',
+        messages:[
+          {role:'system', content:'Sei l assistente WhatsApp di Trasporti DP / DP RENT a Narni. Rispondi in italiano, professionale, gentile, breve. Servizi: officina, noleggio, vendita auto, trasporto veicoli. Per preventivi specifici chiedi i dati mancanti e avvisa che lo staff confermera.'},
+          {role:'user', content: message}
+        ],
+        temperature:0.4,
+        max_tokens:250
+      })
+    });
+    const data = await r.json();
+    return data?.choices?.[0]?.message?.content || 'Ho ricevuto la richiesta. La inoltro allo staff DP.';
+  }catch(e){
+    console.error('Errore OpenAI:', e.message);
+    return 'Ho ricevuto la richiesta. La inoltro subito allo staff DP.';
+  }
+}
+function dpTwimlResponse(res, text){
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${dpXml(dpWa(text))}</Message></Response>`;
+  res.writeHead(200, { 'Content-Type':'text/xml; charset=utf-8' });
+  return res.end(xml);
+}
 
-app.get('/twilio-webhook', (req, res) => res.send(page('Webhook Twilio', `<div class="box"><h2>Webhook WhatsApp Twilio</h2><p>Imposta questo URL in Twilio:</p><pre>${esc((process.env.APP_BASE_URL || (req.protocol + '://' + req.get('host'))) + '/whatsapp')}</pre><p>Metodo: POST</p></div>`)));
+async function dpHandleWhatsApp(req,res){
+  const from = dpClean(req.body.From || '').toLowerCase();
+  const body = dpClean(req.body.Body || '');
+  const profileName = req.body.ProfileName || 'Cliente';
+  const sid = dpClean(req.body.MessageSid || req.body.SmsSid || '');
+  console.log('DP BOT IN:', { from, body, profileName, sid, state: DP_BOT_SESSIONS[from]?.state });
+  if(dpAlreadySid(sid)){ res.writeHead(200, {'Content-Type':'text/xml'}); return res.end('<Response/>'); }
+  if(!from) return dpTwimlResponse(res, 'Errore ricezione messaggio.');
 
+  let session = dpSession(from, profileName);
 
-// V77 FIX ROUTE ALIAS: vecchi link non devono piÃ¹ dare Cannot GET
-app.get('/prenota-admin/', (req, res) => res.redirect('/nuova-prenotazione'));
-app.get('/ocr-pro/applica/', (req, res) => res.redirect('/cliente-nuovo'));
-app.get('/prenotazione/nuova', (req, res) => res.redirect('/nuova-prenotazione'));
-app.get('/nuovo-cliente', (req, res) => res.redirect('/cliente-nuovo'));
+  if(dpIsMenuKeyword(body) || body === ''){
+    dpReset(from, profileName);
+    return dpTwimlResponse(res, dpMenu(profileName));
+  }
+
+  if(session.state === 'menu'){
+    if(body === '1'){
+      session.state = 'officina'; session.ts = Date.now();
+      return dpTwimlResponse(res, 'ð§ *Officina DP*\n\nScrivi in un solo messaggio:\n- targa\n- marca/modello\n- problema o intervento\n- giorno preferito\n\nEsempio:\nAB123CD Fiat Panda tagliando completo 20/05');
+    }
+    if(body === '2'){
+      session.state = 'noleggio_model'; session.ts = Date.now();
+      return dpTwimlResponse(res, 'ð *DP RENT - Noleggio*\n\nChe mezzo ti serve?\n\n1ï¸â£ Furgone cargo/merci\n2ï¸â£ Pulmino 8/9 posti\n3ï¸â£ Auto economica tipo Dacia\n4ï¸â£ Auto categoria Golf\n5ï¸â£ Escavatore / mezzo speciale\n\nScrivi il numero.');
+    }
+    if(body === '3'){
+      session.state = 'vendita'; session.ts = Date.now();
+      return dpTwimlResponse(res, `ð *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi:\n- modello\n- budget\n- permuta si/no\n- finanziamento si/no`);
+    }
+    if(body === '4'){
+      session.state = 'trasporto'; session.ts = Date.now();
+      return dpTwimlResponse(res, 'ð *Trasporto veicoli*\n\nScrivi in un solo messaggio:\n- marca e modello auto\n- marciante o non marciante\n- da dove ritirare\n- dove consegnare\n- quando serve\n\nEsempio:\nFiat Panda marciante, ritiro Roma, consegna Narni, prossima settimana');
+    }
+    if(body === '5'){
+      session.state = 'altro'; session.ts = Date.now();
+      return dpTwimlResponse(res, 'ð¬ *Altre richieste*\n\nScrivi pure la tua richiesta. Ti rispondo subito e la inoltro allo staff DP.');
+    }
+    return dpTwimlResponse(res, dpMenu(profileName));
+  }
+
+  if(session.state === 'officina'){
+    const cal = await dpCreateCalendarEventOfficina(from, profileName, body);
+    await dpNotify(DP_OFFICINA_NUMBERS, `ð§ NUOVA RICHIESTA OFFICINA\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nRichiesta:\n${body}\n\nCalendar: ${cal.ok ? (cal.link || 'evento creato') : 'NON creato - ' + (cal.error || '-')}`);
+    delete DP_BOT_SESSIONS[from];
+    return dpTwimlResponse(res, `â Richiesta officina ricevuta.\n\nL abbiamo inviata allo staff DP.${cal.ok ? '\nEvento inserito in Google Calendar.' : ''}\n\nTi ricontatteremo per confermare appuntamento e orario.`);
+  }
+
+  if(session.state === 'noleggio_model'){
+    const cat = dpCategoryFromChoice(body);
+    if(!cat) return dpTwimlResponse(res, 'Scelta non valida. Scrivi 1, 2, 3, 4 oppure 5.');
+    session.data.cat = cat; session.state = 'noleggio_dates'; session.ts = Date.now();
+    return dpTwimlResponse(res, `Hai scelto: *${cat.label}*\n\nIndica le date noleggio.\nEsempio: 20/05 - 22/05`);
+  }
+
+  if(session.state === 'noleggio_dates'){
+    const range = dpExtractRange(body);
+    if(!range) return dpTwimlResponse(res, 'Non riesco a leggere le date. Scrivile cosi: 20/05 - 22/05');
+    session.data.start = range.start; session.data.end = range.end; session.state = 'noleggio_km'; session.ts = Date.now();
+    return dpTwimlResponse(res, 'Quanti km prevedi di fare?\nEsempio: 400');
+  }
+
+  if(session.state === 'noleggio_km'){
+    const km = dpExtractKm(body);
+    const startIso = dpDateIso(session.data.start);
+    const endIso = dpDateIso(session.data.end);
+    const mezzo = await dpFindAvailableVehicle(session.data.cat, startIso, endIso);
+    if(!mezzo){
+      await dpNotify(DP_STAFF_NUMBERS, `â ï¸ RICHIESTA NOLEGGIO NON DISPONIBILE\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}`);
+      delete DP_BOT_SESSIONS[from];
+      return dpTwimlResponse(res, 'Mi dispiace, non risulta disponibilitÃ  per quelle date.\n\nLa richiesta Ã¨ stata inviata allo staff DP per controllo manuale.');
+    }
+    let calc = { totale: 0, giorni: dpDays(session.data.start, session.data.end) };
+    try{ calc = calcolaTotale(mezzo, startIso, endIso, '08:30', '18:00', km); }catch(e){ console.error(e.message); }
+    session.data.km = km; session.data.mezzo = mezzo; session.data.calc = calc; session.state = 'noleggio_confirm'; session.ts = Date.now();
+    return dpTwimlResponse(res, `â *Disponibile*\n\nMezzo: *${session.data.cat.label}*\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nGiorni: ${calc.giorni || dpDays(session.data.start, session.data.end)}\nKm previsti: ${km}\nPreventivo: *EUR ${euro(calc.totale || 0)}*\n\nConfermi il preventivo?\nRispondi *SI* oppure *NO*.`);
+  }
+
+  if(session.state === 'noleggio_confirm'){
+    const yn = dpYesNo(body);
+    if(yn === 'NO') { delete DP_BOT_SESSIONS[from]; return dpTwimlResponse(res, 'Preventivo annullato. Scrivi MENU per ricominciare.'); }
+    if(yn !== 'SI') return dpTwimlResponse(res, 'Rispondi SI per confermare oppure NO per annullare.');
+    const q = new URLSearchParams({
+      categoria: session.data.cat.cats[0] || '',
+      data_inizio: dpDateIso(session.data.start),
+      data_fine: dpDateIso(session.data.end),
+      km_previsti: String(session.data.km || 150),
+      telefono: from.replace('whatsapp:','')
+    });
+    const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
+    const link = `${base}/prenota?${q.toString()}`;
+    await dpNotify(DP_STAFF_NUMBERS, `ð PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
+    delete DP_BOT_SESSIONS[from];
+    return dpTwimlResponse(res, `Perfetto â\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verrÃ  preparato il contratto definitivo.`);
+  }
+
+  if(session.state === 'vendita'){
+    await dpNotify(DP_STAFF_NUMBERS, `ð NUOVA RICHIESTA VENDITA AUTO\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nRichiesta:\n${body}\n\nBacheca: ${DP_AUTOSUPERMARKET_URL}`);
+    delete DP_BOT_SESSIONS[from];
+    return dpTwimlResponse(res, 'â Richiesta inviata al reparto vendite DP AUTO.\n\nTi ricontatteremo al piÃ¹ presto.');
+  }
+
+  if(session.state === 'trasporto'){
+    await dpNotify(DP_STAFF_NUMBERS, `ð NUOVA RICHIESTA TRASPORTO VEICOLO\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nDati trasporto:\n${body}`);
+    delete DP_BOT_SESSIONS[from];
+    return dpTwimlResponse(res, 'â Richiesta trasporto ricevuta.\n\nL abbiamo inviata allo staff DP. Ti ricontatteremo per il preventivo.');
+  }
+
+  if(session.state === 'altro'){
+    const answer = await dpChatGPTAnswer(body);
+    await dpNotify(DP_STAFF_NUMBERS, `ð¬ ALTRA RICHIESTA / CHATGPT\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nMessaggio cliente:\n${body}\n\nRisposta bot:\n${answer}`);
+    return dpTwimlResponse(res, answer + '\n\nScrivi MENU per tornare al menu principale.');
+  }
+
+  dpReset(from, profileName);
+  return dpTwimlResponse(res, dpMenu(profileName));
+}
+
+app.post('/whatsapp', dpHandleWhatsApp);
+app.post('/webhook', dpHandleWhatsApp);
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP ONLINE porta ' + PORT);
+  console.log('DP RENT APP V87 COMPLETA + BOT WHATSAPP INTEGRATO ONLINE porta ' + PORT);
+  console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
