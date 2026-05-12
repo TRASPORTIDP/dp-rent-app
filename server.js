@@ -996,6 +996,7 @@ function page(title, content) {
 <head>
 <meta charset="utf-8">
 <title>${esc(title)}</title>
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 :root{--red:#c60000;--dark:#070707;--soft:#f4f4f4}
@@ -1071,6 +1072,7 @@ pre{border-radius:16px;padding:18px}
 <a href="/import-mezzi">Import Excel</a>
 <a href="/nuova-prenotazione">Nuova prenotazione</a>
 <a href="/clienti">Clienti</a>
+<a href="/cliente-nuovo">Nuovo cliente</a>
 <a href="/prenotazioni">Storico</a>
 <a href="/planning">Planning</a>
 <a href="/prenota">Pagina cliente</a>
@@ -2746,6 +2748,69 @@ app.post('/ocr-pro/applica', (req, res) => {
   salvaClienteStorico(dati, () => res.redirect('/nuova-prenotazione?ocr=' + encodeURIComponent(id)));
 });
 
+
+// =========================
+// V77 FIX: pagine manuali e redirect anti Cannot GET
+// =========================
+app.get('/prenota-admin', (req, res) => res.redirect('/nuova-prenotazione'));
+app.get('/ocr-pro/applica', (req, res) => res.redirect('/cliente-nuovo'));
+
+function clienteManualeForm(action, c = {}, titolo = 'Nuovo cliente manuale') {
+  const qv = (k, d='') => esc((c && c[k]) || d || '');
+  return `<div class="box">
+    <h2>${esc(titolo)}</h2>
+    <p class="notice">Puoi inserire il cliente tutto a mano, oppure usare OCR. Dopo il salvataggio puoi creare subito preventivo/contratto senza reinserire i dati.</p>
+    <div class="actions">
+      <a class="btn btn3" href="/ocr-pro">Usa OCR documento/patente</a>
+      <a class="btn btn2" href="/clienti">Archivio clienti</a>
+    </div>
+    <form method="POST" action="${action}">
+      <div class="grid">
+        <label>Nome<input name="nome" value="${qv('nome')}" required></label>
+        <label>Cognome<input name="cognome" value="${qv('cognome')}" required></label>
+        <label>Telefono<input name="telefono" value="${qv('telefono')}" required></label>
+        <label>Email<input type="email" name="email" value="${qv('email')}"></label>
+        <label>Codice fiscale<input name="codice_fiscale" value="${qv('codice_fiscale')}"></label>
+        <label>Data nascita<input type="date" name="data_nascita" value="${qv('data_nascita')}"></label>
+        <label>Luogo nascita<input name="luogo_nascita" value="${qv('luogo_nascita')}"></label>
+        <label>Indirizzo<input name="indirizzo" value="${qv('indirizzo')}"></label>
+        <label>CittÃ <input name="citta" value="${qv('citta')}"></label>
+        <label>CAP<input name="cap" value="${qv('cap')}"></label>
+        <label>Numero documento<input name="documento_numero" value="${qv('documento_numero')}"></label>
+        <label>Scadenza documento<input type="date" name="documento_scadenza" value="${qv('documento_scadenza')}"></label>
+        <label>Numero patente<input name="patente_numero" value="${qv('patente_numero')}"></label>
+        <label>Scadenza patente<input type="date" name="patente_scadenza" value="${qv('patente_scadenza')}"></label>
+        <label>Categoria patente<input name="categoria_patente" value="${qv('categoria_patente')}"></label>
+      </div>
+      <label>Note<textarea name="note_cliente">${qv('note_cliente') || qv('note')}</textarea></label>
+      <button class="btn" type="submit">Salva cliente</button>
+      <a class="btn btn2" href="/clienti">Annulla</a>
+    </form>
+  </div>`;
+}
+
+app.get('/cliente-nuovo', (req, res) => {
+  const tel = String(req.query.from || '').replace(/^whatsapp:/,'').replace(/^\+39/,'').replace(/^39/,'');
+  res.send(page('Nuovo cliente', clienteManualeForm('/cliente-nuovo', { telefono: tel }, 'Nuovo cliente manuale')));
+});
+
+app.post('/cliente-nuovo', (req, res) => {
+  const b = req.body || {};
+  salvaClienteStorico({
+    nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email,
+    codice_fiscale:b.codice_fiscale, indirizzo:b.indirizzo, citta:b.citta, cap:b.cap,
+    data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
+    documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
+    patente_numero:b.patente_numero, patente1:b.patente_numero,
+    patente_scadenza:b.patente_scadenza, patente1_scadenza:b.patente_scadenza,
+    categoria_patente:b.categoria_patente, note_cliente:b.note_cliente
+  }, (err, id) => {
+    if (err) return res.status(500).send(page('Errore salvataggio cliente', `<div class="box"><h2 class="bad">Errore salvataggio cliente</h2><pre>${esc(err.message)}</pre><a class="btn" href="/cliente-nuovo">Torna</a></div>`));
+    if (id) return res.redirect('/nuova-da-cliente/' + id);
+    res.redirect('/clienti');
+  });
+});
+
 app.get('/clienti', (req, res) => {
   const q = String(req.query.q || '').trim();
   let sql = `SELECT * FROM clienti WHERE 1=1`;
@@ -2768,7 +2833,7 @@ app.get('/clienti', (req, res) => {
     res.send(page('Clienti', `
       <div class="box"><h2>Storico clienti</h2>
       <form method="GET" action="/clienti"><input name="q" placeholder="Cerca nome, telefono, CF, patente" value="${esc(q)}"><button>Cerca</button></form>
-      <a class="btn btn3" href="/ocr-pro">Nuovo cliente con OCR PRO</a></div>
+      <a class="btn btn3" href="/ocr-pro">Nuovo cliente con OCR PRO</a> <a class="btn" href="/cliente-nuovo">Nuovo cliente manuale</a></div>
       <table><tr><th>Cliente</th><th>Contatti</th><th>CF</th><th>Documento</th><th>Patente</th><th>Azione</th></tr>${trs || '<tr><td colspan="6">Nessun cliente.</td></tr>'}</table>
     `));
   });
@@ -5700,6 +5765,35 @@ app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v76
 app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v76'));
 app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v76'));
 
+
+// =========================
+// V77 TWILIO WHATSAPP MENU DP RENT
+// =========================
+function twilioXml(message) {
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${esc(message)}</Message></Response>`;
+}
+
+app.post('/whatsapp', (req, res) => {
+  const body = String(req.body.Body || '').trim().toLowerCase();
+  const from = String(req.body.From || '');
+  const base = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+  let msg = '';
+  if (['1','officina'].includes(body)) {
+    msg = 'ð§ DP SERVICE / Officina\nScrivici il problema del mezzo, targa e quando vuoi venire. Ti richiamiamo appena possibile.';
+  } else if (['2','noleggio','rent','dp rent'].includes(body)) {
+    msg = `ð DP RENT - Noleggio\nPer iniziare apri la scheda cliente e inserisci i dati manualmente oppure con OCR documento/patente:\n${base}/cliente-nuovo?from=${encodeURIComponent(from)}\n\nDopo il salvataggio potrai creare preventivo o contratto senza reinserire tutto.`;
+  } else if (['3','vendita','auto','dp auto'].includes(body)) {
+    msg = 'ð DP AUTO - Vendita auto\nScrivici che auto cerchi o inviaci il link dell\'annuncio. Ti rispondiamo appena possibile.';
+  } else if (['4','trasporto'].includes(body)) {
+    msg = 'ð Trasporto auto\nInvia modello, targa/telaio se disponibile, ritiro, consegna e contatto. Prepariamo la quotazione.';
+  } else {
+    msg = 'Ciao, sono DP. Scegli un servizio:\n1ï¸â£ Officina\n2ï¸â£ Noleggio DP RENT\n3ï¸â£ Vendita auto DP AUTO\n4ï¸â£ Trasporto auto\n\nRispondi con il numero.';
+  }
+  res.type('text/xml').send(twilioXml(msg));
+});
+
+app.get('/twilio-webhook', (req, res) => res.send(page('Webhook Twilio', `<div class="box"><h2>Webhook WhatsApp Twilio</h2><p>Imposta questo URL in Twilio:</p><pre>${esc((process.env.APP_BASE_URL || (req.protocol + '://' + req.get('host'))) + '/whatsapp')}</pre></div>`)));
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS ONLINE porta ' + PORT);
+  console.log('DP RENT APP ONLINE porta ' + PORT);
 });
