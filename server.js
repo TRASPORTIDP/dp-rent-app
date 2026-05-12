@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -2294,7 +2293,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V76 FIX ROUTE SYNTAX CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V91 APP COMPLETA BOT + CLIENTI CRUD</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2742,12 +2741,12 @@ app.get('/clienti', (req, res) => {
         <td>${esc(c.codice_fiscale||'')}</td>
         <td>${esc(c.documento_numero||'')}<br>Scad. ${esc(c.documento_scadenza||'')}</td>
         <td>${esc(c.patente_numero||'')}<br>Scad. ${esc(c.patente_scadenza||'')}</td>
-        <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a></td>
+        <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a> <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica</a> <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina</a></td>
       </tr>`).join('');
     res.send(page('Clienti', `
       <div class="box"><h2>Storico clienti</h2>
       <form method="GET" action="/clienti"><input name="q" placeholder="Cerca nome, telefono, CF, patente" value="${esc(q)}"><button>Cerca</button></form>
-      <a class="btn btn3" href="/ocr-pro">Nuovo cliente con OCR PRO</a></div>
+      <a class="btn btn3" href="/cliente-nuovo">Nuovo cliente manuale</a> <a class="btn btn3" href="/ocr-pro">Nuovo cliente con OCR PRO</a></div>
       <table><tr><th>Cliente</th><th>Contatti</th><th>CF</th><th>Documento</th><th>Patente</th><th>Azione</th></tr>${trs || '<tr><td colspan="6">Nessun cliente.</td></tr>'}</table>
     `));
   });
@@ -2765,12 +2764,78 @@ app.get('/cliente/:id', (req, res) => {
       <p><b>Patente:</b> ${esc(c.patente_numero||'')} - scad. ${esc(c.patente_scadenza||'')} - cat. ${esc(c.categoria_patente||'')}</p>
       <p><b>Note:</b> ${esc(c.note||'')}</p>
       <a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto da cliente</a>
+      <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica cliente</a>
+      <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina cliente</a>
       <a class="btn btn2" href="/clienti">Torna clienti</a>
     </div>`));
   });
 });
 
 
+
+
+function clienteManualForm(c, action, title) {
+  c = c || {};
+  const val = k => esc(c[k] || '');
+  return page(title, `
+    <div class="box">
+      <h2>${esc(title)}</h2>
+      <p class="notice">Compilazione manuale completa. Questi dati vengono poi usati per contratto e Ca.R.G.O.S.</p>
+      <form method="POST" action="${action}">
+        <div class="grid">
+          <div><label>Nome</label><input name="nome" value="${val('nome')}" required></div>
+          <div><label>Cognome</label><input name="cognome" value="${val('cognome')}" required></div>
+          <div><label>Telefono</label><input name="telefono" value="${val('telefono')}"></div>
+          <div><label>Email</label><input name="email" value="${val('email')}"></div>
+          <div><label>Codice fiscale</label><input name="codice_fiscale" value="${val('codice_fiscale')}"></div>
+          <div><label>Data nascita</label><input type="date" name="data_nascita" value="${val('data_nascita')}"></div>
+          <div><label>Luogo nascita</label><input name="luogo_nascita" value="${val('luogo_nascita')}"></div>
+          <div><label>Indirizzo</label><input name="indirizzo" value="${val('indirizzo')}"></div>
+          <div><label>CittÃ </label><input name="citta" value="${val('citta')}"></div>
+          <div><label>CAP</label><input name="cap" value="${val('cap')}"></div>
+          <div><label>Numero documento</label><input name="documento_numero" value="${val('documento_numero')}"></div>
+          <div><label>Scadenza documento</label><input type="date" name="documento_scadenza" value="${val('documento_scadenza')}"></div>
+          <div><label>Numero patente</label><input name="patente_numero" value="${val('patente_numero')}"></div>
+          <div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${val('patente_scadenza')}"></div>
+          <div><label>Categoria patente</label><input name="categoria_patente" value="${val('categoria_patente')}"></div>
+        </div>
+        <label>Note</label><textarea name="note">${val('note')}</textarea>
+        <button>Salva cliente</button>
+        <a class="btn btn2" href="/clienti">Annulla</a>
+      </form>
+    </div>`);
+}
+function clienteManualData(b){
+  return {
+    nome:b.nome||'', cognome:b.cognome||'', telefono:b.telefono||'', email:b.email||'', codice_fiscale:String(b.codice_fiscale||'').toUpperCase(),
+    indirizzo:b.indirizzo||'', citta:b.citta||'', cap:b.cap||'', data_nascita:b.data_nascita||'', luogo_nascita:b.luogo_nascita||'',
+    documento_numero:b.documento_numero||'', documento_scadenza:b.documento_scadenza||'', patente_numero:b.patente_numero||'',
+    patente_scadenza:b.patente_scadenza||'', categoria_patente:b.categoria_patente||'', note:b.note||''
+  };
+}
+app.get('/cliente-nuovo', (req,res)=>res.send(clienteManualForm({}, '/cliente-nuovo', 'Nuovo cliente manuale')));
+app.post('/cliente-nuovo', (req,res)=>{
+  const d = clienteManualData(req.body);
+  db.run(`INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,note,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`,
+    [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.note],
+    function(err){ if(err) return res.status(500).send(page('Errore cliente', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); res.redirect('/cliente/'+this.lastID); });
+});
+app.get('/cliente/:id/modifica', (req,res)=>{
+  db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err,c)=>{ if(!c) return res.redirect('/clienti'); res.send(clienteManualForm(c, `/cliente/${c.id}/modifica`, 'Modifica cliente')); });
+});
+app.post('/cliente/:id/modifica', (req,res)=>{
+  const d = clienteManualData(req.body);
+  db.run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+    [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.note,req.params.id],
+    err=>{ if(err) return res.status(500).send(page('Errore modifica', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); res.redirect('/cliente/'+req.params.id); });
+});
+app.get('/cliente/:id/elimina', (req,res)=>{
+  db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err,c)=>{ if(!c) return res.redirect('/clienti'); res.send(page('Elimina cliente', `<div class="box"><h2 class="bad">Eliminare cliente ${esc(c.nome)} ${esc(c.cognome)}?</h2><p>I contratti giÃ  creati restano nello storico.</p><form method="POST" action="/cliente/${c.id}/elimina"><button class="btn bad" type="submit">SÃ¬, elimina cliente</button><a class="btn btn2" href="/cliente/${c.id}">Annulla</a></form></div>`)); });
+});
+app.post('/cliente/:id/elimina', (req,res)=>{
+  db.run(`DELETE FROM clienti WHERE id=?`, [req.params.id], ()=>res.redirect('/clienti'));
+});
 
 app.get('/nuova-da-cliente/:id', (req, res) => {
   db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err, c) => {
@@ -4027,6 +4092,13 @@ async function salvaDatiOcrSuContratto(id, b) {
          cognome=?,
          codice_fiscale=?,
          indirizzo=?,
+         data_nascita=COALESCE(NULLIF(?,''), data_nascita),
+         luogo_nascita=COALESCE(NULLIF(?,''), luogo_nascita),
+         documento_numero=COALESCE(NULLIF(?,''), documento_numero),
+         documento_scadenza=COALESCE(NULLIF(?,''), documento_scadenza),
+         patente_numero=COALESCE(NULLIF(?,''), patente_numero),
+         patente_scadenza=COALESCE(NULLIF(?,''), patente_scadenza),
+         categoria_patente=COALESCE(NULLIF(?,''), categoria_patente),
          patente1=COALESCE(NULLIF(?,''), patente1),
          patente1_scadenza=COALESCE(NULLIF(?,''), patente1_scadenza),
          note=COALESCE(note,'') || ?
@@ -4036,8 +4108,15 @@ async function salvaDatiOcrSuContratto(id, b) {
       b.cognome || current.cognome,
       b.codice_fiscale || current.codice_fiscale,
       b.indirizzo || current.indirizzo,
-      b.numero_patente || '',
-      b.data_scadenza || '',
+      b.data_nascita || '',
+      b.luogo_nascita || '',
+      b.numero_documento || b.documento_numero || '',
+      b.data_scadenza || b.documento_scadenza || '',
+      b.numero_patente || b.patente_numero || '',
+      b.patente_scadenza || b.data_scadenza || '',
+      b.categoria_patente || '',
+      b.numero_patente || b.patente_numero || '',
+      b.patente_scadenza || b.data_scadenza || '',
       noteExtra,
       id
     ]
@@ -4104,6 +4183,28 @@ app.get('/cliente-documenti/:id/:token', async (req, res) => {
       <p class="notice">Puoi caricare patente/documento. Dopo la lettura automatica controlli e confermi i dati.</p>
     </div>
     ${renderOcrUploadForm(`/cliente-documenti/${p.id}/${req.params.token}`, `/cliente-documenti/${p.id}/${req.params.token}`, 'Carica/scatta documento')}
+    <div class="box">
+      <h2>Compila dati manualmente</h2>
+      <p class="notice">Puoi compilare tutto anche senza OCR. I campi sono quelli necessari per contratto e Ca.R.G.O.S.</p>
+      <form method="POST" action="/cliente-documenti/${p.id}/${req.params.token}/salva">
+        <div class="grid">
+          <div><label>Nome</label><input name="nome" value="${esc(p.nome||'')}"></div>
+          <div><label>Cognome</label><input name="cognome" value="${esc(p.cognome||'')}"></div>
+          <div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(p.codice_fiscale||'')}"></div>
+          <div><label>Data nascita</label><input type="date" name="data_nascita" value="${esc(p.data_nascita||'')}"></div>
+          <div><label>Luogo nascita</label><input name="luogo_nascita" value="${esc(p.luogo_nascita||'')}"></div>
+          <div><label>Indirizzo</label><input name="indirizzo" value="${esc(p.indirizzo||'')}"></div>
+          <div><label>Numero documento</label><input name="numero_documento" value="${esc(p.documento_numero||'')}"></div>
+          <div><label>Ente rilascio documento</label><input name="ente_rilascio" value="${esc(p.documento_rilascio||'')}"></div>
+          <div><label>Data rilascio documento</label><input type="date" name="data_rilascio" value="${esc(p.documento_data_rilascio||'')}"></div>
+          <div><label>Scadenza documento</label><input type="date" name="data_scadenza" value="${esc(p.documento_scadenza||'')}"></div>
+          <div><label>Numero patente</label><input name="numero_patente" value="${esc(p.patente_numero||p.patente1||'')}"></div>
+          <div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${esc(p.patente_scadenza||p.patente1_scadenza||'')}"></div>
+          <div><label>Categoria patente</label><input name="categoria_patente" value="${esc(p.categoria_patente||'')}"></div>
+        </div>
+        <button>Salva dati manuali</button>
+      </form>
+    </div>
     <div class="box"><h3>File giÃ  caricati</h3><ul>${lista || '<li>Nessun file caricato</li>'}</ul></div>
   `));
 });
@@ -5983,7 +6084,6 @@ async function dpHandleWhatsApp(req,res){
   if(session.state === 'officina'){
     const codice = `OFF-${new Date().toISOString().slice(0,10).replace(/-/g,'')}-${Math.floor(1000 + Math.random()*9000)}`;
     const cal = await dpCreateCalendarEventOfficina(from, profileName, body);
-    const dr = await dpSaveRequestToDrive('OFFICINA DP', codice, from, profileName, body);
     const notif = await dpNotify(DP_OFFICINA_NUMBERS, `${EMJ.wrench} NUOVA RICHIESTA OFFICINA
 
 Codice pratica: ${codice}
@@ -5993,19 +6093,17 @@ WhatsApp: ${from}
 Richiesta:
 ${body}
 
-Calendar: ${cal.ok ? (cal.link || 'evento creato') : 'NON creato - ' + (cal.error || '-')}
-Drive: ${dr.ok ? (dr.link || 'file creato') : 'NON creato - ' + (dr.error || '-')}`);
+Calendar: ${cal.ok ? (cal.link || 'evento creato') : 'NON creato - ' + (cal.error || '-')}`);
     delete DP_BOT_SESSIONS[from];
     return dpTwimlResponse(res, `${EMJ.ok} Richiesta officina ricevuta.
 
 Codice pratica: ${codice}
 ${notif.ok ? 'Messaggio inviato allo staff DP.' : 'ATTENZIONE: messaggio staff non inviato. Errore: ' + (notif.errors || []).join(' | ')}
 ${cal.ok ? 'Evento inserito in Google Calendar.' : 'Calendar non creato: ' + (cal.error || '-')}
-${dr.ok ? 'Richiesta salvata su Google Drive.' : 'Drive non creato: ' + (dr.error || '-')}
-${dr.ok && dr.link ? '\nDrive: ' + dr.link : ''}
 
 Ti ricontatteremo per confermare appuntamento e orario.`);
   }
+
 
   if(session.state === 'noleggio_model'){
     const cat = dpCategoryFromChoice(body);
@@ -6092,6 +6190,6 @@ app.post('/whatsapp', dpHandleWhatsApp);
 app.post('/webhook', dpHandleWhatsApp);
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V90 COMPLETA + BOT WHATSAPP DRIVE OFFICINA NOTIFICHE FIX porta ' + PORT);
+  console.log('DP RENT APP V91 NO DRIVE OFFICINA + CRUD CLIENTI porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
