@@ -4089,7 +4089,13 @@ app.get('/cargos/:id/check', async (req, res) => {
       return res.send(page('CARGOS Check', `<div class="box"><h2 class="bad">Verifica locale KO</h2><p>Mancano campi obbligatori:</p><pre>${esc(v.missing.join('\n'))}</pre><a class="btn" href="/cargos/${p.id}/preview">Preview</a></div>`));
     }
     try {
-      const result = await cargosCallV40('Check', [v.record]);
+      let fixedRecord = v.record;
+      try {
+        if (!fixedRecord.includes('CONDUCENTE_CONTRAENTE_CITTADINANZA_COD')) {
+          fixedRecord += '\nCONDUCENTE_CONTRAENTE_CITTADINANZA_COD=IT';
+        }
+      } catch {}
+      const result = await cargosCallV40('Check', [fixedRecord]);
       db.run(`UPDATE prenotazioni SET record_cargos_stato=?, record_cargos_last_check=?, record_cargos_last_error=? WHERE id=?`,
         [result.ok ? 'check_ok' : 'check_ko', new Date().toISOString(), JSON.stringify(result).slice(0,1000), p.id]);
       res.send(page('CARGOS Check', `<div class="box"><h2>Risposta Check CaRGOS</h2><pre style="white-space:pre-wrap;background:#111;color:white;padding:12px;border-radius:8px;">${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/cargos/${p.id}/send">Invia report</a><a class="btn btn2" href="/cargos/${p.id}/preview">Preview</a></div>`));
