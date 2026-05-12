@@ -5835,13 +5835,13 @@ function v78Session(from) {
 }
 
 function v78Menu() {
-  return `ð *DP RENT / TRASPORTI DP*
+  return `*DP RENT / TRASPORTI DP*
 
 Scegli il servizio:
-1ï¸â£ Officina
-2ï¸â£ Noleggio
-3ï¸â£ Vendita auto
-4ï¸â£ Trasporto veicoli
+1) Officina
+2) Noleggio
+3) Vendita auto
+4) Trasporto veicoli
 
 Scrivi il numero.`;
 }
@@ -5856,6 +5856,38 @@ async function v78FindAvailableMezzo(categoria, data_inizio, data_fine) {
     if (!occ) return m;
   }
   return null;
+}
+
+async function v78FindAvailableMezzi(categoria, data_inizio, data_fine) {
+  let mezzi = await all(`SELECT * FROM mezzi WHERE (categoria=? OR tipo=? OR tipo=?) AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`, [categoria, categoria, categoria.toLowerCase()]);
+  if (!mezzi.length && categoria === 'FURGONE') mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%furg%' OR categoria LIKE '%FURG%') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
+  if (!mezzi.length && categoria === '9_POSTI') mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%pulmino%' OR modello LIKE '%transit%' OR posti LIKE '%9%' OR categoria='9_POSTI') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
+  if (!mezzi.length && (categoria === 'AUTO_DACIA' || categoria === 'AUTO_GOLF')) mezzi = await all(`SELECT * FROM mezzi WHERE (tipo LIKE '%auto%' OR categoria LIKE 'AUTO_%') AND COALESCE(stato,'attivo') != 'non_attivo' ORDER BY id ASC`);
+
+  const disponibili = [];
+  for (const m of mezzi) {
+    const occ = await queryDisponibilita(m.id, data_inizio, data_fine);
+    if (!occ) disponibili.push(m);
+  }
+  return disponibili;
+}
+
+function v78YesNo(value) {
+  const t = String(value || '')
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+  if (['si','s','ok','confermo','yes'].includes(t)) return 'SI';
+  if (['no','n','annulla','annullo'].includes(t)) return 'NO';
+  return '';
+}
+
+function v78PublicMezziList(mezzi, data_inizio, data_fine, km_previsti) {
+  return mezzi.slice(0, 8).map((m, i) => {
+    const calc = calcolaTotale(m, data_inizio, data_fine, '08:30', '18:00', km_previsti);
+    return `${i + 1}) ${descrizionePubblica(m)} - â¬ ${euro(calc.totale)}`;
+  }).join('\n');
 }
 
 async function v78EnsurePracticeTable() {
@@ -6053,31 +6085,95 @@ app.post('/whatsapp', async (req, res) => {
       const km = v78ExtractKm(bodyRaw);
       if (!km) return res.type('text/xml').send(v78TwilioXml('Scrivi solo i km previsti. Esempio: 400'));
       s.km_previsti = km;
-      const mezzo = await v78FindAvailableMezzo(s.categoria, s.data_inizio, s.data_fine);
-      if (!mezzo) {
+
+      const mezzi = await v78FindAvailableMezzi(s.categoria, s.data_inizio, s.data_fine);
+      if (!mezzi.length) {
         s.state = 'ask_dates';
-        return res.type('text/xml').send(v78TwilioXml(`Mi dispiace, al momento non risulta disponibile un ${v78CategoryLabel(s.categoria)} per quelle date.\n\nVuoi provare altre date? Scrivi tipo: 24/05 - 26/05`));
+        return res.type('text/xml').send(v78TwilioXml(`Mi dispiace, al momento non risulta disponibile un ${v78CategoryLabel(s.categoria)} per quelle date.
+
+Vuoi provare altre date? Scrivi tipo: 24/05 - 26/05`));
       }
+
+      s.mezziDisponibili = mezzi.slice(0, 8);
+      s.state = 'choose_model';
+
+      await v78SendInternal(V78_INTERNAL_NUMBERS, `RICHIESTA PREVENTIVO WHATSAPP
+
+Tel: ${from}
+Categoria: ${v78CategoryLabel(s.categoria)}
+Richiesta: ${s.requestedVehicle || '-'}
+Periodo: ${s.data_inizio} - ${s.data_fine}
+Km: ${s.km_previsti}
+Mezzi disponibili interni:
+${s.mezziDisponibili.map((m,i)=>`${i+1}) ${m.targa || '-'} ${m.marca || ''} ${m.modello || ''}`).join('\\n')}`);
+
+      msg = `Disponibile. Scegli il modello:
+
+${v78PublicMezziList(s.mezziDisponibili, s.data_inizio, s.data_fine, s.km_previsti)}
+
+Scrivi solo il numero del modello scelto.`;
+      return res.type('text/xml').send(v78TwilioXml(msg));
+    }
+
+    if (s.state === 'choose_model') {
+      const scelta = Number(String(bodyRaw || '').trim());
+      const mezzo = s.mezziDisponibili && s.mezziDisponibili[scelta - 1];
+      if (!mezzo) {
+        return res.type('text/xml').send(v78TwilioXml('Scelta non valida. Scrivi solo il numero del modello, esempio: 1'));
+      }
+
       s.mezzo = mezzo;
       s.calc = calcolaTotale(mezzo, s.data_inizio, s.data_fine, '08:30', '18:00', s.km_previsti);
       s.state = 'confirm_quote';
-      msg = `â *Disponibile*\n\nMezzo: *${descrizionePubblica(mezzo)}*\nPeriodo: ${s.dateLabel}\nKm previsti: ${s.km_previsti}\n\nð° *Preventivo:* â¬ ${euro(s.calc.totale)}\nCaparra: â¬ ${euro(mezzo.cauzione || CAUZIONE)} gestita separatamente.\n\nConfermi il preventivo? Rispondi *SI* oppure *NO*.`;
+
+      msg = `Disponibile
+
+Mezzo: *${descrizionePubblica(mezzo)}*
+Periodo: ${s.dateLabel}
+Km previsti: ${s.km_previsti}
+
+Preventivo: â¬ ${euro(s.calc.totale)}
+Caparra: â¬ ${euro(mezzo.cauzione || CAUZIONE)} gestita separatamente.
+
+Confermi il preventivo? Rispondi *SI* oppure *NO*.`;
       return res.type('text/xml').send(v78TwilioXml(msg));
     }
 
     if (s.state === 'confirm_quote') {
-      if (body === 'no' || body === 'n') {
+      const conferma = v78YesNo(bodyRaw);
+      if (conferma === 'NO') {
         v78WaSessions[from] = v78NewSession();
+        await v78SendInternal(V78_INTERNAL_NUMBERS, `PREVENTIVO WHATSAPP ANNULLATO
+
+Tel: ${from}
+Categoria: ${v78CategoryLabel(s.categoria)}
+Periodo: ${s.data_inizio || '-'} - ${s.data_fine || '-'}`);
         return res.type('text/xml').send(v78TwilioXml('Preventivo annullato. Scrivi menu per ricominciare.'));
       }
-      if (!['si','sÃ¬','s','ok','confermo'].includes(body)) {
+      if (conferma !== 'SI') {
         return res.type('text/xml').send(v78TwilioXml('Rispondi SI per confermare oppure NO per annullare.'));
       }
       const ref = await v78CreatePractice(from, s);
       const link = `${base}/cliente-web?ref=${encodeURIComponent(ref)}`;
-      try { await v78SendInternal(V78_INTERNAL_NUMBERS, `ð² PREVENTIVO WHATSAPP CONFERMATO\n\nTel: ${from}\nCategoria: ${v78CategoryLabel(s.categoria)}\nMezzo interno: ${s.mezzo.targa || ''} ${s.mezzo.marca || ''} ${s.mezzo.modello || ''}\nPeriodo: ${s.data_inizio} - ${s.data_fine}\nTotale: â¬ ${euro(s.calc.totale)}\nLink cliente: ${link}`); } catch(e) {}
+      try { await v78SendInternal(V78_INTERNAL_NUMBERS, `PREVENTIVO WHATSAPP CONFERMATO
+
+Tel: ${from}
+Categoria: ${v78CategoryLabel(s.categoria)}
+Mezzo interno: ${s.mezzo.targa || ''} ${s.mezzo.marca || ''} ${s.mezzo.modello || ''}
+Mezzo cliente: ${descrizionePubblica(s.mezzo)}
+Periodo: ${s.data_inizio} - ${s.data_fine}
+Km: ${s.km_previsti}
+Totale: â¬ ${euro(s.calc.totale)}
+Link cliente: ${link}`); } catch(e) {}
       v78WaSessions[from] = v78NewSession();
-      msg = `Perfetto â\n\nPer completare la pratica apri questo link e inserisci tutti i dati richiesti.\nPuoi compilare manualmente e caricare foto documento/patente.\n\n${link}\n\nDP RENT controllerÃ  i dati prima del contratto definitivo.`;
+      msg = `Perfetto.
+
+Per completare la pratica apri questo link e inserisci tutti i dati richiesti.
+Puoi compilare manualmente e caricare foto documento/patente.
+
+${link}
+
+DP RENT controllerÃ  i dati prima del contratto definitivo.`;
       return res.type('text/xml').send(v78TwilioXml(msg));
     }
 
