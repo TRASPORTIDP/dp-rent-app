@@ -5686,3 +5686,20 @@ app.get('/admin/fix-tutto-v76', (req, res) => {
     <p>Record Ca.R.G.O.S.: VEICOLO_TIPO una sola volta, lunghezza 1505.</p>
     <a class="btn" href="/">Dashboard</a>
     <a class="btn btn2" href="/storico">Storico</a>
+  </div>`;
+  if (typeof page === 'function') return res.send(page('FIX V76 OK', html));
+  res.send(html);
+});
+
+app.get('/admin/fix-tutto-v75', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v74', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v73', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v72', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v71', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v70', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v69', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v76'));
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS ONLINE porta ' + PORT);
+});
