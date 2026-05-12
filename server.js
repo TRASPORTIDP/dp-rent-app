@@ -3180,40 +3180,229 @@ app.post('/prenota-admin', async (req, res) => {
     res.status(500).send(page('Errore prenotazione', `<div class="box"><h2 class="bad">Errore prenotazione</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
   }
 });
+
+// =========================
+// V92 PAGINA CLIENTE PULITA - SOLO CLIENTE, MANUALE + FOTO/OCR
+// =========================
+function clienteWebVal(req, key, fallback='') {
+  return esc((req.query && req.query[key]) || fallback || '');
+}
+function clienteWebSelected(req, key, value, fallback='') {
+  const v = (req.query && req.query[key]) || fallback || '';
+  return String(v) === String(value) ? 'selected' : '';
+}
+function clienteWebHtml(req) {
+  const categoria = (req.query && req.query.categoria) || '';
+  const dataInizio = (req.query && req.query.data_inizio) || '';
+  const dataFine = (req.query && req.query.data_fine) || '';
+  const km = (req.query && req.query.km_previsti) || '150';
+  return `<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>DP RENT - Dati cliente</title>
+<style>
+:root{--dp-red:#d70000;--dp-dark:#101015;--dp-blue:#173b8f;--bg:#eef4ff;--card:#fff;--line:#d9dbe7;--green:#1f7a36}
+*{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#edf5ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;font-size:18px}
+.hero{background:linear-gradient(135deg,#07111f,#163d91);color:#fff;padding:28px 22px 30px;border-radius:0 0 28px 28px;box-shadow:0 12px 35px rgba(0,0,0,.18)}
+.hero h1{margin:0;font-size:38px;letter-spacing:.5px}.hero p{font-size:20px;line-height:1.35;margin:12px 0 0;opacity:.95}.pill{display:inline-block;background:#fff;color:#163d91;font-weight:900;border-radius:999px;padding:10px 16px;margin:14px 8px 0 0}
+.wrap{max-width:900px;margin:20px auto;padding:0 14px 36px}.card{background:var(--card);border:1px solid #e3e7f2;border-radius:24px;padding:22px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.08)}
+h2{font-size:30px;margin:0 0 16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} label{display:block;font-weight:900;margin:10px 0 7px;font-size:17px;color:#111827}
+input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none} input:focus,select:focus,textarea:focus{border-color:#3159c7;box-shadow:0 0 0 4px rgba(49,89,199,.12)}
+textarea{min-height:110px}.full{grid-column:1/-1}.notice{background:#fff8df;border:1px solid #f1d98a;border-radius:20px;padding:16px;line-height:1.35;font-size:18px}.okbox{background:#ecfff1;border:1px solid #b8efc4;border-radius:20px;padding:16px;line-height:1.35}.btn{border:0;border-radius:20px;background:linear-gradient(135deg,#e21818,#a80d0d);color:#fff;padding:18px 24px;font-size:24px;font-weight:900;box-shadow:0 12px 25px rgba(210,0,0,.25);width:100%;margin-top:18px}.btn2{display:inline-block;text-decoration:none;text-align:center;background:#24242b;color:#fff;border-radius:18px;padding:14px 18px;font-weight:900;margin-top:8px}.file{padding:14px;background:#f7f8fc}.small{font-size:15px;color:#596275;font-weight:700}@media(max-width:720px){.grid{grid-template-columns:1fr}.hero h1{font-size:32px}body{font-size:17px}input,select,textarea{font-size:19px}.card{padding:18px;border-radius:22px}}
+</style>
+<script>
+function toggleAzienda(){var t=document.querySelector('[name="tipo_cliente"]').value;var box=document.getElementById('aziendaBox');box.style.display=(t==='azienda')?'grid':'none'}
+window.addEventListener('DOMContentLoaded',toggleAzienda)
+</script>
+</head>
+<body>
+<section class="hero">
+  <h1>DP RENT</h1>
+  <p>Preventivo confermato. Compila tutti i dati per preparare pratica interna, contratto e controlli Ca.R.G.O.S.</p>
+  <span class="pill">${clienteWebVal(req,'ref','Pratica cliente')}</span>
+  ${categoria ? `<span class="pill">${esc(categoria)}</span>` : ''}
+</section>
+<div class="wrap">
+<form method="POST" action="/prenota-cliente" enctype="multipart/form-data">
+  <input type="hidden" name="ref" value="${clienteWebVal(req,'ref')}">
+  <div class="card">
+    <h2>Mezzo e periodo</h2>
+    <div class="grid">
+      <div class="full"><label>Tipo mezzo richiesto</label><select name="categoria" required>
+        <option value="FURGONE" ${categoria==='FURGONE'?'selected':''}>Furgone cargo/merci</option>
+        <option value="9_POSTI" ${categoria==='9_POSTI'?'selected':''}>Pulmino 8/9 posti</option>
+        <option value="AUTO_DACIA" ${categoria==='AUTO_DACIA'?'selected':''}>Auto economica</option>
+        <option value="AUTO_GOLF" ${categoria==='AUTO_GOLF'?'selected':''}>Auto categoria Golf</option>
+        <option value="ESCAVATORE" ${categoria==='ESCAVATORE'?'selected':''}>Escavatore / mezzo speciale</option>
+        <option value="SEMOVENTE" ${categoria==='SEMOVENTE'?'selected':''}>Piattaforma / semovente</option>
+      </select><div class="small">La targa resta interna a DP RENT.</div></div>
+      <div><label>Data ritiro</label><input type="date" name="data_inizio" value="${esc(dataInizio)}" required></div>
+      <div><label>Ora ritiro</label><input type="time" name="ora_inizio" value="${clienteWebVal(req,'ora_inizio','08:30')}"></div>
+      <div><label>Data riconsegna</label><input type="date" name="data_fine" value="${esc(dataFine)}" required></div>
+      <div><label>Ora riconsegna</label><input type="time" name="ora_fine" value="${clienteWebVal(req,'ora_fine','18:00')}"></div>
+      <div><label>Km previsti</label><input type="number" name="km_previsti" value="${esc(km)}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Dati cliente / conducente</h2>
+    <p class="notice">Puoi compilare manualmente tutti i campi e caricare le foto. L'ufficio DP controllerÃ  i dati prima del contratto definitivo.</p>
+    <div class="grid">
+      <div><label>Nome</label><input name="nome" value="${clienteWebVal(req,'nome')}" required></div>
+      <div><label>Cognome</label><input name="cognome" value="${clienteWebVal(req,'cognome')}" required></div>
+      <div><label>Telefono</label><input name="telefono" value="${clienteWebVal(req,'telefono')}" required></div>
+      <div><label>Email</label><input type="email" name="email" value="${clienteWebVal(req,'email')}"></div>
+      <div><label>Codice fiscale</label><input name="codice_fiscale" value="${clienteWebVal(req,'codice_fiscale')}" style="text-transform:uppercase"></div>
+      <div><label>Data nascita</label><input type="date" name="data_nascita" value="${clienteWebVal(req,'data_nascita')}"></div>
+      <div><label>Luogo nascita</label><input name="luogo_nascita" value="${clienteWebVal(req,'luogo_nascita')}"></div>
+      <div><label>Cittadinanza codice</label><input name="cittadinanza_cod" value="${clienteWebVal(req,'cittadinanza_cod','100000100')}"></div>
+      <div class="full"><label>Indirizzo residenza</label><input name="indirizzo" value="${clienteWebVal(req,'indirizzo')}"></div>
+      <div><label>CittÃ </label><input name="citta" value="${clienteWebVal(req,'citta')}"></div>
+      <div><label>Provincia</label><input name="provincia" value="${clienteWebVal(req,'provincia')}"></div>
+      <div><label>CAP</label><input name="cap" value="${clienteWebVal(req,'cap')}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Documento e patente</h2>
+    <div class="grid">
+      <div><label>Tipo documento</label><select name="documento_tipo"><option value="IDENT">Carta identitÃ </option><option value="PASS">Passaporto</option><option value="PATENTE">Patente</option></select></div>
+      <div><label>Numero documento</label><input name="documento_numero" value="${clienteWebVal(req,'documento_numero')}"></div>
+      <div><label>Data rilascio documento</label><input type="date" name="documento_rilascio" value="${clienteWebVal(req,'documento_rilascio')}"></div>
+      <div><label>Scadenza documento</label><input type="date" name="documento_scadenza" value="${clienteWebVal(req,'documento_scadenza')}"></div>
+      <div><label>Luogo rilascio documento COD</label><input name="record_cargos_doc_luogoril_cod" value="${clienteWebVal(req,'record_cargos_doc_luogoril_cod')}"></div>
+      <div><label>Numero patente</label><input name="patente_numero" value="${clienteWebVal(req,'patente_numero')}"></div>
+      <div><label>Categoria patente</label><input name="categoria_patente" value="${clienteWebVal(req,'categoria_patente')}"></div>
+      <div><label>Data rilascio patente</label><input type="date" name="patente_rilascio" value="${clienteWebVal(req,'patente_rilascio')}"></div>
+      <div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${clienteWebVal(req,'patente_scadenza')}"></div>
+      <div><label>Luogo rilascio patente COD</label><input name="record_cargos_patente_luogoril_cod" value="${clienteWebVal(req,'record_cargos_patente_luogoril_cod')}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Fatturazione</h2>
+    <div class="grid">
+      <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato">Privato</option><option value="azienda">Azienda</option></select></div>
+    </div>
+    <div class="grid" id="aziendaBox">
+      <div class="full"><label>Ragione sociale</label><input name="ragione_sociale" value="${clienteWebVal(req,'ragione_sociale')}"></div>
+      <div><label>Partita IVA</label><input name="partita_iva" value="${clienteWebVal(req,'partita_iva')}"></div>
+      <div><label>PEC</label><input name="pec" value="${clienteWebVal(req,'pec')}"></div>
+      <div><label>Codice SDI</label><input name="codice_sdi" value="${clienteWebVal(req,'codice_sdi')}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Foto documento / patente</h2>
+    <div class="grid">
+      <div><label>Documento fronte</label><input class="file" type="file" name="documento_fronte" accept="image/*,application/pdf" capture="environment"></div>
+      <div><label>Documento retro</label><input class="file" type="file" name="documento_retro" accept="image/*,application/pdf" capture="environment"></div>
+      <div><label>Patente fronte</label><input class="file" type="file" name="patente_fronte" accept="image/*,application/pdf" capture="environment"></div>
+      <div><label>Patente retro</label><input class="file" type="file" name="patente_retro" accept="image/*,application/pdf" capture="environment"></div>
+      <div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Note</h2>
+    <textarea name="note" placeholder="Scrivi eventuali note per DP RENT">${clienteWebVal(req,'note')}</textarea>
+    ${privacyCheckboxHtml()}
+    <button class="btn" type="submit">Invia dati a DP RENT</button>
+  </div>
+</form>
+</div>
+</body></html>`;
+}
+
+async function ensureClienteWebColumnsV92(){
+  const cols = {
+    data_nascita:'TEXT', luogo_nascita:'TEXT', cittadinanza_cod:'TEXT', conducente_cittadinanza_cod:'TEXT',
+    documento_tipo:'TEXT', documento_numero:'TEXT', documento_scadenza:'TEXT', documento_rilascio:'TEXT',
+    record_cargos_doc_luogoril_cod:'TEXT', record_cargos_patente_luogoril_cod:'TEXT',
+    patente_numero:'TEXT', patente_scadenza:'TEXT', patente_rilascio:'TEXT', categoria_patente:'TEXT',
+    tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT',
+    provincia:'TEXT', citta:'TEXT', cap:'TEXT', giorni:'INTEGER', km_previsti:'TEXT', extra_fuori_orario:'REAL', extra_km:'REAL', imponibile:'REAL', iva:'REAL', cauzione:'REAL', tipo_record:'TEXT', note:'TEXT'
+  };
+  for (const [c,t] of Object.entries(cols)) await run(`ALTER TABLE prenotazioni ADD COLUMN ${c} ${t}`).catch(()=>{});
+}
+
 app.get('/prenota', (req, res) => {
-  res.send(page('Prenota DP RENT', `
-    <h2>Richiesta prenotazione cliente</h2>
-    <p class="notice">Il cliente sceglie solo la categoria. La targa resta interna.</p>
-    <form method="POST" action="/prenota-cliente">
-      <div class="grid">
-        <div><label>Tipo mezzo</label><select name="categoria" required><option value="FURGONE">Furgone cargo/merci</option><option value="9_POSTI">Pulmino 9 posti</option><option value="AUTO_DACIA">Auto economica</option><option value="AUTO_GOLF">Auto categoria Golf</option><option value="ESCAVATORE">Escavatore</option><option value="SEMOVENTE">Piattaforma / semovente</option></select></div>
-        <div><label>Nome</label><input name="nome" value="${esc((req.query && req.query.nome) || '')}" required></div><div><label>Cognome</label><input name="cognome" value="${esc((req.query && req.query.cognome) || '')}" required></div><div><label>Telefono</label><input name="telefono" value="${esc((req.query && req.query.telefono) || '')}" required></div><div><label>Email</label><input name="email" value="${esc((req.query && req.query.email) || '')}"></div><div><label>Codice fiscale</label><input name="codice_fiscale" value="${esc((req.query && req.query.codice_fiscale) || '')}"></div><div><label>Indirizzo</label><input name="indirizzo" value="${esc((req.query && req.query.indirizzo) || '')}"></div><div><label>Data inizio</label><input type="date" name="data_inizio" required></div><div><label>Ora inizio</label><input type="time" name="ora_inizio" value="08:30"></div><div><label>Data fine</label><input type="date" name="data_fine" required></div><div><label>Ora fine</label><input type="time" name="ora_fine" value="18:00"></div><div><label>Km previsti</label><input type="number" name="km_previsti" value="150"></div>
-      </div>${privacyCheckboxHtml()}<button>Invia richiesta</button></form>`));
+  res.setHeader('Content-Type','text/html; charset=utf-8');
+  res.send(clienteWebHtml(req));
 });
-app.post('/prenota-cliente', async (req, res) => {
+
+app.post('/prenota-cliente', upload.fields([
+  {name:'documento_fronte', maxCount:1}, {name:'documento_retro', maxCount:1},
+  {name:'patente_fronte', maxCount:1}, {name:'patente_retro', maxCount:1},
+  {name:'altri_allegati', maxCount:20}
+]), async (req, res) => {
   try {
-    const b = req.body;
+    await ensureClienteWebColumnsV92();
+    const b = req.body || {};
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
-    if (erroreDate) return res.send(page('Errore date', `<h2 class="bad">${esc(erroreDate)}</h2>`));
-    const mezzi = await all(`SELECT * FROM mezzi WHERE categoria=? ORDER BY id ASC`, [b.categoria]);
-    if (!mezzi.length) return res.send(page('Nessun mezzo', '<h2>Nessun mezzo per questa categoria</h2>'));
+    if (erroreDate) return res.send(`<!doctype html><meta charset="utf-8"><h1>Errore date</h1><p>${esc(erroreDate)}</p><a href="javascript:history.back()">Torna</a>`);
+
+    const mezzi = await all(`SELECT * FROM mezzi WHERE categoria=? OR tipo=? ORDER BY id ASC`, [b.categoria, b.categoria]);
+    if (!mezzi.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Nessun mezzo</h1><p>Nessun mezzo configurato per questa categoria.</p>`);
     let mezzo = null;
     for (const m of mezzi) {
       const occ = await queryDisponibilita(m.id, b.data_inizio, b.data_fine);
       if (!occ) { mezzo = m; break; }
     }
-    if (!mezzo) return res.send(page('Non disponibile', '<h2>Nessun mezzo libero nelle date richieste</h2>'));
-    const calc = calcolaTotale(mezzo, b.data_inizio, b.data_fine, b.ora_inizio, b.ora_fine, b.km_previsti);
-    const result = await run(`
-      INSERT INTO prenotazioni
-      (codice,nome,cognome,telefono,email,codice_fiscale,indirizzo,tipo_cliente,mezzo_id,data_inizio,data_fine,ora_inizio,ora_fine,giorni,km_previsti,extra_fuori_orario,extra_km,imponibile,iva,totale,cauzione,stato)
-      VALUES ('TEMP',?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `, [b.nome,b.cognome,b.telefono,b.email,b.codice_fiscale,b.indirizzo,'privato',mezzo.id,b.data_inizio,b.data_fine,b.ora_inizio || '08:30',b.ora_fine || '18:00',calc.giorni,Number(b.km_previsti || 0),calc.extra_fuori_orario,calc.extraKm,calc.imponibile,calc.iva,calc.totale,CAUZIONE,'richiesta_cliente']);
+    if (!mezzo) return res.send(`<!doctype html><meta charset="utf-8"><h1>Non disponibile</h1><p>Nessun mezzo libero nelle date richieste. DP RENT ti ricontatterÃ .</p>`);
+
+    const calc = calcolaTotale(mezzo, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00', b.km_previsti || 150);
+    const data = {
+      codice:'TEMP', nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email,
+      codice_fiscale:String(b.codice_fiscale || '').toUpperCase(), indirizzo:b.indirizzo, citta:b.citta, provincia:b.provincia, cap:b.cap,
+      data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita, cittadinanza_cod:b.cittadinanza_cod || '100000100', conducente_cittadinanza_cod:b.cittadinanza_cod || '100000100',
+      documento_tipo:b.documento_tipo || 'IDENT', documento_numero:b.documento_numero, documento_rilascio:b.documento_rilascio, documento_scadenza:b.documento_scadenza,
+      record_cargos_doc_luogoril_cod:b.record_cargos_doc_luogoril_cod, record_cargos_patente_luogoril_cod:b.record_cargos_patente_luogoril_cod,
+      patente_numero:b.patente_numero, patente_rilascio:b.patente_rilascio, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
+      tipo_cliente:b.tipo_cliente || 'privato', partita_iva:b.partita_iva || b.piva, piva:b.partita_iva || b.piva, ragione_sociale:b.ragione_sociale, pec:b.pec, codice_sdi:b.codice_sdi || b.sdi, sdi:b.codice_sdi || b.sdi,
+      mezzo_id:mezzo.id, targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '', tipo:mezzo.tipo || '', categoria:b.categoria || mezzo.categoria || mezzo.tipo || '',
+      data_inizio:b.data_inizio, data_fine:b.data_fine, ora_inizio:b.ora_inizio || '08:30', ora_fine:b.ora_fine || '18:00', giorni:calc.giorni,
+      km_previsti:Number(b.km_previsti || 0), extra_fuori_orario:calc.extra_fuori_orario, extra_km:calc.extraKm,
+      imponibile:calc.imponibile, iva:calc.iva, totale:calc.totale, cauzione:mezzo.cauzione || CAUZIONE,
+      stato:'richiesta_cliente', tipo_record:'preventivo', note:b.note || ''
+    };
+    const cols = Object.keys(data);
+    const result = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`, cols.map(k=>data[k]));
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
-    res.send(page('Richiesta inviata', `<div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice: <b>${cod}</b></p><p>Totale previsto: <b>â¬ ${euro(calc.totale)}</b></p><p>DP RENT confermera la prenotazione.</p></div>`));
+
+    // Salva cliente nello storico clienti per non reinserirlo ogni volta
+    try { salvaClienteStorico({
+      nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
+      indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
+      documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
+      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente
+    }, ()=>{}); } catch(_) {}
+
+    const files = [];
+    for (const [tipo, arr] of Object.entries(req.files || {})) {
+      for (const f of (arr || [])) files.push({ tipo, f });
+    }
+    for (const item of files) {
+      await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`,
+        [result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]);
+    }
+
+    try { if (typeof uploadContractAssetsToDrive === 'function') await uploadContractAssetsToDrive(result.lastID); } catch(e) { console.log('Drive cliente warning:', e.message); }
+
+    // Notifica interna se il bot Twilio Ã¨ configurato
+    try {
+      if (typeof dpNotify === 'function') {
+        await dpNotify(DP_STAFF_NUMBERS || [], `NUOVA RICHIESTA NOLEGGIO CLIENTE\n\nCodice: ${cod}\nCliente: ${b.nome || ''} ${b.cognome || ''}\nTel: ${b.telefono || ''}\nMezzo: ${b.categoria || ''}\nPeriodo: ${b.data_inizio} - ${b.data_fine}\nTotale previsto: EUR ${euro(calc.totale)}\nAllegati: ${files.length}\n\nApri gestionale: ${(process.env.APP_BASE_URL || '').replace(/\/+$/,'')}/prenotazione/${result.lastID}`);
+      }
+    } catch(e) { console.log('Notifica cliente warning:', e.message); }
+
+    res.setHeader('Content-Type','text/html; charset=utf-8');
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial;background:#eef4ff;margin:0;padding:22px;color:#111}.hero{background:linear-gradient(135deg,#07111f,#173b8f);color:#fff;border-radius:28px;padding:28px;margin-bottom:20px}.box{background:#fff;border-radius:24px;padding:22px;box-shadow:0 12px 35px #0001}.ok{color:#157c2d;font-size:36px}.code{font-size:28px;font-weight:900}.btn{display:inline-block;background:#d70000;color:#fff;padding:14px 20px;border-radius:18px;text-decoration:none;font-weight:900;margin-top:18px}</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerÃ  i dati e ti confermerÃ  contratto e disponibilitÃ .</p><p>Foto ricevute: <b>${files.length}</b></p></div></body></html>`);
   } catch (e) {
-    res.status(500).send(page('Errore', `<pre>${esc(e.message)}</pre>`));
+    res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore invio dati</h1><pre>${esc(e.stack || e.message)}</pre><a href="javascript:history.back()">Torna</a>`);
   }
 });
 
