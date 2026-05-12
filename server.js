@@ -38,7 +38,21 @@ let db = loadDb();
 const sessions = {};
 const processedSids = new Map();
 
-const E = { ok:'OK', warn:'ATTENZIONE', wrench:'OFFICINA', car:'NOLEGGIO', money:'VENDITA', truck:'TRASPORTO', phone:'TEL', robot:'INFO' };
+const ICON = {
+  one: '\u0031\uFE0F\u20E3',
+  two: '\u0032\uFE0F\u20E3',
+  three: '\u0033\uFE0F\u20E3',
+  four: '\u0034\uFE0F\u20E3',
+  five: '\u0035\uFE0F\u20E3',
+  wrench: '\u{1F527}',
+  car: '\u{1F697}',
+  money: '\u{1F4B0}',
+  truck: '\u{1F69A}',
+  phone: '\u{1F4DE}',
+  pen: '\u270D\uFE0F',
+  ok: '\u2705',
+  warn: '\u26A0\uFE0F'
+};
 
 function loadDb() {
   try { return JSON.parse(fs.readFileSync(DB_FILE, 'utf8')); }
@@ -205,6 +219,12 @@ async function getDriveClient() {
 }
 
 async function getGoogleCredentials() {
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
+    return {
+      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      private_key: String(process.env.GOOGLE_PRIVATE_KEY).replace(/\\n/g, '\n')
+    };
+  }
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64) return JSON.parse(Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64, 'base64').toString('utf8'));
   if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
   if (process.env.GOOGLE_APPLICATION_CREDENTIALS && fs.existsSync(process.env.GOOGLE_APPLICATION_CREDENTIALS)) return JSON.parse(fs.readFileSync(process.env.GOOGLE_APPLICATION_CREDENTIALS, 'utf8'));
@@ -333,11 +353,11 @@ async function handleWhatsApp(req, res) {
     }
 
     if (!body && !media.length) return respondTwiml(res, twiml);
-    if (['menu','inizio','ciao','reset','start'].includes(norm(body))) {
+
+    const lowerBody = norm(body);
+    const MENU_WORDS = ['menu', 'inizio', 'ciao', 'salve', 'buongiorno', 'buonasera', 'reset', 'start', 'info', 'informazioni', 'aiuto'];
+    if (MENU_WORDS.includes(lowerBody)) {
       session = resetSession(from, profile);
-      if (looksLikeFreeRequest(body)) {
-        return await handleGenericRequestFromMenu(session, from, profile, body, twiml, res);
-      }
       twiml.message(safeMsg(menuText()));
       return respondTwiml(res, twiml);
     }
@@ -346,27 +366,27 @@ async function handleWhatsApp(req, res) {
       const n = norm(body);
       if (n === '1' || n.includes('officina')) {
         session.state = 'officina_info'; touch(session);
-        twiml.message(safeMsg('DP SERVICE / Officina\n\nScrivici targa, mezzo, problema e giorno preferito.\nTi richiamiamo appena possibile.'));
+        twiml.message(safeMsg(`${ICON.wrench} DP SERVICE / Officina\n\nScrivici targa, mezzo, problema e giorno preferito.\nTi richiamiamo appena possibile.`));
         return respondTwiml(res, twiml);
       }
       if (n === '2' || n.includes('noleggio')) {
         session.state = 'rent_vehicle'; touch(session);
-        twiml.message(safeMsg('DP RENT - Noleggio\n\nChe mezzo ti serve?\nEsempio: furgone, pulmino 9 posti, auto.'));
+        twiml.message(safeMsg(`${ICON.car} DP RENT - Noleggio\n\nChe mezzo ti serve?\nEsempio: furgone, pulmino 9 posti, auto.`));
         return respondTwiml(res, twiml);
       }
       if (n === '3' || n.includes('vendita')) {
         session.state = 'vendita_info'; touch(session);
-        twiml.message(safeMsg('DP AUTO - Vendita auto\n\nGuarda le auto disponibili:\nhttps://autosupermarket.it/concessionario/trasporti-dp-srl/annunci\n\nSe cerchi qualcosa in particolare scrivi modello, budget, permuta e finanziamento SI/NO.'));
+        twiml.message(safeMsg(`${ICON.money} DP AUTO - Vendita auto\n\nGuarda le auto disponibili:\nhttps://autosupermarket.it/concessionario/trasporti-dp-srl/annunci\n\nSe cerchi qualcosa in particolare scrivi modello, budget, permuta e finanziamento SI/NO.`));
         return respondTwiml(res, twiml);
       }
       if (n === '4' || n.includes('trasporto')) {
         session.state = 'trasporto_info'; touch(session);
-        twiml.message(safeMsg('Trasporto veicoli\n\nScrivi in un unico messaggio:\n- marca e modello\n- marciante o non marciante\n- luogo ritiro\n- luogo consegna\n- contatto\n\nPrepariamo la quotazione.'));
+        twiml.message(safeMsg(`${ICON.truck} Trasporto veicoli\n\nScrivi in un unico messaggio:\n- marca e modello\n- marciante o non marciante\n- luogo ritiro\n- luogo consegna\n- contatto\n\nPrepariamo la quotazione.`));
         return respondTwiml(res, twiml);
       }
       if (n === '5' || n.includes('richiesta') || n.includes('altro')) {
         session.state = 'gpt_chat'; touch(session);
-        twiml.message(safeMsg('Altre richieste\n\nScrivimi cosa ti serve. Ti rispondo subito e invio la richiesta allo staff DP.'));
+        twiml.message(safeMsg(`${ICON.phone} Altre richieste\n\nScrivimi cosa ti serve. Ti rispondo subito e invio la richiesta allo staff DP.`));
         return respondTwiml(res, twiml);
       }
       twiml.message(safeMsg(menuText()));
@@ -481,8 +501,8 @@ async function handleWhatsApp(req, res) {
 }
 function respondTwiml(res, twiml) { res.writeHead(200, { 'Content-Type': 'text/xml; charset=utf-8' }); return res.end(twiml.toString()); }
 
-app.get('/', (req, res) => res.send('DP RENT BOT V84 online'));
-app.get('/health', (req, res) => res.json({ ok: true, version: 'V84', time: new Date().toISOString() }));
+app.get('/', (req, res) => res.send('DP RENT BOT V85 online'));
+app.get('/health', (req, res) => res.json({ ok: true, version: 'V85', time: new Date().toISOString() }));
 app.get('/richieste', (req, res) => res.json(db.richieste));
 
 app.get('/cliente-web', (req, res) => {
@@ -517,6 +537,6 @@ app.post('/whatsapp', handleWhatsApp);
 app.post('/webhook', handleWhatsApp);
 
 app.listen(PORT, () => {
-  console.log(`DP RENT BOT V84 online porta ${PORT}`);
+  console.log(`DP RENT BOT V85 online porta ${PORT}`);
   console.log('Numeri interni:', INTERNAL_NUMBERS.join(', '));
 });
