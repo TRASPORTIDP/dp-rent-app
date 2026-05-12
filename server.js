@@ -203,7 +203,14 @@ function v67DefaultBirth(p){
 // V76 FIX ROUTE SYNTAX CARGOS + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
-  return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
+  p = p || {};
+  return String(
+    p.record_cargos_cittadinanza_cod ||
+    p.cittadinanza_cod ||
+    p.conducente_cittadinanza_cod ||
+    process.env.CARGOS_CITTADINANZA_COD ||
+    '100000100'
+  ).trim();
 }
 function v68SafeValidateCargos(p){
   try {
@@ -1777,44 +1784,22 @@ function patchCargosVehicleRecordV76(p) {
 }
 
 async function buildCargosRecordForContract(id) {
-  // V76 patch veicolo
-
-  // buildCargosRecordForContract__v72patched
-  // V76 rimosso: p non ancora inizializzato
-
-  const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [id]);
+  // V77 FIX: usa il builder V40/V76 che ha giÃ  passato il check Ca.R.G.O.S.
+  // Evita il vecchio builder che lasciava vuoto CITTADINANZA_COD e usava date/nomi campi non allineati.
+  const p = await new Promise((resolve, reject) => {
+    getPrenotazioneCompleta(id, (err, row) => err ? reject(err) : resolve(row));
+  });
   if (!p) throw new Error('Contratto non trovato');
 
-  
-  
-  patchCargosVehicleRecordV76(p);
-Object.assign(p, cargosPatchDefaultsV76(p));
-  patchCargosVehicleTypeIntoObjectV76(p);
-const fields = [
-    cargosPad(p.codice,50), cargosDateTime(p.created_at || moment(), moment().format('HH:mm')),
-    cargosPad(process.env.CARGOS_TIPO_PAGAMENTO || '1',1,'number'),
-    cargosDateTime(p.data_inizio,p.ora_inizio || '08:30'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
-    cargosDateTime(p.data_fine,p.ora_fine || '18:00'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
-    cargosPad(process.env.CARGOS_OPERATORE_ID || '',50), cargosPad(process.env.CARGOS_AGENZIA_ID || '',30), cargosPad(process.env.CARGOS_AGENZIA_NOME || AZIENDA.nome,70),
-    cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150), cargosPad(AZIENDA.telefono,20,'number'),
-    cargosPad(cargosTipoVeicoloFinaleV76(p),1), cargosPad(cargosMarcaFinaleV76(p) || p.marca || '',50), cargosPad(cargosModelloFinaleV76(p) || p.modello || '',100), cargosPad(p.targa || '',15),
-    cargosPad('',50), cargosPad('',1,'number'), cargosPad('',1,'number'),
-    cargosPad(p.cognome || '',50), cargosPad(p.nome || '',30), cargosDate(p.data_nascita || ''),
-    cargosPad(process.env.CARGOS_NASCITA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(process.env.CARGOS_CITTADINANZA_COD || '',9,'number'),
-    cargosPad(process.env.CARGOS_RESIDENZA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(p.indirizzo || '',150),
-    cargosPad(process.env.CARGOS_TIPO_DOCUMENTO || 'CI',5),
-    cargosPad(process.env.CARGOS_DOC_NUMERO_FALLBACK || '',20),
-    cargosPad(process.env.CARGOS_DOC_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(p.patente1 || '',20),
-    cargosPad(process.env.CARGOS_PATENTE_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(p.telefono || '',20),
-    cargosPad('',50), cargosPad('',30), cargosDate(''), cargosPad('',9,'number'), cargosPad('',9,'number'),
-    cargosPad('',5), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20)
-  ];
+  const patched = patchCargosVehicleTypeIntoObjectV76(
+    patchCargosVehicleRecordV76(cargosPatchDefaultsV76(p))
+  );
 
-  const record = fields.join('');
+  // default obbligatorio se non presente in env o form
+  patched.record_cargos_cittadinanza_cod =
+    String(patched.record_cargos_cittadinanza_cod || patched.cittadinanza_cod || patched.conducente_cittadinanza_cod || process.env.CARGOS_CITTADINANZA_COD || '100000100').trim();
+
+  const record = buildCargosFixedRecordV40(patched);
   if (record.length !== 1505) throw new Error(`Record Ca.R.G.O.S. lunghezza errata: ${record.length}, attesa 1505`);
   return record;
 }
@@ -4392,16 +4377,9 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     console.log('Errore copia documento in cartella contratto:', e.message);
   }
 
-  try {
-    driveRes = await uploadFileToDrive(
-      finalPath,
-      `${Date.now()}_${req.body.tipo}_${req.file.originalname}`,
-      req.file.mimetype,
-      `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`
-    );
-  } catch (e) {
-    console.log('Errore upload documento Drive:', e.message);
-  }
+  // V77 FIX DRIVE: non caricare piÃ¹ qui con Apps Script perchÃ© creava cartelle/PDF duplicati.
+  // Salviamo prima l'allegato nel DB, poi syncContrattoDriveV63 lo carica nella cartella unica del contratto.
+  driveRes = null;
 
   await run(
     `INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
@@ -4417,10 +4395,9 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     ]
   );
 
-  // V63: sincronizza foto nella stessa cartella Drive e sostituisce una sola copia PDF.
-  try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('Drive sync V63:', e.message); }
-  try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('V63 sync foto warning:', e.message); }
-    res.redirect(`/documenti/${req.params.id}`);
+  // V77 FIX DRIVE: una sola sincronizzazione. Nella cartella Drive deve restare un solo PDF + foto/documenti.
+  try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('Drive sync V77:', e.message); }
+  res.redirect(`/documenti/${req.params.id}`);
 });
 
 app.get('/checkout/:id', async (req, res) => {
@@ -5378,6 +5355,10 @@ async function syncContrattoDriveV63(prenotazioneId) {
       [folder.id, folder.webViewLink || null, prenotazioneId]
     );
 
+    // Prima carico le foto/documenti locali nella cartella unica del contratto.
+    await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
+
+    // Poi sostituisco il PDF: deve restarne sempre uno solo.
     const pdf = await generaPdfContratto(prenotazioneId, { forceDrive: false });
     const pdfName = pdfFileNameForContract(p);
 
@@ -5397,7 +5378,6 @@ async function syncContrattoDriveV63(prenotazioneId) {
       );
     }
 
-    await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
     return { folder, pdf: uploadedPdf };
   } catch(e) {
     console.log('V63 syncContrattoDrive error:', e.message);
@@ -5793,6 +5773,13 @@ app.post('/whatsapp', (req, res) => {
 });
 
 app.get('/twilio-webhook', (req, res) => res.send(page('Webhook Twilio', `<div class="box"><h2>Webhook WhatsApp Twilio</h2><p>Imposta questo URL in Twilio:</p><pre>${esc((process.env.APP_BASE_URL || (req.protocol + '://' + req.get('host'))) + '/whatsapp')}</pre></div>`)));
+
+
+// V77 FIX ROUTE ALIAS: vecchi link non devono piÃ¹ dare Cannot GET
+app.get('/prenota-admin/', (req, res) => res.redirect('/nuova-prenotazione'));
+app.get('/ocr-pro/applica/', (req, res) => res.redirect('/cliente-nuovo'));
+app.get('/prenotazione/nuova', (req, res) => res.redirect('/nuova-prenotazione'));
+app.get('/nuovo-cliente', (req, res) => res.redirect('/cliente-nuovo'));
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP ONLINE porta ' + PORT);
