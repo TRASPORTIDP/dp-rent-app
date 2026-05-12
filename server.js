@@ -1,3 +1,4 @@
+
 require('dotenv').config();
 require('dns').s
 const express = require('express');
@@ -5629,12 +5630,15 @@ app.get('/admin/fix-tutto-v68', (req, res) => res.redirect('/admin/fix-tutto-v76
 
 
 
+
 // =====================================================
-// V87 - WHATSAPP DP BOT INTEGRATO SU APP COMPLETA V76
+// V88 - WHATSAPP DP BOT INTEGRATO SU APP COMPLETA V76
 // - non sostituisce dashboard
-// - ciao/menu apre menu con emoji
+// - menu con emoji via unicode escape, niente caratteri rotti
+// - ciao/menu apre menu
 // - notifiche ai 3 numeri
 // - Google Calendar solo officina
+// - Drive solo noleggio/contratti gia presenti nella app
 // - no MyAppy / no Calendly
 // =====================================================
 const DP_BOT_SESSIONS = {};
@@ -5647,6 +5651,26 @@ const DP_STAFF_NUMBERS = dpParseNumbers(process.env.INTERNAL_GENERAL_NUMBERS || 
 ]);
 const DP_OFFICINA_NUMBERS = dpParseNumbers(process.env.INTERNAL_OFFICINA_NUMBERS, DP_STAFF_NUMBERS);
 const DP_AUTOSUPERMARKET_URL = 'https://autosupermarket.it/concessionario/trasporti-dp-srl/annunci';
+
+const EMJ = {
+  ok: '\u2705',
+  car: '\u{1F697}',
+  van: '\u{1F690}',
+  auto: '\u{1F698}',
+  wrench: '\u{1F527}',
+  money: '\u{1F4B0}',
+  truck: '\u{1F69B}',
+  chat: '\u{1F4AC}',
+  pen: '\u270D\uFE0F',
+  warn: '\u26A0\uFE0F',
+  calendar: '\u{1F4C5}',
+  link: '\u{1F517}',
+  one: '1\uFE0F\u20E3',
+  two: '2\uFE0F\u20E3',
+  three: '3\uFE0F\u20E3',
+  four: '4\uFE0F\u20E3',
+  five: '5\uFE0F\u20E3'
+};
 
 const dpTwilioClient = (twilio && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
   ? twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN)
@@ -5678,7 +5702,7 @@ function dpReset(from, profileName){
   return DP_BOT_SESSIONS[from];
 }
 function dpMenu(name){
-  return `â *Ciao ${name || 'Cliente'}*\n\nð *DP RENT / TRASPORTI DP*\n\nScegli il servizio:\n\n1ï¸â£ ð§ Officina\n2ï¸â£ ð Noleggio\n3ï¸â£ ð Vendita auto\n4ï¸â£ ð Trasporto veicoli\n5ï¸â£ ð¬ Altre richieste\n\nâï¸ Scrivi solo il numero.\nEsempio: *2*`;
+  return `${EMJ.ok} *Ciao ${name || 'Cliente'}*\n\n${EMJ.car} *DP RENT / TRASPORTI DP*\n\nScegli il servizio:\n\n${EMJ.one} ${EMJ.wrench} Officina\n${EMJ.two} ${EMJ.van} Noleggio\n${EMJ.three} ${EMJ.money} Vendita auto\n${EMJ.four} ${EMJ.truck} Trasporto veicoli\n${EMJ.five} ${EMJ.chat} Altre richieste\n\n${EMJ.pen} Scrivi solo il numero.\nEsempio: *2*`;
 }
 function dpIsMenuKeyword(body){
   const t = dpNorm(body);
@@ -5693,17 +5717,20 @@ function dpAlreadySid(sid){
   return false;
 }
 async function dpNotify(numbers, body){
-  console.log('DP_NOTIFY:', numbers, body);
+  console.log('DP_NOTIFY TO:', numbers.join(', '));
+  console.log('DP_NOTIFY BODY:', body);
   if(!dpTwilioClient){ console.log('Twilio non configurato, notifica non inviata'); return false; }
+  let sent = 0;
   for(const to of numbers){
     try{
       await dpTwilioClient.messages.create({ from: DP_TWILIO_WHATSAPP_NUMBER, to, body: dpWa(body) });
+      sent++;
       console.log('Notifica WhatsApp inviata a', to);
     }catch(e){
       console.error('Errore notifica WhatsApp', to, e.message, e.code || '');
     }
   }
-  return true;
+  return sent > 0;
 }
 function dpExtractDate(text){
   const t = dpClean(text);
@@ -5743,7 +5770,7 @@ async function dpFindAvailableVehicle(catInfo, startIso, endIso){
     mezzi = await all(`SELECT * FROM mezzi WHERE categoria IN (${qs}) OR tipo IN (${qs}) OR modello LIKE ? OR marca LIKE ? ORDER BY id ASC`, [...catInfo.cats, ...catInfo.cats, `%${catInfo.label.split(' ')[0]}%`, `%${catInfo.label.split(' ')[0]}%`]);
   }catch(e){ console.error('Errore select mezzi:', e.message); }
   if(!mezzi.length){
-    try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){}
+    try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore fallback mezzi:', e.message); }
   }
   for(const m of mezzi){
     try{
@@ -5755,7 +5782,7 @@ async function dpFindAvailableVehicle(catInfo, startIso, endIso){
 }
 async function dpCreateCalendarEventOfficina(from, profileName, text){
   try{
-    if(!google) return { ok:false, error:'googleapis non installato' };
+    if(typeof google === 'undefined' || !google) return { ok:false, error:'googleapis non installato' };
     const calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary';
     const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL;
     let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
@@ -5817,7 +5844,7 @@ async function dpHandleWhatsApp(req,res){
   const profileName = req.body.ProfileName || 'Cliente';
   const sid = dpClean(req.body.MessageSid || req.body.SmsSid || '');
   console.log('DP BOT IN:', { from, body, profileName, sid, state: DP_BOT_SESSIONS[from]?.state });
-  if(dpAlreadySid(sid)){ res.writeHead(200, {'Content-Type':'text/xml'}); return res.end('<Response/>'); }
+  if(dpAlreadySid(sid)){ res.writeHead(200, {'Content-Type':'text/xml; charset=utf-8'}); return res.end('<Response/>'); }
   if(!from) return dpTwimlResponse(res, 'Errore ricezione messaggio.');
 
   let session = dpSession(from, profileName);
@@ -5830,32 +5857,32 @@ async function dpHandleWhatsApp(req,res){
   if(session.state === 'menu'){
     if(body === '1'){
       session.state = 'officina'; session.ts = Date.now();
-      return dpTwimlResponse(res, 'ð§ *Officina DP*\n\nScrivi in un solo messaggio:\n- targa\n- marca/modello\n- problema o intervento\n- giorno preferito\n\nEsempio:\nAB123CD Fiat Panda tagliando completo 20/05');
+      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi in un solo messaggio:\n- targa\n- marca/modello\n- problema o intervento\n- giorno preferito\n\nEsempio:\nAB123CD Fiat Panda tagliando completo 20/05`);
     }
     if(body === '2'){
       session.state = 'noleggio_model'; session.ts = Date.now();
-      return dpTwimlResponse(res, 'ð *DP RENT - Noleggio*\n\nChe mezzo ti serve?\n\n1ï¸â£ Furgone cargo/merci\n2ï¸â£ Pulmino 8/9 posti\n3ï¸â£ Auto economica tipo Dacia\n4ï¸â£ Auto categoria Golf\n5ï¸â£ Escavatore / mezzo speciale\n\nScrivi il numero.');
+      return dpTwimlResponse(res, `${EMJ.van} *DP RENT - Noleggio*\n\nChe mezzo ti serve?\n\n${EMJ.one} Furgone cargo/merci\n${EMJ.two} Pulmino 8/9 posti\n${EMJ.three} Auto economica tipo Dacia\n${EMJ.four} Auto categoria Golf\n${EMJ.five} Escavatore / mezzo speciale\n\nScrivi il numero.`);
     }
     if(body === '3'){
       session.state = 'vendita'; session.ts = Date.now();
-      return dpTwimlResponse(res, `ð *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi:\n- modello\n- budget\n- permuta si/no\n- finanziamento si/no`);
+      return dpTwimlResponse(res, `${EMJ.auto} *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi:\n- modello\n- budget\n- permuta si/no\n- finanziamento si/no`);
     }
     if(body === '4'){
       session.state = 'trasporto'; session.ts = Date.now();
-      return dpTwimlResponse(res, 'ð *Trasporto veicoli*\n\nScrivi in un solo messaggio:\n- marca e modello auto\n- marciante o non marciante\n- da dove ritirare\n- dove consegnare\n- quando serve\n\nEsempio:\nFiat Panda marciante, ritiro Roma, consegna Narni, prossima settimana');
+      return dpTwimlResponse(res, `${EMJ.truck} *Trasporto veicoli*\n\nScrivi in un solo messaggio:\n- marca e modello auto\n- marciante o non marciante\n- da dove ritirare\n- dove consegnare\n- quando serve\n\nEsempio:\nFiat Panda marciante, ritiro Roma, consegna Narni, prossima settimana`);
     }
     if(body === '5'){
       session.state = 'altro'; session.ts = Date.now();
-      return dpTwimlResponse(res, 'ð¬ *Altre richieste*\n\nScrivi pure la tua richiesta. Ti rispondo subito e la inoltro allo staff DP.');
+      return dpTwimlResponse(res, `${EMJ.chat} *Altre richieste*\n\nScrivi pure la tua richiesta. Ti rispondo subito e la inoltro allo staff DP.`);
     }
     return dpTwimlResponse(res, dpMenu(profileName));
   }
 
   if(session.state === 'officina'){
     const cal = await dpCreateCalendarEventOfficina(from, profileName, body);
-    await dpNotify(DP_OFFICINA_NUMBERS, `ð§ NUOVA RICHIESTA OFFICINA\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nRichiesta:\n${body}\n\nCalendar: ${cal.ok ? (cal.link || 'evento creato') : 'NON creato - ' + (cal.error || '-')}`);
+    await dpNotify(DP_OFFICINA_NUMBERS, `${EMJ.wrench} NUOVA RICHIESTA OFFICINA\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nRichiesta:\n${body}\n\nCalendar: ${cal.ok ? (cal.link || 'evento creato') : 'NON creato - ' + (cal.error || '-')}`);
     delete DP_BOT_SESSIONS[from];
-    return dpTwimlResponse(res, `â Richiesta officina ricevuta.\n\nL abbiamo inviata allo staff DP.${cal.ok ? '\nEvento inserito in Google Calendar.' : ''}\n\nTi ricontatteremo per confermare appuntamento e orario.`);
+    return dpTwimlResponse(res, `${EMJ.ok} Richiesta officina ricevuta.\n\nL abbiamo inviata allo staff DP.${cal.ok ? '\nEvento inserito in Google Calendar.' : ''}\n\nTi ricontatteremo per confermare appuntamento e orario.`);
   }
 
   if(session.state === 'noleggio_model'){
@@ -5878,14 +5905,14 @@ async function dpHandleWhatsApp(req,res){
     const endIso = dpDateIso(session.data.end);
     const mezzo = await dpFindAvailableVehicle(session.data.cat, startIso, endIso);
     if(!mezzo){
-      await dpNotify(DP_STAFF_NUMBERS, `â ï¸ RICHIESTA NOLEGGIO NON DISPONIBILE\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}`);
+      await dpNotify(DP_STAFF_NUMBERS, `${EMJ.warn} RICHIESTA NOLEGGIO NON DISPONIBILE\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}`);
       delete DP_BOT_SESSIONS[from];
-      return dpTwimlResponse(res, 'Mi dispiace, non risulta disponibilitÃ  per quelle date.\n\nLa richiesta Ã¨ stata inviata allo staff DP per controllo manuale.');
+      return dpTwimlResponse(res, 'Mi dispiace, non risulta disponibilita per quelle date.\n\nLa richiesta e stata inviata allo staff DP per controllo manuale.');
     }
     let calc = { totale: 0, giorni: dpDays(session.data.start, session.data.end) };
     try{ calc = calcolaTotale(mezzo, startIso, endIso, '08:30', '18:00', km); }catch(e){ console.error(e.message); }
     session.data.km = km; session.data.mezzo = mezzo; session.data.calc = calc; session.state = 'noleggio_confirm'; session.ts = Date.now();
-    return dpTwimlResponse(res, `â *Disponibile*\n\nMezzo: *${session.data.cat.label}*\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nGiorni: ${calc.giorni || dpDays(session.data.start, session.data.end)}\nKm previsti: ${km}\nPreventivo: *EUR ${euro(calc.totale || 0)}*\n\nConfermi il preventivo?\nRispondi *SI* oppure *NO*.`);
+    return dpTwimlResponse(res, `${EMJ.ok} *Disponibile*\n\nMezzo: *${session.data.cat.label}*\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nGiorni: ${calc.giorni || dpDays(session.data.start, session.data.end)}\nKm previsti: ${km}\nPreventivo: *EUR ${euro(calc.totale || 0)}*\n\nConfermi il preventivo?\nRispondi *SI* oppure *NO*.`);
   }
 
   if(session.state === 'noleggio_confirm'){
@@ -5901,26 +5928,26 @@ async function dpHandleWhatsApp(req,res){
     });
     const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
     const link = `${base}/prenota?${q.toString()}`;
-    await dpNotify(DP_STAFF_NUMBERS, `ð PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
+    await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
     delete DP_BOT_SESSIONS[from];
-    return dpTwimlResponse(res, `Perfetto â\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verrÃ  preparato il contratto definitivo.`);
+    return dpTwimlResponse(res, `Perfetto ${EMJ.ok}\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verra preparato il contratto definitivo.`);
   }
 
   if(session.state === 'vendita'){
-    await dpNotify(DP_STAFF_NUMBERS, `ð NUOVA RICHIESTA VENDITA AUTO\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nRichiesta:\n${body}\n\nBacheca: ${DP_AUTOSUPERMARKET_URL}`);
+    await dpNotify(DP_STAFF_NUMBERS, `${EMJ.auto} NUOVA RICHIESTA VENDITA AUTO\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nRichiesta:\n${body}\n\nBacheca: ${DP_AUTOSUPERMARKET_URL}`);
     delete DP_BOT_SESSIONS[from];
-    return dpTwimlResponse(res, 'â Richiesta inviata al reparto vendite DP AUTO.\n\nTi ricontatteremo al piÃ¹ presto.');
+    return dpTwimlResponse(res, `${EMJ.ok} Richiesta inviata al reparto vendite DP AUTO.\n\nTi ricontatteremo al piu presto.`);
   }
 
   if(session.state === 'trasporto'){
-    await dpNotify(DP_STAFF_NUMBERS, `ð NUOVA RICHIESTA TRASPORTO VEICOLO\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nDati trasporto:\n${body}`);
+    await dpNotify(DP_STAFF_NUMBERS, `${EMJ.truck} NUOVA RICHIESTA TRASPORTO VEICOLO\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nDati trasporto:\n${body}`);
     delete DP_BOT_SESSIONS[from];
-    return dpTwimlResponse(res, 'â Richiesta trasporto ricevuta.\n\nL abbiamo inviata allo staff DP. Ti ricontatteremo per il preventivo.');
+    return dpTwimlResponse(res, `${EMJ.ok} Richiesta trasporto ricevuta.\n\nL abbiamo inviata allo staff DP. Ti ricontatteremo per il preventivo.`);
   }
 
   if(session.state === 'altro'){
     const answer = await dpChatGPTAnswer(body);
-    await dpNotify(DP_STAFF_NUMBERS, `ð¬ ALTRA RICHIESTA / CHATGPT\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nMessaggio cliente:\n${body}\n\nRisposta bot:\n${answer}`);
+    await dpNotify(DP_STAFF_NUMBERS, `${EMJ.chat} ALTRA RICHIESTA / CHATGPT\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nMessaggio cliente:\n${body}\n\nRisposta bot:\n${answer}`);
     return dpTwimlResponse(res, answer + '\n\nScrivi MENU per tornare al menu principale.');
   }
 
@@ -5932,6 +5959,6 @@ app.post('/whatsapp', dpHandleWhatsApp);
 app.post('/webhook', dpHandleWhatsApp);
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V87 COMPLETA + BOT WHATSAPP INTEGRATO ONLINE porta ' + PORT);
+  console.log('DP RENT APP V88 COMPLETA + BOT WHATSAPP INTEGRATO ONLINE porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
