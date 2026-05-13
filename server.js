@@ -1191,7 +1191,8 @@ async function getOrCreateDriveContractFolderV63(p) {
   if (found.data.files && found.data.files[0]) return found.data.files[0];
   const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
   if (parent) requestBody.parents = [parent];
-  const created = await drive.files.create({ requestBody, fields:'id,name,webViewLink' });
+  const created = await v100DeleteOldContractPdfsInDrive(folderId || folder?.id || praticaFolderId || driveFolderId);
+await drive.files.create({ requestBody, fields:'id,name,webViewLink' });
   return created.data;
 }
 
@@ -1350,7 +1351,7 @@ async function createNexiLink(amount, description, p) {
       Accept: 'application/json',
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(v100PatchCargosPayload(payload))
   });
 
   const text = await r.text();
@@ -3830,7 +3831,7 @@ function cargosRecordDataV40(p) {
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
     CONDUCENTE_CONTRAENTE_NASCITA_DATA: v67DefaultBirth(p),
     CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
-    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: v68CittadinanzaCod(p),
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: 100,
     CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
     CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
     CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: getTipoDocumentoCargosV61(p.documento_tipo || p.tipo_documento || 'IDENT'),
@@ -6729,5 +6730,43 @@ function v99IsClientePdfImageAllowed(tipo) {
   const t = String(tipo || '').toLowerCase();
   if (t.includes('documento') || t.includes('patente') || t.includes('carta') || t.includes('ident')) return false;
   return false;
+}
+
+
+
+// =========================
+// V100 FIX: UN SOLO PDF CONTRATTO + CITTADINANZA CARGOS
+// =========================
+function v100CittadinanzaCargosCod() { return 100; }
+
+async function v100DeleteOldContractPdfsInDrive(folderId, keepNamePrefix) {
+  try {
+    if (!folderId || typeof drive === 'undefined' || !drive.files) return;
+    const q = `'${folderId}' in parents and trashed=false and mimeType='application/pdf'`;
+    const list = await drive.files.list({
+      q,
+      fields: 'files(id,name)',
+      supportsAllDrives: true,
+      includeItemsFromAllDrives: true
+    });
+    const files = list?.data?.files || [];
+    for (const f of files) {
+      const name = String(f.name || '').toLowerCase();
+      if (name.startsWith('contratto_') || name.includes('contratto')) {
+        await drive.files.delete({ fileId: f.id, supportsAllDrives: true }).catch(()=>{});
+      }
+    }
+  } catch (e) {
+    console.error('V100 delete old contract pdf:', e.message);
+  }
+}
+
+function v100PatchCargosPayload(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  for (const k of Object.keys(obj)) {
+    if (k === 'CONDUCENTE_CONTRAENTE_CITTADINANZA_COD') obj[k] = 100;
+    else if (obj[k] && typeof obj[k] === 'object') v100PatchCargosPayload(obj[k]);
+  }
+  return obj;
 }
 
