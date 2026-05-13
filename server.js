@@ -30,7 +30,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V106 CARGOS ROUTE FORZATA
+// V107 CARGOS UID LOCK
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -206,7 +206,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V106 CARGOS ROUTE FORZATA + NO CRASH
+// V107 CARGOS UID LOCK + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -230,7 +230,7 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V106 CARGOS ROUTE FORZATA - DEFAULT REALI
+// V107 CARGOS UID LOCK - DEFAULT REALI
 // =========================
 const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
@@ -1045,7 +1045,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V106 CARGOS ROUTE FORZATA</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V107 CARGOS UID LOCK</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1576,7 +1576,7 @@ doc.end();
 
 
 // =========================
-// V106 CARGOS ROUTE FORZATA
+// V107 CARGOS UID LOCK
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1803,7 +1803,7 @@ const fields = [
 
 
 // =========================
-// V106 CARGOS ROUTE FORZATA
+// V107 CARGOS UID LOCK
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2249,7 +2249,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V106 CARGOS ROUTE FORZATA'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V107 CARGOS UID LOCK'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2414,7 +2414,7 @@ app.get('/mezzi-web', async (req, res) => {
     </tr>`).join('');
   res.send(page('Mezzi', `
     <h2>Elenco mezzi</h2>
-    <table><tr><th>ID</th><th>Targa</th><th>Marca</th><th>Modello</th><th>Categoria</th><th>Descrizione pubblica</th><th>Prezzo</th><th>Km/giorno</th><th>Alert</th><th>Stato</th></tr>${trs}</table>
+    <table><tr><th>ID</th><th>Targa</th><th>Marca</th><th>Modello</th><th>Categoria</th><th>Descrizione pubblica</th><th>Prezzo</th><th>Km/giorno</th><th>Alert</th><th>Stato</th><th>CaRGOS</th></tr>${trs}</table>
   `));
 });
 
@@ -3583,7 +3583,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V106 CARGOS ROUTE FORZATA / DRIVE / BRAND
+// V107 CARGOS UID LOCK / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -4240,7 +4240,7 @@ app.get('/prenotazioni', async (req, res) => {
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
   const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
-  res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${trs}</table>`));
+  res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>CaRGOS</th><th>Azioni</th></tr>${trs}</table>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
   await run(`UPDATE prenotazioni SET stato=? WHERE id=?`, [req.params.stato, req.params.id]);
@@ -5092,7 +5092,7 @@ CARGOS_BASE_URL=https://cargos.poliziadistato.it/CARGOS_API</pre>
 app.get('/cargos', async (req, res) => {
   const rows = await all(`SELECT p.*, m.targa FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id ORDER BY p.id DESC LIMIT 50`);
   const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.record_cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
-  res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Ca.R.G.O.S.</h2><p>Modulo pronto. Quando hai username/password/APIKEY e codici tabelle, Check e Send diventano reali.</p><p><b>Configurato:</b> ${cargosConfigured() ? '<span class="ok">SI</span>' : '<span class="bad">NO</span>'}</p><p>Servono: CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_AGENZIA_ID, CARGOS_OPERATORE_ID, CARGOS_LUOGO_COD.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>Azione</th></tr>${trs}</table>`));
+  res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Ca.R.G.O.S.</h2><p>Modulo pronto. Quando hai username/password/APIKEY e codici tabelle, Check e Send diventano reali.</p><p><b>Configurato:</b> ${cargosConfigured() ? '<span class="ok">SI</span>' : '<span class="bad">NO</span>'}</p><p>Servono: CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_AGENZIA_ID, CARGOS_OPERATORE_ID, CARGOS_LUOGO_COD.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>CaRGOS</th><th>Azione</th></tr>${trs}</table>`));
 });
 
 app.get('/cargos/record/:id', async (req, res) => {
@@ -6661,6 +6661,49 @@ app.get('/documenti/:id', async (req, res) => {
     res.status(500).send('Errore documenti: ' + esc(e.message));
   }
 });
+
+
+
+// =========================
+// V107 CaRGOS UID + BLOCCO DOPPIO INVIO
+// =========================
+async function v107EnsureCargosColumns() {
+  try {
+    if (typeof run !== 'function') return;
+    await run("ALTER TABLE prenotazioni ADD COLUMN cargos_uid TEXT").catch(()=>{});
+    await run("ALTER TABLE prenotazioni ADD COLUMN cargos_inviato INTEGER DEFAULT 0").catch(()=>{});
+    await run("ALTER TABLE prenotazioni ADD COLUMN cargos_inviato_at TEXT").catch(()=>{});
+  } catch(e) {
+    console.error("V107 cargos columns:", e.message);
+  }
+}
+v107EnsureCargosColumns();
+
+function v107ExtractUid(result) {
+  return result?.data?.[0]?.transactionid || result?.transactionid || result?.uid || null;
+}
+
+async function v107GetCargosStatus(id) {
+  try {
+    if (typeof get === 'function') {
+      return await get("SELECT cargos_uid,cargos_inviato,cargos_inviato_at FROM prenotazioni WHERE id=?", [id]);
+    }
+  } catch(e) {}
+  return null;
+}
+
+async function v107SaveCargosUid(id, uid) {
+  try {
+    if (!uid || typeof run !== 'function') return;
+    await v107EnsureCargosColumns();
+    await run("UPDATE prenotazioni SET cargos_uid=?, cargos_inviato=1, cargos_inviato_at=? WHERE id=?", [
+      uid, new Date().toISOString(), id
+    ]).catch(()=>{});
+  } catch(e) {
+    console.error("V107 save cargos uid:", e.message);
+  }
+}
+
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP V94 OCR PRIMA + FIRMA WHATSAPP porta ' + PORT);
