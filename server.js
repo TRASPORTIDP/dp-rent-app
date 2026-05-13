@@ -30,7 +30,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V103 CARGOS PDF LOCK
+// V104 CARGOS FORZATO DEFINITIVO
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -206,7 +206,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V103 CARGOS PDF LOCK + NO CRASH
+// V104 CARGOS FORZATO DEFINITIVO + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -230,7 +230,7 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V103 CARGOS PDF LOCK - DEFAULT REALI
+// V104 CARGOS FORZATO DEFINITIVO - DEFAULT REALI
 // =========================
 const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
@@ -1045,7 +1045,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V103 CARGOS PDF LOCK</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V104 CARGOS FORZATO DEFINITIVO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1352,7 +1352,7 @@ async function createNexiLink(amount, description, p) {
       Accept: 'application/json',
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(v103DeepFixCargos(payload))
+    body: JSON.stringify(v104CargosPayload(payload))
   });
 
   const text = await r.text();
@@ -1576,7 +1576,7 @@ doc.end();
 
 
 // =========================
-// V103 CARGOS PDF LOCK
+// V104 CARGOS FORZATO DEFINITIVO
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1803,7 +1803,7 @@ const fields = [
 
 
 // =========================
-// V103 CARGOS PDF LOCK
+// V104 CARGOS FORZATO DEFINITIVO
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2249,7 +2249,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V103 CARGOS PDF LOCK'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V104 CARGOS FORZATO DEFINITIVO'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -3583,7 +3583,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V103 CARGOS PDF LOCK / DRIVE / BRAND
+// V104 CARGOS FORZATO DEFINITIVO / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3832,7 +3832,7 @@ function cargosRecordDataV40(p) {
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
     CONDUCENTE_CONTRAENTE_NASCITA_DATA: v67DefaultBirth(p),
     CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
-    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: V103_CARGOS_CITTADINANZA_ITALIA,
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: V104_CITTADINANZA_ITALIA_CARGOS,
     CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
     CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
     CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: getTipoDocumentoCargosV61(p.documento_tipo || p.tipo_documento || 'IDENT'),
@@ -6823,7 +6823,7 @@ function v103DeepFixCargos(obj) {
     else if (obj[k] && typeof obj[k] === 'object') v103DeepFixCargos(obj[k]);
   }
   if (!Object.prototype.hasOwnProperty.call(obj, 'CONDUCENTE_CONTRAENTE_CITTADINANZA_COD')) {
-    obj.CONDUCENTE_CONTRAENTE_CITTADINANZA_COD = V103_CARGOS_CITTADINANZA_ITALIA;
+    obj.CONDUCENTE_CONTRAENTE_CITTADINANZA_COD = V104_CITTADINANZA_ITALIA_CARGOS;
   }
   return obj;
 }
@@ -6849,5 +6849,38 @@ async function v103DeleteOldPdfEverywhere(prenotazioneId, folderId) {
       }
     }
   } catch(e) { console.error('V103 delete drive pdf', e.message); }
+}
+
+
+
+// =========================
+// V104 FIX FINALE CaRGOS: cittadinanza obbligatoria sempre presente
+// =========================
+const V104_CITTADINANZA_ITALIA_CARGOS = '100000100';
+
+function v104FixCargosCitizenshipDeep(x) {
+  if (Array.isArray(x)) {
+    x.forEach(v104FixCargosCitizenshipDeep);
+    return x;
+  }
+  if (x && typeof x === 'object') {
+    x.CONDUCENTE_CONTRAENTE_CITTADINANZA_COD = V104_CITTADINANZA_ITALIA_CARGOS;
+    x.conducente_contraente_cittadinanza_cod = V104_CITTADINANZA_ITALIA_CARGOS;
+    for (const k of Object.keys(x)) v104FixCargosCitizenshipDeep(x[k]);
+  }
+  return x;
+}
+
+function v104FixCargosString(s) {
+  s = String(s || '');
+  if (s.includes('CONDUCENTE_CONTRAENTE_CITTADINANZA_COD')) {
+    s = s.replace(/(CONDUCENTE_CONTRAENTE_CITTADINANZA_COD["']?\s*[:=]\s*["']?)[^"',;}\]\s]*/g, '$1' + V104_CITTADINANZA_ITALIA_CARGOS);
+  }
+  return s;
+}
+
+function v104CargosPayload(x) {
+  if (typeof x === 'string') return v104FixCargosString(x);
+  return v104FixCargosCitizenshipDeep(x);
 }
 
