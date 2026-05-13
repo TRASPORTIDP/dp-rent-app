@@ -30,7 +30,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V101 FIX CITTADINANZA 086
+// V102 PDF UNICO FIRMA/PDF
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -206,7 +206,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V101 FIX CITTADINANZA 086 + NO CRASH
+// V102 PDF UNICO FIRMA/PDF + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -230,7 +230,7 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V101 FIX CITTADINANZA 086 - DEFAULT REALI
+// V102 PDF UNICO FIRMA/PDF - DEFAULT REALI
 // =========================
 const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
@@ -1045,7 +1045,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V101 FIX CITTADINANZA 086</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V102 PDF UNICO FIRMA/PDF</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1191,7 +1191,7 @@ async function getOrCreateDriveContractFolderV63(p) {
   if (found.data.files && found.data.files[0]) return found.data.files[0];
   const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
   if (parent) requestBody.parents = [parent];
-  const created = await v100DeleteOldContractPdfsInDrive(folderId || folder?.id || praticaFolderId || driveFolderId);
+  const created = await v102DeleteOldContractDbAndDrive(id || prenotazioneId || req.params.id || p?.id, folderId || folder?.id || praticaFolderId || driveFolderId);
 await drive.files.create({ requestBody, fields:'id,name,webViewLink' });
   return created.data;
 }
@@ -1575,7 +1575,7 @@ doc.end();
 
 
 // =========================
-// V101 FIX CITTADINANZA 086
+// V102 PDF UNICO FIRMA/PDF
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1802,7 +1802,7 @@ const fields = [
 
 
 // =========================
-// V101 FIX CITTADINANZA 086
+// V102 PDF UNICO FIRMA/PDF
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2248,7 +2248,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V101 FIX CITTADINANZA 086'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V102 PDF UNICO FIRMA/PDF'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -3582,7 +3582,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V101 FIX CITTADINANZA 086 / DRIVE / BRAND
+// V102 PDF UNICO FIRMA/PDF / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -6768,5 +6768,42 @@ function v100PatchCargosPayload(obj) {
     else if (obj[k] && typeof obj[k] === 'object') v100PatchCargosPayload(obj[k]);
   }
   return obj;
+}
+
+
+
+// =========================
+// V102 FIX PDF DOPPIO FIRMA/PDF
+// =========================
+const v102PdfLock = new Map();
+
+function v102PdfKey(prenotazioneId, numeroContratto) {
+  return String(prenotazioneId || numeroContratto || '').trim();
+}
+
+async function v102RunOncePdf(key, fn) {
+  key = String(key || 'global');
+  if (v102PdfLock.has(key)) return await v102PdfLock.get(key);
+  const p = Promise.resolve().then(fn).finally(() => {
+    setTimeout(() => v102PdfLock.delete(key), 2500);
+  });
+  v102PdfLock.set(key, p);
+  return await p;
+}
+
+async function v102DeleteOldContractDbAndDrive(prenotazioneId, folderId) {
+  try {
+    if (typeof run === 'function') {
+      await run(`DELETE FROM allegati WHERE prenotazione_id=? AND (
+        lower(coalesce(tipo,'')) LIKE '%contratto%' OR
+        lower(coalesce(filename,'')) LIKE 'contratto_%' OR
+        lower(coalesce(originalname,'')) LIKE 'contratto_%'
+      )`, [prenotazioneId]).catch(()=>{});
+    }
+  } catch (_) {}
+
+  try {
+    await v102DeleteOldContractDbAndDrive(id || prenotazioneId || req.params.id || p?.id, folderId);
+  } catch (_) {}
 }
 
