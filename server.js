@@ -1027,6 +1027,7 @@ input,select,textarea,button{padding:11px;margin:5px 0;width:100%;border:1px sol
 button,.btn{background:var(--red);color:white;border:0;padding:11px 16px;border-radius:8px;text-decoration:none;display:inline-block;font-weight:bold;cursor:pointer;margin:4px 4px 4px 0;width:auto}
 .btn2{background:#333}.btn3{background:#0b6b2d}.btnWarn{background:#b36b00}
 .ok{color:green;font-weight:bold}.bad{color:#b30000;font-weight:bold}.warn{color:#b36b00;font-weight:bold}
+.btn.bad,button.bad{background:#b30000!important;color:#fff!important}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
 .libero{background:#1fae4b;color:white;text-align:center;font-weight:bold;cursor:pointer}
 .occupato{background:#d90000;color:white;text-align:center;font-weight:bold;cursor:pointer}
@@ -1548,8 +1549,9 @@ doc.end();
 
   let driveRes = null;
   const forceDrive = !!opts.forceDrive;
+  const skipDrive = !!opts.skipDrive;
 
-  if (shouldUploadPdfToDrive(p, forceDrive)) {
+  if (!skipDrive && shouldUploadPdfToDrive(p, forceDrive)) {
     try {
       driveRes = await uploadFileToDrive(
         file,
@@ -4943,31 +4945,43 @@ app.get('/firma-link/:id', async (req, res) => {
   `));
 });
 
+
 app.get('/whatsapp-contratto/:id', async (req, res) => {
-  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
-  if (!p) return res.send('Contratto non trovato');
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
 
-  let pdfLink = p.pdf_drive_web_link || '';
-  if (!pdfLink) {
-    try {
-      await generaPdfContratto(p.id);
-      const updated = await get(`SELECT pdf_drive_web_link FROM prenotazioni WHERE id=?`, [p.id]);
-      pdfLink = updated?.pdf_drive_web_link || '';
-    } catch (e) {
-      console.log('Errore generazione PDF per WhatsApp:', e.message);
+    const tel = normalizzaWa(p.telefono || p.telefono_cliente || '');
+    if (!tel) {
+      return res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="bad">Telefono cliente mancante</h2><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna</a></div>`));
     }
+
+    let pdfLink = p.pdf_drive_web_link || p.pdf_drive_link || '';
+    if (!pdfLink) {
+      try {
+        const sync = await syncContrattoDriveV63(p.id);
+        const updated = await get(`SELECT pdf_drive_web_link,pdf_drive_link FROM prenotazioni WHERE id=?`, [p.id]);
+        pdfLink = updated?.pdf_drive_web_link || updated?.pdf_drive_link || sync?.pdf?.webViewLink || '';
+      } catch (e) {
+        console.log('Errore generazione/sync PDF per WhatsApp:', e.message);
+      }
+    }
+
+    const firmaLink = absoluteUrl(req, `/firma/${p.id}`);
+    const testo =
+      `DP RENT - Contratto ${p.codice || p.id}\n` +
+      `Cliente: ${p.nome || ''} ${p.cognome || ''}\n` +
+      `Totale: â¬ ${Number(p.totale || 0).toFixed(2)}\n\n` +
+      (pdfLink ? `PDF contratto: ${pdfLink}\n\n` : '') +
+      `Firma online: ${firmaLink}`;
+
+    const r = await dpNotify([tel], testo);
+    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p>${pdfLink ? `<p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>` : '<p class="warn">PDF Drive non disponibile: controlla configurazione Google Drive.</p>'}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a></div>`));
+  } catch (e) {
+    res.status(500).send(page('Errore invio contratto WhatsApp', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
   }
-
-  const firmaLink = absoluteUrl(req, `/firma/${p.id}`);
-  const testo =
-    `DP RENT - Contratto ${p.codice}\n` +
-    `Cliente: ${p.nome || ''} ${p.cognome || ''}\n` +
-    `Totale: â¬ ${Number(p.totale || 0).toFixed(2)}\n\n` +
-    (pdfLink ? `PDF contratto: ${pdfLink}\n\n` : '') +
-    `Firma online: ${firmaLink}`;
-
-  res.redirect(whatsappText(testo));
 });
+
 
 
 
@@ -5776,7 +5790,7 @@ async function syncContrattoDriveV63(prenotazioneId) {
       [folder.id, folder.webViewLink || null, prenotazioneId]
     );
 
-    const pdf = await generaPdfContratto(prenotazioneId, { forceDrive: false });
+    const pdf = await generaPdfContratto(prenotazioneId, { forceDrive: false, skipDrive: true });
     const pdfName = pdfFileNameForContract(p);
 
     await deleteAllContractPdfsInDriveV63(folder.id);
@@ -5790,9 +5804,23 @@ async function syncContrattoDriveV63(prenotazioneId) {
 
     if (uploadedPdf && uploadedPdf.id) {
       await run(
-        `UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=? WHERE id=?`,
-        [pdf, uploadedPdf.webViewLink || null, prenotazioneId]
+        `UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_web_link=?, pdf_drive_file_id=? WHERE id=?`,
+        [pdf, uploadedPdf.webViewLink || null, uploadedPdf.webViewLink || null, uploadedPdf.id || null, prenotazioneId]
       );
+      // pulizia finale: nella cartella contratto deve restare un solo PDF
+      try {
+        const found = await drive.files.list({
+          q: `'${folder.id}' in parents and trashed=false and mimeType='application/pdf'`,
+          fields: 'files(id,name)',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true
+        });
+        for (const f of (found.data.files || [])) {
+          if (f.id !== uploadedPdf.id) {
+            try { await drive.files.delete({ fileId: f.id, supportsAllDrives: true }); } catch(e) {}
+          }
+        }
+      } catch(e) { console.log('Pulizia PDF duplicati warning:', e.message); }
     }
 
     await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
