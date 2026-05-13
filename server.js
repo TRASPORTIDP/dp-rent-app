@@ -1039,13 +1039,13 @@ canvas{border:2px solid #333;background:white;width:100%;height:250px;touch-acti
 .notice{background:#fff3cd;border:1px solid #ffe08a;padding:11px;border-radius:8px;margin:10px 0}
 .alert{background:#ffe0e0;border:1px solid #d90000;padding:10px;border-radius:8px;margin:6px 0}
 .badge{display:inline-block;padding:4px 7px;border-radius:5px;font-size:12px;margin:2px;background:#eee}
-.badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}
+.badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}.badge-blue{background:#1155cc;color:white}.premium-card{border:1px solid #eee;border-radius:18px;padding:18px;background:linear-gradient(180deg,#fff,#fafafa);box-shadow:0 10px 25px rgba(0,0,0,.08);margin:10px 0}.big-actions .btn{font-size:17px;padding:14px 18px;border-radius:14px}.muted{color:#777}
 pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;padding:12px;border-radius:8px;overflow:auto}
 @media(max-width:700px){.grid{grid-template-columns:1fr}main{padding:10px}header h1{font-size:24px}.tile{font-size:19px;min-height:100px}th,td{font-size:12px;padding:6px}}
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V107 CARGOS UID LOCK</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V108 COMPLETA</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1053,6 +1053,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 <a href="/import-mezzi">Import Excel</a>
 <a href="/nuova-prenotazione">Nuova prenotazione</a>
 <a href="/clienti">Clienti</a>
+<a href="/documenti-clienti">Documenti clienti</a>
 <a href="/prenotazioni">Storico</a>
 <a href="/planning">Planning</a>
 <a href="/prenota">Pagina cliente</a>
@@ -1482,9 +1483,9 @@ async function generaPdfContratto(id, opts = {}) {
   row(doc, 'Cliente', `${p.nome || ''} ${p.cognome || ''}`, 55, yLeft, 220); yLeft += 18;
   row(doc, 'Telefono', p.telefono || '', 55, yLeft, 220); yLeft += 18;
   row(doc, 'Email', p.email || '', 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Codice fiscale', p.codice_fiscale || '', 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Indirizzo', `${p.indirizzo || ''} ${p.citta || ''} ${p.cap || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Fatturazione', `${p.tipo_cliente || ''} ${p.ragione_sociale || ''} ${p.piva || ''}`, 55, yLeft, 220); yLeft += 18;
+  row(doc, 'Codice fiscale', p.codice_fiscale || p.cf || '', 55, yLeft, 220); yLeft += 18;
+  row(doc, 'Indirizzo', `${p.indirizzo || ''} ${p.cap || ''} ${p.citta || ''} ${p.provincia || ''}`, 55, yLeft, 220); yLeft += 18;
+  row(doc, 'Fatturazione', `${p.tipo_cliente || p.fatturazione || ''} ${p.ragione_sociale || p.azienda || ''} ${p.piva || ''}`, 55, yLeft, 220); yLeft += 18;
   row(doc, 'PEC / SDI', `${p.pec || ''} ${p.sdi || ''}`, 55, yLeft, 220); yLeft += 18;
 
   yRight = section(doc, 'CONDUCENTI', 310, yRight, 245);
@@ -2249,7 +2250,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V107 CARGOS UID LOCK'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V108 COMPLETA - documenti clienti, firma, PDF lock, CaRGOS badge'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2747,7 +2748,7 @@ app.get('/clienti', (req, res) => {
         <td>${esc(c.codice_fiscale||'')}</td>
         <td>${esc(c.documento_numero||'')}<br>Scad. ${esc(c.documento_scadenza||'')}</td>
         <td>${esc(c.patente_numero||'')}<br>Scad. ${esc(c.patente_scadenza||'')}</td>
-        <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a> <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica</a> <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina</a></td>
+        <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a> <a class="btn btn3" href="/cliente/${c.id}/documenti">Documenti</a> <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica</a> <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina</a></td>
       </tr>`).join('');
     res.send(page('Clienti', `
       <div class="box"><h2>Storico clienti</h2>
@@ -2770,6 +2771,7 @@ app.get('/cliente/:id', (req, res) => {
       <p><b>Patente:</b> ${esc(c.patente_numero||'')} - scad. ${esc(c.patente_scadenza||'')} - cat. ${esc(c.categoria_patente||'')}</p>
       <p><b>Note:</b> ${esc(c.note||'')}</p>
       <a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto da cliente</a>
+      <a class="btn btn3" href="/cliente/${c.id}/documenti">Archivio documenti</a>
       <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica cliente</a>
       <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina cliente</a>
       <a class="btn btn2" href="/clienti">Torna clienti</a>
@@ -4207,7 +4209,7 @@ app.get('/prenotazione/:id', async (req, res) => {
       <p><b>Mezzo:</b> <a href="/mezzo/${p.mezzo_id}">${esc(p.targa)} ${esc(descrizionePubblica(p))}</a></p>
       <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} â ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
       <p><b>Totale:</b> â¬ ${euro(p.totale)} | <b>Cauzione:</b> â¬ ${euro(p.cauzione || CAUZIONE)}</p>
-      <p><b>Stato:</b> ${esc(p.stato)} | <b>Nexi:</b> ${esc(p.nexi_stato || '')} | <b>Ca.R.G.O.S.:</b> ${esc(p.record_cargos_stato || '')}</p>
+      <p><b>Stato:</b> <span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span> <b>Nexi:</b> <span class="badge ${p.nexi_stato==='pagato'?'badge-green':'badge-orange'}">${esc(p.nexi_stato || 'non pagato')}</span> <b>Ca.R.G.O.S.:</b> <span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span> <b>Firma:</b> <span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firmato':'manca firma'}</span></p>
       ${p.pdf_drive_web_link ? `<p><b>PDF Drive:</b> <a target="_blank" href="${esc(p.pdf_drive_web_link)}">Apri su Drive</a></p>` : ''}
       ${p.nexi_link ? `<p><b>Link Nexi:</b> <a target="_blank" href="${esc(p.nexi_link)}">${esc(p.nexi_link)}</a></p>` : ''}
       <div class="actions">
@@ -4239,7 +4241,7 @@ app.get('/prenotazioni', async (req, res) => {
   if (al) { sql += ` AND date(p.data_fine)<=date(?)`; params.push(al); }
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td>${esc(p.stato)}</td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>â¬ ${euro(p.totale)}</td><td><span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span><br><span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firma ok':'firma no'}</span></td><td><span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span></td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
   res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>CaRGOS</th><th>Azioni</th></tr>${trs}</table>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
@@ -4886,8 +4888,10 @@ app.get('/firma/:id', (req, res) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ firma: canvas.toDataURL('image/png') })
         });
-        if (r.ok) location.href = '/prenotazione/${req.params.id}';
-        else alert('Errore salvataggio firma');
+        if (r.ok) {
+          try { const j = await r.json(); location.href = j.redirect || '/contratto/${req.params.id}/firmato'; }
+          catch(e) { location.href = '/contratto/${req.params.id}/firmato'; }
+        } else alert('Errore salvataggio firma');
       }
     </script>
   `));
@@ -4901,7 +4905,7 @@ app.post('/firma/:id', async (req, res) => {
     fs.writeFileSync(file, base64, 'base64');
     await run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id]);
     await generaPdfContratto(req.params.id, { forceDrive: false });
-    res.send('OK');
+    res.json({ ok:true, redirect:'/contratto/' + req.params.id + '/firmato' });
   } catch (e) {
     res.status(500).send(e.message);
   }
@@ -6706,7 +6710,7 @@ async function v107SaveCargosUid(id, uid) {
 
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V94 OCR PRIMA + FIRMA WHATSAPP porta ' + PORT);
+  console.log('DP RENT APP V108 COMPLETA porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
 
@@ -6935,3 +6939,97 @@ function v104CargosPayload(x) {
   return v104FixCargosCitizenshipDeep(x);
 }
 
+
+
+// =========================
+// V108 COMPLETA - PATCH FINALE DANIELE
+// documenti clienti persistenti, PDF lock, firma redirect, badge, azienda completa
+// =========================
+try {
+  addColumn('clienti','provincia','TEXT');
+  addColumn('clienti','tipo_cliente','TEXT');
+  addColumn('clienti','ragione_sociale','TEXT');
+  addColumn('clienti','pec','TEXT');
+  addColumn('clienti','sdi','TEXT');
+  addColumn('clienti','documento_file','TEXT');
+  addColumn('clienti','patente_file','TEXT');
+  addColumn('prenotazioni','firma_path','TEXT');
+  addColumn('prenotazioni','codice_fiscale','TEXT');
+  addColumn('prenotazioni','tipo_cliente','TEXT');
+  addColumn('prenotazioni','ragione_sociale','TEXT');
+  addColumn('prenotazioni','provincia','TEXT');
+  addColumn('prenotazioni','cargos_inviato','INTEGER DEFAULT 0');
+  addColumn('prenotazioni','cargos_uid','TEXT');
+  addColumn('allegati','cliente_id','INTEGER');
+  addColumn('allegati','size','INTEGER');
+} catch(e) { console.log('V108 add columns skip:', e.message); }
+
+const v108PdfLocks = new Map();
+const v108OriginalGeneraPdfContratto = generaPdfContratto;
+generaPdfContratto = async function v108GeneraPdfContrattoLocked(id, opts = {}) {
+  const key = String(id || 'global');
+  if (v108PdfLocks.has(key)) return await v108PdfLocks.get(key);
+  const job = Promise.resolve().then(async () => {
+    try {
+      const p = await get(`SELECT pdf_path FROM prenotazioni WHERE id=?`, [id]).catch(()=>null);
+      if (p && p.pdf_path && !opts.forceDrive && fs.existsSync(p.pdf_path)) {
+        const age = Date.now() - fs.statSync(p.pdf_path).mtimeMs;
+        if (age < 1500) return p.pdf_path;
+      }
+    } catch(_) {}
+    return await v108OriginalGeneraPdfContratto(id, opts);
+  }).finally(() => setTimeout(()=>v108PdfLocks.delete(key), 3500));
+  v108PdfLocks.set(key, job);
+  return await job;
+};
+
+function v108FileUrl(f){
+  if(!f) return '';
+  const name = path.basename(String(f));
+  return '/uploads/' + encodeURIComponent(name);
+}
+function v108DocRows(files){
+  return (files || []).map(a => `<tr><td>${esc(a.tipo||'documento')}</td><td>${esc(a.originalname||a.filename||'file')}</td><td>${esc(a.created_at||'')}</td><td><a class="btn btn2" target="_blank" href="/uploads/${encodeURIComponent(path.basename(a.path||a.filename||''))}">Apri</a></td></tr>`).join('') || '<tr><td colspan="4">Nessun documento caricato.</td></tr>';
+}
+
+app.get('/documenti-clienti', async (req,res)=>{
+  const rows = await all(`SELECT c.*, (SELECT COUNT(*) FROM allegati a WHERE a.tipo LIKE 'cliente_%' AND (a.prenotazione_id IS NULL OR a.prenotazione_id=0) AND (a.originalname LIKE '%'||c.cognome||'%' OR a.originalname LIKE '%'||c.nome||'%')) as docs FROM clienti c ORDER BY updated_at DESC, id DESC LIMIT 300`).catch(()=>[]);
+  const trs = rows.map(c=>`<tr><td><b>${esc(c.nome)} ${esc(c.cognome)}</b><br><span class="muted">${esc(c.telefono||'')} ${esc(c.email||'')}</span></td><td>${esc(c.codice_fiscale||'')}</td><td>${esc(c.documento_numero||'')}<br>${esc(c.patente_numero||'')}</td><td><a class="btn btn3" href="/cliente/${c.id}/documenti">Archivio</a> <a class="btn" href="/nuova-da-cliente/${c.id}">Contratto</a></td></tr>`).join('');
+  res.send(page('Documenti clienti', `<div class="premium-card"><h2>Archivio documenti clienti</h2><p>Carica e conserva carta identitÃ , patente, codice fiscale e documenti azienda su disco persistente Render.</p><a class="btn" href="/clienti">Vai ai clienti</a></div><table><tr><th>Cliente</th><th>CF</th><th>Documento / Patente</th><th>Azioni</th></tr>${trs || '<tr><td colspan="4">Nessun cliente.</td></tr>'}</table>`));
+});
+
+app.get('/cliente/:id/documenti', async (req,res)=>{
+  const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
+  if(!c) return res.redirect('/clienti');
+  const files = await all(`SELECT * FROM allegati WHERE cliente_id=? OR (prenotazione_id IS NULL AND tipo LIKE 'cliente_%' AND originalname LIKE ?) ORDER BY id DESC`, [req.params.id, `%${c.cognome||''}%`]).catch(()=>[]);
+  res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identitÃ  / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri</th></tr>${v108DocRows(files)}</table>`));
+});
+
+app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
+  try{
+    const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
+    if(!c || !req.file) return res.redirect('/clienti');
+    const ext = path.extname(req.file.originalname || '') || '';
+    const safeName = `cliente_${req.params.id}_${Date.now()}_${String(req.body.tipo||'documento').replace(/[^a-z0-9_-]/gi,'')}${ext}`;
+    const finalPath = path.join(uploadDir, safeName);
+    fs.renameSync(req.file.path, finalPath);
+    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]).catch(async ()=>{
+      await run(`INSERT INTO allegati (prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?)`, [null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]);
+    });
+    if(req.body.tipo === 'cliente_documento') await run(`UPDATE clienti SET documento_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
+    if(req.body.tipo === 'cliente_patente') await run(`UPDATE clienti SET patente_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
+    res.redirect(`/cliente/${req.params.id}/documenti`);
+  } catch(e){ res.status(500).send(page('Errore documento', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
+app.get('/contratto/:id/firmato', async (req,res)=>{
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if(!p) return res.send('Contratto non trovato');
+  res.send(page('Firma salvata', `<div class="premium-card"><h2 class="ok">Firma salvata correttamente</h2><p>Contratto ${esc(p.codice||p.id)} firmato e PDF rigenerato senza duplicati.</p><div class="big-actions"><a class="btn" href="/contratto/${p.id}">Rigenera/visualizza PDF</a><a class="btn btn3" href="/whatsapp-contratto/${p.id}">Invia contratto WhatsApp</a><a class="btn btn2" href="/prenotazione/${p.id}">Torna al contratto</a></div></div>`));
+});
+
+app.get('/v108-check', async (req,res)=>{
+  const dbOk = fs.existsSync(DB_PATH);
+  const dirs = [DATA_DIR, uploadDir, contractsDir, firmeDir].map(d=>`${d}: ${fs.existsSync(d) ? 'OK' : 'NO'}`).join('\n');
+  res.type('text/plain').send(`DP RENT V108 OK\nDB: ${dbOk ? DB_PATH : 'NO'}\n${dirs}`);
+});
