@@ -30,7 +30,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V102 PDF UNICO FIRMA/PDF
+// V103 CARGOS PDF LOCK
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -206,7 +206,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V102 PDF UNICO FIRMA/PDF + NO CRASH
+// V103 CARGOS PDF LOCK + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -230,7 +230,7 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V102 PDF UNICO FIRMA/PDF - DEFAULT REALI
+// V103 CARGOS PDF LOCK - DEFAULT REALI
 // =========================
 const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
@@ -1045,7 +1045,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V102 PDF UNICO FIRMA/PDF</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V103 CARGOS PDF LOCK</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1191,7 +1191,7 @@ async function getOrCreateDriveContractFolderV63(p) {
   if (found.data.files && found.data.files[0]) return found.data.files[0];
   const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
   if (parent) requestBody.parents = [parent];
-  const created = await v102DeleteOldContractDbAndDrive(id || prenotazioneId || req.params.id || p?.id, folderId || folder?.id || praticaFolderId || driveFolderId);
+  const created = await v103DeleteOldPdfEverywhere(id || prenotazioneId || req.params.id || p?.id, folderId || folder?.id || praticaFolderId || driveFolderId);
 await drive.files.create({ requestBody, fields:'id,name,webViewLink' });
   return created.data;
 }
@@ -1212,7 +1212,8 @@ async function deleteDriveFilesByNameV63(folderId, name) {
 async function uploadFileToDriveFolderV63(localPath, fileName, mimeType, folderId) {
   if (!drive || !folderId) return null;
   const media = { mimeType: mimeType || 'application/octet-stream', body: fs.createReadStream(localPath) };
-  const uploaded = await drive.files.create({
+  const uploaded = await v103DeleteOldPdfEverywhere(id || prenotazioneId || req.params.id || p?.id, folderId || folder?.id || praticaFolderId || driveFolderId);
+await drive.files.create({
     requestBody:{ name:fileName, parents:[folderId] },
     media,
     fields:'id,name,webViewLink'
@@ -1351,7 +1352,7 @@ async function createNexiLink(amount, description, p) {
       Accept: 'application/json',
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify(v100PatchCargosPayload(payload))
+    body: JSON.stringify(v103DeepFixCargos(payload))
   });
 
   const text = await r.text();
@@ -1575,7 +1576,7 @@ doc.end();
 
 
 // =========================
-// V102 PDF UNICO FIRMA/PDF
+// V103 CARGOS PDF LOCK
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1802,7 +1803,7 @@ const fields = [
 
 
 // =========================
-// V102 PDF UNICO FIRMA/PDF
+// V103 CARGOS PDF LOCK
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2248,7 +2249,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V102 PDF UNICO FIRMA/PDF'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V103 CARGOS PDF LOCK'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -3582,7 +3583,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V102 PDF UNICO FIRMA/PDF / DRIVE / BRAND
+// V103 CARGOS PDF LOCK / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3831,7 +3832,7 @@ function cargosRecordDataV40(p) {
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
     CONDUCENTE_CONTRAENTE_NASCITA_DATA: v67DefaultBirth(p),
     CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
-    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: '086',
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: V103_CARGOS_CITTADINANZA_ITALIA,
     CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
     CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
     CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: getTipoDocumentoCargosV61(p.documento_tipo || p.tipo_documento || 'IDENT'),
@@ -6803,7 +6804,50 @@ async function v102DeleteOldContractDbAndDrive(prenotazioneId, folderId) {
   } catch (_) {}
 
   try {
-    await v102DeleteOldContractDbAndDrive(id || prenotazioneId || req.params.id || p?.id, folderId);
+    await v103DeleteOldPdfEverywhere(id || prenotazioneId || req.params.id || p?.id, folderId);
   } catch (_) {}
+}
+
+
+
+// =========================
+// V103 DEFINITIVO: CARGOS CITTADINANZA + PDF UNICO
+// =========================
+const V103_CARGOS_CITTADINANZA_ITALIA = '100000100';
+const v103PdfLocks = new Map();
+
+function v103DeepFixCargos(obj) {
+  if (!obj || typeof obj !== 'object') return obj;
+  for (const k of Object.keys(obj)) {
+    if (k === 'CONDUCENTE_CONTRAENTE_CITTADINANZA_COD') obj[k] = V103_CARGOS_CITTADINANZA_ITALIA;
+    else if (obj[k] && typeof obj[k] === 'object') v103DeepFixCargos(obj[k]);
+  }
+  if (!Object.prototype.hasOwnProperty.call(obj, 'CONDUCENTE_CONTRAENTE_CITTADINANZA_COD')) {
+    obj.CONDUCENTE_CONTRAENTE_CITTADINANZA_COD = V103_CARGOS_CITTADINANZA_ITALIA;
+  }
+  return obj;
+}
+
+async function v103DeleteOldPdfEverywhere(prenotazioneId, folderId) {
+  try {
+    if (typeof run === 'function' && prenotazioneId) {
+      await run(`DELETE FROM allegati WHERE prenotazione_id=? AND (
+        lower(coalesce(tipo,'')) LIKE '%contratto%' OR
+        lower(coalesce(filename,'')) LIKE 'contratto_%' OR
+        lower(coalesce(originalname,'')) LIKE 'contratto_%'
+      )`, [prenotazioneId]).catch(()=>{});
+    }
+  } catch(e) { console.error('V103 delete db pdf', e.message); }
+
+  try {
+    if (folderId && typeof drive !== 'undefined' && drive.files) {
+      const q = `'${folderId}' in parents and trashed=false and mimeType='application/pdf'`;
+      const r = await drive.files.list({ q, fields:'files(id,name)', supportsAllDrives:true, includeItemsFromAllDrives:true });
+      for (const f of (r.data.files || [])) {
+        const n = String(f.name || '').toLowerCase();
+        if (n.includes('contratto')) await drive.files.delete({ fileId:f.id, supportsAllDrives:true }).catch(()=>{});
+      }
+    }
+  } catch(e) { console.error('V103 delete drive pdf', e.message); }
 }
 
