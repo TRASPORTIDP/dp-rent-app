@@ -30,7 +30,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V105 CARGOS LINK UNICO
+// V106 CARGOS ROUTE FORZATA
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -206,7 +206,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V105 CARGOS LINK UNICO + NO CRASH
+// V106 CARGOS ROUTE FORZATA + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -230,7 +230,7 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V105 CARGOS LINK UNICO - DEFAULT REALI
+// V106 CARGOS ROUTE FORZATA - DEFAULT REALI
 // =========================
 const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
@@ -1045,7 +1045,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V105 CARGOS LINK UNICO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V106 CARGOS ROUTE FORZATA</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1576,7 +1576,7 @@ doc.end();
 
 
 // =========================
-// V105 CARGOS LINK UNICO
+// V106 CARGOS ROUTE FORZATA
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1803,7 +1803,7 @@ const fields = [
 
 
 // =========================
-// V105 CARGOS LINK UNICO
+// V106 CARGOS ROUTE FORZATA
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2249,7 +2249,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V105 CARGOS LINK UNICO'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V106 CARGOS ROUTE FORZATA'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -3583,7 +3583,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V105 CARGOS LINK UNICO / DRIVE / BRAND
+// V106 CARGOS ROUTE FORZATA / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -4104,6 +4104,20 @@ app.get('/cargos/:id/check', async (req, res) => {
     }
   });
 });
+
+
+
+// =========================
+// V106 FIX: /cargos/check usa la verifica funzionante
+// =========================
+app.get('/cargos/check/:id', async (req, res) => {
+  return res.redirect('/cargos/' + encodeURIComponent(req.params.id) + '/verifica');
+});
+
+app.post('/cargos/check/:id', async (req, res) => {
+  return res.redirect('/cargos/' + encodeURIComponent(req.params.id) + '/verifica');
+});
+
 
 app.get('/cargos/:id/verifica', (req, res) => res.redirect(`/cargos/${req.params.id}/check`));
 
@@ -5098,13 +5112,7 @@ app.get('/cargos/export/:id', async (req, res) => {
   } catch(e) { res.status(500).send('Errore export CARGOS: ' + e.message); }
 });
 
-app.get('/cargos/check/:id', async (req, res) => {
-  try {
-    const result = await cargosSendRecords([await buildCargosRecordForContract(req.params.id)], 'Check');
-    await run(`UPDATE prenotazioni SET record_cargos_stato=? WHERE id=?`, ['check_ok', req.params.id]);
-    res.send(page('Check Ca.R.G.O.S.', `<div class="box"><h2>Esito Check</h2><pre>${esc(JSON.stringify(result,null,2))}</pre><a class="btn" href="/prenotazione/${req.params.id}">Torna contratto</a></div>`));
-  } catch(e) { res.status(500).send(page('Errore Check Ca.R.G.O.S.', `<div class="box"><h2 class="bad">Errore Check</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cargos">Torna</a></div>`)); }
-});
+
 
 app.get('/cargos/send/:id', async (req, res) => {
   try {
