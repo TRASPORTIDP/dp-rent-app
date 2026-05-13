@@ -30,7 +30,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V104 CARGOS FORZATO DEFINITIVO
+// V105 CARGOS LINK UNICO
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -206,7 +206,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V104 CARGOS FORZATO DEFINITIVO + NO CRASH
+// V105 CARGOS LINK UNICO + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -230,7 +230,7 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V104 CARGOS FORZATO DEFINITIVO - DEFAULT REALI
+// V105 CARGOS LINK UNICO - DEFAULT REALI
 // =========================
 const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
@@ -1045,7 +1045,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V104 CARGOS FORZATO DEFINITIVO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V105 CARGOS LINK UNICO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1576,7 +1576,7 @@ doc.end();
 
 
 // =========================
-// V104 CARGOS FORZATO DEFINITIVO
+// V105 CARGOS LINK UNICO
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1803,7 +1803,7 @@ const fields = [
 
 
 // =========================
-// V104 CARGOS FORZATO DEFINITIVO
+// V105 CARGOS LINK UNICO
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2249,7 +2249,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V104 CARGOS FORZATO DEFINITIVO'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V105 CARGOS LINK UNICO'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -3583,7 +3583,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V104 CARGOS FORZATO DEFINITIVO / DRIVE / BRAND
+// V105 CARGOS LINK UNICO / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -5944,7 +5944,7 @@ app.get('/contratto/:id/gestisci', async (req,res)=>{
     <hr>
     <a class="btn btn2" href="/contratto/${p.id}">PDF</a>
     <a class="btn btn2" href="/documenti/${p.id}">Foto/documenti</a>
-    <a class="btn btn2" href="/cargos/${p.id}">Ca.R.G.O.S.</a>
+    <a class="btn btn2" href="/cargos/check/${p.id}">Ca.R.G.O.S.</a>
     <a class="btn btn2" href="/">Dashboard</a>
   </div>`));
 });
