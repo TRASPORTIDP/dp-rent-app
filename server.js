@@ -30,7 +30,7 @@ app.use('/public', express.static(appPublicDir));
 app.use(express.static(appPublicDir));
 
 // =========================
-// V76 FIX ROUTE SYNTAX CARGOS
+// V101 FIX CITTADINANZA 086
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
@@ -206,7 +206,7 @@ function v67DefaultBirth(p){
 
 
 // =========================
-// V76 FIX ROUTE SYNTAX CARGOS + NO CRASH
+// V101 FIX CITTADINANZA 086 + NO CRASH
 // =========================
 function v68CittadinanzaCod(p){
   return String((p && (p.cittadinanza_cod || p.conducente_cittadinanza_cod)) || '100000100').trim();
@@ -230,7 +230,7 @@ function v68SafeValidateCargos(p){
 
 
 // =========================
-// V76 FIX ROUTE SYNTAX CARGOS - DEFAULT REALI
+// V101 FIX CITTADINANZA 086 - DEFAULT REALI
 // =========================
 const CARGOS_DEFAULTS_V76 = {
   pagamento_tipo: '1',              // Contanti
@@ -1045,7 +1045,7 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V76 FIX ROUTE SYNTAX CARGOS</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V101 FIX CITTADINANZA 086</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1575,7 +1575,7 @@ doc.end();
 
 
 // =========================
-// V76 FIX ROUTE SYNTAX CARGOS
+// V101 FIX CITTADINANZA 086
 // =========================
 const CARGOS_DEFAULT_LUOGO_NARNI = '410055022';
 
@@ -1802,7 +1802,7 @@ const fields = [
 
 
 // =========================
-// V76 FIX ROUTE SYNTAX CARGOS
+// V101 FIX CITTADINANZA 086
 // =========================
 function cargosCfgGet(k, def='') {
   return process.env[k] || process.env['CARGOS_' + k] || def || '';
@@ -2248,7 +2248,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V76 FIX ROUTE SYNTAX CARGOS'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V101 FIX CITTADINANZA 086'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -3582,7 +3582,7 @@ const validation = validateCargosV37(p);
 
 
 // =========================
-// V76 FIX ROUTE SYNTAX CARGOS / DRIVE / BRAND
+// V101 FIX CITTADINANZA 086 / DRIVE / BRAND
 // =========================
 function safeFileName(v) {
   return String(v || '').replace(/[\/\\:*?"<>|]/g, '-').replace(/\s+/g, ' ').trim();
@@ -3831,7 +3831,7 @@ function cargosRecordDataV40(p) {
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
     CONDUCENTE_CONTRAENTE_NASCITA_DATA: v67DefaultBirth(p),
     CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
-    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: 100,
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: '086',
     CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
     CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
     CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: getTipoDocumentoCargosV61(p.documento_tipo || p.tipo_documento || 'IDENT'),
@@ -6769,3 +6769,4 @@ function v100PatchCargosPayload(obj) {
   }
   return obj;
 }
+
