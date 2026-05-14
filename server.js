@@ -19,6 +19,16 @@ try { twilio = require('twilio'); } catch(e) { console.log('Twilio non installat
 try { google = require('googleapis').google; } catch(e) { console.log('Google APIs non installato:', e.message); }
 
 const app = express();
+app.use((req, res, next) => {
+  const oldSend = res.send.bind(res);
+  res.send = function(body) {
+    if (typeof body === 'string' && !res.getHeader('Content-Type')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    }
+    return oldSend(body);
+  };
+  next();
+});
 
 
 // =========================
@@ -1002,6 +1012,9 @@ function page(title, content) {
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
 <title>${esc(title)}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
@@ -1042,7 +1055,25 @@ canvas{border:2px solid #333;background:white;width:100%;height:250px;touch-acti
 .badge{display:inline-block;padding:4px 7px;border-radius:5px;font-size:12px;margin:2px;background:#eee}
 .badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}.badge-blue{background:#1155cc;color:white}.premium-card{border:1px solid #eee;border-radius:18px;padding:18px;background:linear-gradient(180deg,#fff,#fafafa);box-shadow:0 10px 25px rgba(0,0,0,.08);margin:10px 0}.big-actions .btn{font-size:17px;padding:14px 18px;border-radius:14px}.muted{color:#777}
 pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;padding:12px;border-radius:8px;overflow:auto}
-@media(max-width:700px){.grid{grid-template-columns:1fr}main{padding:10px}header h1{font-size:24px}.tile{font-size:19px;min-height:100px}th,td{font-size:12px;padding:6px}}
+
+/* V109 responsive premium iPhone/iPad */
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:linear-gradient(180deg,#f7f7f7,#ededed);-webkit-text-size-adjust:100%}
+header{padding:22px clamp(16px,3vw,34px);box-shadow:0 10px 30px rgba(0,0,0,.22);position:relative}
+header img{height:64px!important;border-radius:16px!important;padding:6px!important;box-shadow:0 0 0 3px rgba(255,255,255,.18)}
+header h1{font-size:clamp(28px,5vw,46px);letter-spacing:2px;line-height:1.05}
+header h1 small{display:inline-block;margin-left:8px;font-size:clamp(13px,2vw,18px)!important;letter-spacing:1.5px;color:#f1f1f1!important}
+nav{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:18px clamp(14px,3vw,30px);box-shadow:0 10px 25px rgba(198,0,0,.22)}
+nav a{display:flex;align-items:center;justify-content:center;min-height:48px;text-align:center;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.16);border-radius:16px;font-size:clamp(16px,2.2vw,22px);padding:11px 12px}
+main{max-width:1180px;margin:0 auto;padding:clamp(14px,3vw,28px)}
+.box,.premium-card{border-radius:24px;padding:clamp(18px,3vw,34px);box-shadow:0 18px 45px rgba(0,0,0,.12);border:1px solid rgba(0,0,0,.06)}
+.box h2,.premium-card h2{font-size:clamp(28px,4vw,44px);line-height:1.08;margin-top:0}
+.btn,button{border-radius:16px;padding:14px 22px;font-size:clamp(17px,2vw,22px);font-weight:900;box-shadow:0 4px 0 rgba(0,0,0,.18)}
+.actions,.big-actions{display:flex;flex-wrap:wrap;gap:12px}.actions .btn,.big-actions .btn{margin:0}
+input,select,textarea{font-size:18px;border-radius:14px;padding:14px}
+.badge{border-radius:999px;font-weight:900;padding:7px 12px;font-size:14px}.badge-money{background:#111;color:#fff}.badge-danger{background:#d70000;color:#fff}.badge-ok{background:#10883b;color:#fff}.badge-warn{background:#ffb000;color:#111}
+.cauzione-box{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 8px}.cauzione-box .label{font-weight:900;font-size:20px;margin-right:2px}
+@media(min-width:701px) and (max-width:1180px){nav{grid-template-columns:repeat(3,1fr)}main{padding:24px}.btn,button{min-height:58px}.box{font-size:19px}}
+@media(max-width:700px){.grid{grid-template-columns:1fr}main{padding:14px}header{align-items:flex-start;gap:14px}header img{height:56px!important}header h1{font-size:34px}header h1 small{display:block;margin:6px 0 0 0}nav{grid-template-columns:repeat(2,1fr);gap:9px;padding:14px}nav a{min-height:52px;font-size:18px}.tile{font-size:19px;min-height:100px}th,td{font-size:12px;padding:6px}.actions .btn,.big-actions .btn{width:100%;text-align:center}.btn,button{width:auto;min-height:54px}.box,.premium-card{border-radius:22px;padding:22px} .cauzione-box{display:grid;grid-template-columns:1fr}.cauzione-box .badge{width:100%;text-align:center;font-size:16px}}
 </style>
 </head>
 <body>
@@ -4210,7 +4241,7 @@ app.get('/prenotazione/:id', async (req, res) => {
       <p><b>Email:</b> ${esc(p.email)} | <b>CF:</b> ${esc(p.codice_fiscale)}</p>
       <p><b>Mezzo:</b> <a href="/mezzo/${p.mezzo_id}">${esc(p.targa)} ${esc(descrizionePubblica(p))}</a></p>
       <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} â ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
-      <p><b>Totale:</b> â¬ ${euro(p.totale)} | <b>Cauzione:</b> â¬ ${euro(p.cauzione || CAUZIONE)}</p>
+      <p><b>Totale:</b> â¬ ${euro(p.totale)}</p>${cauzioneHtml(p)}
       <p><b>Stato:</b> <span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span> <b>Nexi:</b> <span class="badge ${p.nexi_stato==='pagato'?'badge-green':'badge-orange'}">${esc(p.nexi_stato || 'non pagato')}</span> <b>Ca.R.G.O.S.:</b> <span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span> <b>Firma:</b> <span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firmato':'manca firma'}</span></p>
       ${p.pdf_drive_web_link ? `<p><b>PDF Drive:</b> <a target="_blank" href="${esc(p.pdf_drive_web_link)}">Apri su Drive</a></p>` : ''}
       ${p.nexi_link ? `<p><b>Link Nexi:</b> <a target="_blank" href="${esc(p.nexi_link)}">${esc(p.nexi_link)}</a></p>` : ''}
@@ -5979,7 +6010,7 @@ app.get('/contratto/:id/gestisci', async (req,res)=>{
     <p><b>Cliente:</b> ${esc((p.nome||'')+' '+(p.cognome||''))}</p>
     <p><b>Periodo:</b> ${esc(p.data_inizio||'')} ${esc(p.ora_inizio||'')} - ${esc(p.data_fine||'')} ${esc(p.ora_fine||'')}</p>
     <p><b>Totale:</b> â¬ ${esc(p.totale||0)}</p>
-    <p><b>Cauzione:</b> richiesta ${esc(p.cauzione_richiesta||'no')} / ricevuta ${esc(p.cauzione_ricevuta||'no')} / â¬ ${esc(p.cauzione_importo||p.cauzione||0)}</p>
+    ${cauzioneHtml(p)}
     ${v63ContractButtons(p)}
     <hr>
     <a class="btn btn2" href="/contratto/${p.id}">PDF</a>
@@ -6215,6 +6246,19 @@ function dpNormalizeWhatsAppNumber(n){
     else n = '+39' + n.replace(/^0+/, '');
   }
   return 'whatsapp:' + n;
+}
+function normalizzaWa(n){ return dpNormalizeWhatsAppNumber(n); }
+
+function euroHtml(v){
+  const n = Number(String(v ?? 0).replace(',', '.'));
+  return 'â¬ ' + (Number.isFinite(n) ? n.toFixed(2).replace('.', ',') : String(v || '0'));
+}
+function cauzioneHtml(p){
+  const richiesta = String(p?.cauzione_richiesta || 'si').toLowerCase() === 'si';
+  const ricevuta = String(p?.cauzione_ricevuta || 'no').toLowerCase() === 'si';
+  const importo = p?.cauzione_importo || p?.cauzione || 500;
+  if (!richiesta) return '<div class="cauzione-box"><span class="label">Cauzione:</span><span class="badge badge-warn">Non richiesta</span></div>';
+  return '<div class="cauzione-box"><span class="label">Cauzione:</span><span class="badge badge-money">' + euroHtml(importo) + '</span><span class="badge ' + (ricevuta ? 'badge-ok' : 'badge-danger') + '">' + (ricevuta ? 'RICEVUTA' : 'DA RICEVERE') + '</span></div>';
 }
 const DP_TWILIO_WHATSAPP_NUMBER = dpNormalizeWhatsAppNumber(process.env.TWILIO_WHATSAPP_NUMBER || '+390744817108');
 const DP_STAFF_NUMBERS = dpParseNumbers(process.env.INTERNAL_GENERAL_NUMBERS || process.env.STAFF_WHATSAPP_NUMBERS, [
