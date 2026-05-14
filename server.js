@@ -1081,6 +1081,9 @@ canvas{border:2px solid #333;background:white;width:100%;height:250px;touch-acti
 .badge{display:inline-block;padding:4px 7px;border-radius:5px;font-size:12px;margin:2px;background:#eee}
 .badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}.badge-blue{background:#1155cc;color:white}.premium-card{border:1px solid #eee;border-radius:18px;padding:18px;background:linear-gradient(180deg,#fff,#fafafa);box-shadow:0 10px 25px rgba(0,0,0,.08);margin:10px 0}.big-actions .btn{font-size:17px;padding:14px 18px;border-radius:14px}.muted{color:#777}
 pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;padding:12px;border-radius:8px;overflow:auto}
+@keyframes dpBlink{0%,100%{box-shadow:0 0 0 0 rgba(215,0,0,.0);filter:brightness(1)}50%{box-shadow:0 0 28px 8px rgba(215,0,0,.45);filter:brightness(1.15)}}
+.dp-alert-wait{animation:dpBlink 1s infinite;border:5px solid #d70000!important;background:#fff1f1!important}
+.dp-alert-wait h2{color:#d70000!important}
 
 .top-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}.top-actions .back-btn,.top-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:14px;padding:10px 16px;font-weight:900;text-decoration:none;border:0;background:#333;color:#fff;box-shadow:0 3px 0 rgba(0,0,0,.16);font-size:16px}.top-actions .home-btn{background:#d70000}@media(max-width:700px){.top-actions{position:sticky;top:0;z-index:20;background:rgba(244,244,244,.94);backdrop-filter:blur(8px);padding:8px 0}.top-actions .back-btn,.top-actions a{flex:1;min-width:130px}}
 
@@ -1125,7 +1128,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V117 SCANSIONE/FATTURAZIONE</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V119 ATTESE/FATTURAZIONE</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1135,6 +1138,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 <a href="/clienti">Clienti</a>
 <a href="/scansione-documenti">Scansione documenti</a>
 <a href="/documenti-clienti">Documenti clienti</a>
+<a href="/richieste-attesa">Clienti in attesa</a>
 <a href="/scadenze-clienti">Scadenze clienti</a>
 <a href="/prenotazioni">Storico</a>
 <a href="/planning">Planning</a>
@@ -2363,7 +2367,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V118 - OCR flow, fatturazione completa, doppie notifiche, pulmino fix, PDF unico'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V119 - alert clienti attesa, menu globale, categorie mezzi corrette, fatturazione archivio'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2395,6 +2399,7 @@ app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
     const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`);
+    const attesa = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp'`);
     const allMezzi = await all(`SELECT * FROM mezzi`);
     const alerts = allMezzi.map(m => {
       const a = alertMezzo(m);
@@ -2409,10 +2414,12 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/prenotazioni"><span>&#128193;</span>Storico</a>
         <a class="tile" href="/scadenze-mezzi"><span>&#9888;</span>Scadenze</a>
         <a class="tile" href="/prenota"><span>&#128241;</span>Pagina cliente</a>
+        <a class="tile" href="/richieste-attesa"><span>&#128680;</span>Clienti in attesa</a>
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V91 APP COMPLETA BOT + CLIENTI CRUD</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a></div>` : ``}
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V119 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2428,6 +2435,15 @@ app.get('/', async (req, res) => {
     `));
   } catch (e) {
     res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore Dashboard</h2><pre>${esc(e.message)}</pre></div>`));
+  }
+});
+
+app.get('/richieste-attesa', async (req, res) => {
+  try {
+    const rows = await all(`SELECT * FROM prenotazioni WHERE stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp' ORDER BY id DESC LIMIT 100`);
+    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Apri</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
+  } catch(e) {
+    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore clienti in attesa</h2><pre>${esc(e.message)}</pre></div>`));
   }
 });
 
@@ -3384,6 +3400,10 @@ function clienteWebHtml(req) {
 <style>
 :root{--dp-red:#d70000;--dp-dark:#101015;--dp-blue:#173b8f;--bg:#eef4ff;--card:#fff;--line:#d9dbe7;--green:#1f7a36}
 *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#edf5ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;font-size:18px}
+.client-nav{position:sticky;top:0;z-index:999;background:rgba(7,17,31,.96);backdrop-filter:blur(10px);padding:calc(10px + env(safe-area-inset-top)) 14px 10px;display:flex;gap:10px;flex-wrap:wrap;box-shadow:0 8px 22px rgba(0,0,0,.22)}
+.client-nav a,.client-nav button{appearance:none;border:0;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border-radius:16px;padding:13px 16px;font-size:17px;font-weight:900;color:#fff;background:#24242b;cursor:pointer;box-shadow:0 8px 18px rgba(0,0,0,.18)}
+.client-nav .dash{background:#d70000}.client-nav .wait{background:#173b8f}.client-nav .back{background:#333}
+@media(max-width:720px){.client-nav a,.client-nav button{flex:1 1 calc(50% - 6px);font-size:16px;padding:13px 8px}.client-nav .wide{flex-basis:100%}}
 .hero{background:linear-gradient(135deg,#07111f,#163d91);color:#fff;padding:28px 22px 30px;border-radius:0 0 28px 28px;box-shadow:0 12px 35px rgba(0,0,0,.18)}
 .hero h1{margin:0;font-size:38px;letter-spacing:.5px}.hero p{font-size:20px;line-height:1.35;margin:12px 0 0;opacity:.95}.pill{display:inline-block;background:#fff;color:#163d91;font-weight:900;border-radius:999px;padding:10px 16px;margin:14px 8px 0 0}
 .wrap{max-width:900px;margin:20px auto;padding:0 14px 36px}.card{background:var(--card);border:1px solid #e3e7f2;border-radius:24px;padding:22px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.08)}
@@ -3423,6 +3443,11 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
 </script>
 </head>
 <body>
+<nav class="client-nav">
+  <button class="back" type="button" onclick="if(document.referrer){history.back()}else{location.href='/'}">↩️ Indietro</button>
+  <a class="dash" href="/">🏠 Dashboard</a>
+  <a class="wait wide" href="/richieste-attesa">🚨 Clienti in attesa</a>
+</nav>
 <section class="hero">
   <h1>DP RENT</h1>
   <p>Preventivo confermato. Compila tutti i dati per preparare pratica interna, contratto e controlli Ca.R.G.O.S.</p>
@@ -3590,7 +3615,7 @@ app.post('/prenota-ocr', upload.fields([
       }
     }
     if (!uploaded.length) {
-      return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Nessuna foto caricata</h1><p>Carica almeno documento o patente.</p><a href="javascript:history.back()">Torna</a>`);
+      return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Nessuna foto caricata</h1><p>Carica almeno documento o patente.</p><p><a href="javascript:history.back()">↩️ Torna indietro</a> &nbsp; <a href="/">🏠 Dashboard</a> &nbsp; <a href="/richieste-attesa">🚨 Clienti in attesa</a></p>`);
     }
     const preuploadId = 'OCR' + Date.now() + Math.floor(Math.random()*9999);
     PREN_OCR_UPLOADS[preuploadId] = uploaded;
@@ -3679,7 +3704,7 @@ app.post('/prenota-cliente', upload.fields([
       nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
       indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
       documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
-      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
+      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente, tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva, pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
     }, ()=>{}); } catch(_) {}
 
     const files = [];
@@ -6790,22 +6815,30 @@ function dpDays(a,b){ return Math.round((new Date(b.getFullYear(),b.getMonth(),b
 function dpExtractKm(text){ const m = String(text||'').replace(/\./g,'').match(/\d{1,6}/); return m ? Number(m[0]) : 150; }
 function dpCategoryFromChoice(txt){
   const t = dpNorm(txt);
-  if(t === '1' || t.includes('furg')) return { label:'Furgone cargo/merci', cats:['FURGONE','FURGONI','F1-VAN','F2-PC','F3-PL'] };
-  if(t === '2' || t.includes('pulmino') || t.includes('9') || t.includes('posti')) return { label:'Pulmino 8/9 posti', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
-  if(t === '3' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', cats:['AUTO_DACIA','AUTO','A1 - Compact Eco'] };
-  if(t === '4' || t.includes('golf')) return { label:'Auto categoria Golf', cats:['AUTO_GOLF','AUTO','A2 - Compact'] };
-  if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', cats:['ESCAVATORE','X-ESC'] };
+  if(t === '1' || t.includes('furg')) return { label:'Furgone cargo/merci', categoria:'FURGONE', cats:['FURGONE','FURGONI','F1-VAN','F2-PC','F3-PL'] };
+  if(t === '2' || t.includes('pulmino') || t.includes('9') || t.includes('posti')) return { label:'Pulmino 8/9 posti', categoria:'9_POSTI', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
+  if(t === '3' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', categoria:'AUTO_DACIA', cats:['AUTO_DACIA','DACIA'] };
+  if(t === '4' || t.includes('golf')) return { label:'Auto categoria Golf', categoria:'AUTO_GOLF', cats:['AUTO_GOLF','GOLF'] };
+  if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', categoria:'ESCAVATORE', cats:['ESCAVATORE','SEMOVENTE','X-ESC'] };
   return null;
+}
+function dpVehicleMatchesCat(m, catInfo){
+  const target = catInfo?.categoria || '';
+  if (typeof mezzoCompatibileCategoriaCliente === 'function' && target) {
+    try { if (mezzoCompatibileCategoriaCliente(m, target)) return true; } catch(_) {}
+  }
+  const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''}`.toUpperCase();
+  if(target === 'FURGONE') return /(FURG|VAN|CARGO|MERCI|F1|F2|F3)/.test(hay) && !/(DACIA|GOLF|PULMINO|9\s*POSTI|ESCAV)/.test(hay);
+  if(target === '9_POSTI') return /(9_POSTI|PULMINO|9\s*POSTI|8\s*POSTI|P1|P2)/.test(hay);
+  if(target === 'AUTO_DACIA') return /DACIA|SANDERO|AUTO_DACIA/.test(hay);
+  if(target === 'AUTO_GOLF') return /GOLF|AUTO_GOLF/.test(hay);
+  if(target === 'ESCAVATORE') return /ESCAV|SEMOVENTE|PIATTAFORMA|X-ESC|SPECIALE/.test(hay);
+  return false;
 }
 async function dpFindAvailableVehicle(catInfo, startIso, endIso){
   let mezzi = [];
-  try{
-    const qs = catInfo.cats.map(()=>'?').join(',');
-    mezzi = await all(`SELECT * FROM mezzi WHERE categoria IN (${qs}) OR tipo IN (${qs}) OR modello LIKE ? OR marca LIKE ? ORDER BY id ASC`, [...catInfo.cats, ...catInfo.cats, `%${catInfo.label.split(' ')[0]}%`, `%${catInfo.label.split(' ')[0]}%`]);
-  }catch(e){ console.error('Errore select mezzi:', e.message); }
-  if(!mezzi.length){
-    try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore fallback mezzi:', e.message); }
-  }
+  try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore select mezzi:', e.message); }
+  mezzi = (mezzi || []).filter(m => dpVehicleMatchesCat(m, catInfo));
   for(const m of mezzi){
     try{
       const occ = await queryDisponibilita(m.id, startIso, endIso);
@@ -6813,6 +6846,34 @@ async function dpFindAvailableVehicle(catInfo, startIso, endIso){
     }catch(e){ return m; }
   }
   return null;
+}
+async function dpSaveWhatsAppQuote(session, from, profileName, status){
+  try{
+    if (typeof ensureClienteWebColumnsV92 === 'function') await ensureClienteWebColumnsV92();
+    const data = session.data || {};
+    const mezzo = data.mezzo || {};
+    const calc = data.calc || {};
+    const startIso = data.start ? dpDateIso(data.start) : '';
+    const endIso = data.end ? dpDateIso(data.end) : '';
+    const payload = {
+      codice:'TEMP', nome:profileName || 'Cliente', cognome:'', telefono:String(from||'').replace('whatsapp:',''), email:'',
+      categoria:data.cat?.categoria || data.cat?.cats?.[0] || '', tipo:data.cat?.label || '', mezzo_id:mezzo.id || null,
+      targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '',
+      data_inizio:startIso, data_fine:endIso, ora_inizio:'08:30', ora_fine:'18:00', km_previsti:data.km || 150,
+      giorni:calc.giorni || (data.start && data.end ? dpDays(data.start,data.end) : 1), imponibile:calc.imponibile || 0, iva:calc.iva || 0, totale:calc.totale || 0,
+      stato:status || 'attesa_si_no', tipo_record:'preventivo_whatsapp', note:'Creato automaticamente dal bot WhatsApp - cliente in attesa risposta SI/NO'
+    };
+    const cols = Object.keys(payload);
+    const r = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`, cols.map(k=>payload[k]));
+    const cod = codicePratica(r.lastID);
+    await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, r.lastID]);
+    session.data.prenotazione_id = r.lastID;
+    session.data.codice = cod;
+    return { ok:true, id:r.lastID, codice:cod };
+  }catch(e){ console.log('Salvataggio preventivo WhatsApp non riuscito:', e.message); return { ok:false, error:e.message }; }
+}
+async function dpUpdateWhatsAppQuote(session, stato){
+  try{ if(session?.data?.prenotazione_id) await run(`UPDATE prenotazioni SET stato=?, note=COALESCE(note,'') || ? WHERE id=?`, [stato, '\nAggiornamento WhatsApp: '+stato, session.data.prenotazione_id]); }catch(e){ console.log('Update preventivo WhatsApp:', e.message); }
 }
 const DP_OFFICINA_SLOTS = (process.env.OFFICINA_SLOTS || '08:30,09:30,10:30,11:30,14:30,15:30,16:30,17:30')
   .split(',')
@@ -6935,6 +6996,12 @@ async function dpHandleWhatsApp(req,res){
 
   let session = dpSession(from, profileName);
 
+  const tGlobal = dpNorm(body);
+  if(['indietro','torna','torna menu','menu principale','annulla','annullare','ho sbagliato','sbagliato','ricomincia','restart'].includes(tGlobal)){
+    dpReset(from, profileName);
+    return dpTwimlResponse(res, 'Nessun problema 👍\n\n' + dpMenu(profileName));
+  }
+
   if(dpIsMenuKeyword(body) || body === ''){
     dpReset(from, profileName);
     return dpTwimlResponse(res, dpMenu(profileName));
@@ -7032,8 +7099,13 @@ async function dpHandleWhatsApp(req,res){
     let calc = { totale: 0, giorni: dpDays(session.data.start, session.data.end) };
     try{ calc = calcolaTotale(mezzo, startIso, endIso, '08:30', '18:00', km); }catch(e){ console.error(e.message); }
     session.data.km = km; session.data.mezzo = mezzo; session.data.calc = calc; session.state = 'noleggio_confirm'; session.ts = Date.now();
+    const savedQuote = await dpSaveWhatsAppQuote(session, from, profileName, 'attesa_si_no');
+    const appBaseQuote = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
+    const quoteAdminLink = savedQuote.ok ? `${appBaseQuote}/prenotazione/${savedQuote.id}` : `${appBaseQuote}/richieste-attesa`;
     try {
-      await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO GENERATO - IN ATTESA SI/NO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}\nTotale: EUR ${euro(calc.totale || 0)}\n\nNota interna mezzo assegnabile: ${mezzo.marca || ''} ${mezzo.modello || ''} ${mezzo.targa || ''}\n\nIl cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
+      await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO GENERATO - IN ATTESA SI/NO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}\nTotale: EUR ${euro(calc.totale || 0)}\n\nNota interna mezzo assegnabile: ${mezzo.marca || ''} ${mezzo.modello || ''} ${mezzo.targa || ''}\n\nApri in app: ${quoteAdminLink}
+
+Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
     } catch(e) { console.log('Notifica preventivo warning:', e.message); }
     return dpTwimlResponse(res, `${EMJ.ok} *Disponibile*\n\nMezzo: *${session.data.cat.label}*\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nGiorni: ${calc.giorni || dpDays(session.data.start, session.data.end)}\nKm previsti: ${km}\nPreventivo: *EUR ${euro(calc.totale || 0)}*\n\nConfermi il preventivo?\nRispondi *SI* oppure *NO*.`);
   }
@@ -7041,6 +7113,7 @@ async function dpHandleWhatsApp(req,res){
   if(session.state === 'noleggio_confirm'){
     const yn = dpYesNo(body);
     if(yn === 'NO') {
+      await dpUpdateWhatsAppQuote(session, 'non_confermato');
       try { await dpNotify(DP_STAFF_NUMBERS, `${EMJ.warn} PREVENTIVO NOLEGGIO NON CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat?.label || ''}\nDate: ${session.data.start ? dpDateIt(session.data.start) : ''} - ${session.data.end ? dpDateIt(session.data.end) : ''}\nKm: ${session.data.km || ''}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nCliente da richiamare se interessa recuperare la richiesta.`); } catch(e) {}
       delete DP_BOT_SESSIONS[from]; return dpTwimlResponse(res, 'Preventivo annullato. Lo staff DP ha comunque ricevuto la richiesta, così non perdiamo il contatto. Scrivi MENU per ricominciare.');
     }
@@ -7054,6 +7127,7 @@ async function dpHandleWhatsApp(req,res){
     });
     const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
     const link = `${base}/prenota?${q.toString()}`;
+    await dpUpdateWhatsAppQuote(session, 'richiesta_cliente');
     await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
     delete DP_BOT_SESSIONS[from];
     return dpTwimlResponse(res, `Perfetto ${EMJ.ok}\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verra preparato il contratto definitivo.`);
@@ -7282,7 +7356,7 @@ app.post('/scansione-documenti/salva', async (req,res)=>{
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V117 fatturazione azienda porta ' + PORT);
+  console.log('DP RENT APP V119 alert attese porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
 
