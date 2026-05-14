@@ -77,13 +77,19 @@ function v63ContractButtons(p){
   if (!id) return '';
   const tipo = String((p && (p.tipo_record || p.stato)) || '').toLowerCase();
   const converti = (tipo.includes('preventivo') || tipo === 'bozza')
-    ? `<a class="btn btn2" href="/prenotazione/${id}/converti-contratto">Trasforma preventivo in contratto</a>`
+    ? `<a class="btn btn2" href="/prenotazione/${id}/converti-contratto">Trasforma in contratto</a>`
     : '';
   return `
-    <a class="btn" href="/prenotazione/${id}/modifica">Modifica</a>
-    ${converti}
-    <a class="btn btn2" href="/preventivo/nuovo">Nuovo preventivo</a>
-    <a class="btn bad" href="/prenotazione/${id}/elimina">Elimina</a>
+    <div class="actions contract-main-actions">
+      <a class="btn" href="/prenotazione/${id}/modifica">Modifica</a>
+      ${converti}
+      <a class="btn btn2" href="/firma/${id}">Firma cliente</a>
+      <a class="btn btn3" href="/contratto/${id}/invia-whatsapp">Invia WhatsApp</a>
+      <a class="btn btn2" href="/contratto/${id}/email">Invia email</a>
+      <a class="btn btn2" href="/documenti/${id}">Foto/documenti</a>
+      <a class="btn btn2" href="/preventivo/nuovo">Nuovo preventivo</a>
+      <a class="btn bad" href="/prenotazione/${id}/elimina">Elimina</a>
+    </div>
   `;
 }
 
@@ -1078,6 +1084,10 @@ input,select,textarea{font-size:18px;border-radius:14px;padding:14px}
 .cauzione-box{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin:12px 0 8px}.cauzione-box .label{font-weight:900;font-size:20px;margin-right:2px}
 @media(min-width:701px) and (max-width:1180px){nav{grid-template-columns:repeat(3,1fr)}main{padding:24px}.btn,button{min-height:58px}.box{font-size:19px}}
 @media(max-width:700px){.grid{grid-template-columns:1fr}main{padding:14px}header{align-items:flex-start;gap:14px}header img{height:56px!important}header h1{font-size:34px}header h1 small{display:block;margin:6px 0 0 0}nav{grid-template-columns:repeat(2,1fr);gap:9px;padding:14px}nav a{min-height:52px;font-size:18px}.tile{font-size:19px;min-height:100px}th,td{font-size:12px;padding:6px}.actions .btn,.big-actions .btn{width:100%;text-align:center}.btn,button{width:auto;min-height:54px}.box,.premium-card{border-radius:22px;padding:22px} .cauzione-box{display:grid;grid-template-columns:1fr}.cauzione-box .badge{width:100%;text-align:center;font-size:16px}}
+
+.contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
+@media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
+
 </style>
 </head>
 <body>
@@ -3256,6 +3266,10 @@ function clienteWebHtml(req) {
 h2{font-size:30px;margin:0 0 16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} label{display:block;font-weight:900;margin:10px 0 7px;font-size:17px;color:#111827}
 input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none} input:focus,select:focus,textarea:focus{border-color:#3159c7;box-shadow:0 0 0 4px rgba(49,89,199,.12)}
 textarea{min-height:110px}.full{grid-column:1/-1}.notice{background:#fff8df;border:1px solid #f1d98a;border-radius:20px;padding:16px;line-height:1.35;font-size:18px}.okbox{background:#ecfff1;border:1px solid #b8efc4;border-radius:20px;padding:16px;line-height:1.35}.btn{border:0;border-radius:20px;background:linear-gradient(135deg,#e21818,#a80d0d);color:#fff;padding:18px 24px;font-size:24px;font-weight:900;box-shadow:0 12px 25px rgba(210,0,0,.25);width:100%;margin-top:18px}.btn2{display:inline-block;text-decoration:none;text-align:center;background:#24242b;color:#fff;border-radius:18px;padding:14px 18px;font-weight:900;margin-top:8px}.file{padding:14px;background:#f7f8fc}.small{font-size:15px;color:#596275;font-weight:700}@media(max-width:720px){.grid{grid-template-columns:1fr}.hero h1{font-size:32px}body{font-size:17px}input,select,textarea{font-size:19px}.card{padding:18px;border-radius:22px}}
+
+.contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
+@media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
+
 </style>
 <script>
 function toggleAzienda(){var t=document.querySelector('[name="tipo_cliente"]').value;var box=document.getElementById('aziendaBox');box.style.display=(t==='azienda')?'grid':'none'}
@@ -3529,7 +3543,11 @@ app.post('/prenota-cliente', upload.fields([
     } catch(e) { console.log('Notifica cliente warning:', e.message); }
 
     res.setHeader('Content-Type','text/html; charset=utf-8');
-    res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial;background:#eef4ff;margin:0;padding:22px;color:#111}.hero{background:linear-gradient(135deg,#07111f,#173b8f);color:#fff;border-radius:28px;padding:28px;margin-bottom:20px}.box{background:#fff;border-radius:24px;padding:22px;box-shadow:0 12px 35px #0001}.ok{color:#157c2d;font-size:36px}.code{font-size:28px;font-weight:900}.btn{display:inline-block;background:#d70000;color:#fff;padding:14px 20px;border-radius:18px;text-decoration:none;font-weight:900;margin-top:18px}</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerÃ  i dati e ti confermerÃ  contratto e disponibilitÃ .</p><p>Foto ricevute: <b>${files.length}</b></p></div></body></html>`);
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial;background:#eef4ff;margin:0;padding:22px;color:#111}.hero{background:linear-gradient(135deg,#07111f,#173b8f);color:#fff;border-radius:28px;padding:28px;margin-bottom:20px}.box{background:#fff;border-radius:24px;padding:22px;box-shadow:0 12px 35px #0001}.ok{color:#157c2d;font-size:36px}.code{font-size:28px;font-weight:900}.btn{display:inline-block;background:#d70000;color:#fff;padding:14px 20px;border-radius:18px;text-decoration:none;font-weight:900;margin-top:18px}
+.contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
+@media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
+
+</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerÃ  i dati e ti confermerÃ  contratto e disponibilitÃ .</p><p>Foto ricevute: <b>${files.length}</b></p></div></body></html>`);
   } catch (e) {
     res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore invio dati</h1><pre>${esc(e.stack || e.message)}</pre><a href="javascript:history.back()">Torna</a>`);
   }
@@ -4244,9 +4262,9 @@ app.get('/prenotazione/:id', async (req, res) => {
       <p><b>Cliente:</b> ${esc(p.nome)} ${esc(p.cognome)} - ${esc(p.telefono)}</p>
       <p><b>Email:</b> ${esc(p.email)} | <b>CF:</b> ${esc(p.codice_fiscale)}</p>
       <p><b>Mezzo:</b> <a href="/mezzo/${p.mezzo_id}">${esc(p.targa)} ${esc(descrizionePubblica(p))}</a></p>
-      <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} â ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
+      <p><b>Date:</b> ${esc(p.data_inizio)} ore ${esc(p.ora_inizio)} - ${esc(p.data_fine)} ore ${esc(p.ora_fine)}</p>
       <p><b>Totale:</b> &euro; ${euro(p.totale)}</p>${cauzioneHtml(p)}
-      <p><b>Stato:</b> <span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span> <b>Nexi:</b> <span class="badge ${p.nexi_stato==='pagato'?'badge-green':'badge-orange'}">${esc(p.nexi_stato || 'non pagato')}</span> <b>Ca.R.G.O.S.:</b> <span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span> <b>Firma:</b> <span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firmato':'manca firma'}</span></p>
+      <p><b>Stato:</b> <span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.stato||'bozza'))}</span> <b>Nexi:</b> <span class="badge ${p.nexi_stato==='pagato'?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.nexi_stato || 'non pagato'))}</span> <b>Ca.R.G.O.S.:</b> <span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare')))}</span> <b>Firma:</b> <span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'Firmato':'Manca firma'}</span></p>
       ${p.pdf_drive_web_link ? `<p><b>PDF Drive:</b> <a target="_blank" href="${esc(p.pdf_drive_web_link)}">Apri su Drive</a></p>` : ''}
       ${p.nexi_link ? `<p><b>Link Nexi:</b> <a target="_blank" href="${esc(p.nexi_link)}">${esc(p.nexi_link)}</a></p>` : ''}
       <div class="actions">
@@ -4278,7 +4296,7 @@ app.get('/prenotazioni', async (req, res) => {
   if (al) { sql += ` AND date(p.data_fine)<=date(?)`; params.push(al); }
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>&euro; ${euro(p.totale)}</td><td><span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span><br><span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firma ok':'firma no'}</span></td><td><span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span></td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} - ${esc(p.data_fine)}</td><td>&euro; ${euro(p.totale)}</td><td><span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span><br><span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firma ok':'firma no'}</span></td><td><span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span></td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
   res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>CaRGOS</th><th>Azioni</th></tr>${trs}</table>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
@@ -4305,7 +4323,7 @@ app.get('/planning', async (req, res) => {
     rows += '</tr>';
   });
   const prec = start.clone().subtract(1,'month').format('YYYY-MM'), succ = start.clone().add(1,'month').format('YYYY-MM');
-  res.send(page('Planning', `<h2>Planning ${start.format('MM/YYYY')}</h2><p><a href="/planning?mese=${prec}">â Mese precedente</a> | <a href="/planning?mese=${succ}">Mese successivo â</a></p><p><span class="libero" style="padding:6px;">Libero: clic per prenotare</span> <span class="occupato" style="padding:6px;">Occupato: clic per aprire contratto</span></p><div class="sticky-table"><table><tr>${header}</tr>${rows}</table></div>`));
+  res.send(page('Planning', `<h2>Planning ${start.format('MM/YYYY')}</h2><p><a href="/planning?mese=${prec}">â Mese precedente</a> | <a href="/planning?mese=${succ}">Mese successivo -</a></p><p><span class="libero" style="padding:6px;">Libero: clic per prenotare</span> <span class="occupato" style="padding:6px;">Occupato: clic per aprire contratto</span></p><div class="sticky-table"><table><tr>${header}</tr>${rows}</table></div>`));
 });
 
 
@@ -4530,7 +4548,11 @@ function renderClientePulitoPage(p, token, files) {
       details.manual summary{font-size:34px;font-weight:900;cursor:pointer;color:#0b1226}
       .fixed-save{position:sticky;bottom:12px;z-index:9;background:rgba(255,255,255,.96);padding:12px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.16)}
       @media(max-width:700px){.client-hero h1{font-size:40px}.client-hero p{font-size:22px}.upload-grid{grid-template-columns:1fr}.step-card h2{font-size:38px}}
-    </style>
+    
+.contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
+@media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
+
+</style>
 
     <div class="client-hero">
       <h1>DP RENT</h1>
@@ -4888,6 +4910,10 @@ function publicFirmaPage(title, content) {
 <title>${esc(title || 'DP RENT')}</title>
 <style>
 *{box-sizing:border-box}body{margin:0;background:#f2f2f2;color:#202020;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-text-size-adjust:100%}.client-header{background:#050505;color:#fff;padding:24px 20px;text-align:center}.client-brand{font-size:34px;font-weight:950;letter-spacing:2px}.client-sub{margin-top:6px;font-size:14px;letter-spacing:2px;color:#ddd}.client-main{max-width:760px;margin:0 auto;padding:18px}.client-card{background:#fff;border-radius:26px;padding:24px;box-shadow:0 18px 45px rgba(0,0,0,.12)}h1,h2{font-size:clamp(28px,7vw,42px);line-height:1.08;margin:0 0 18px}.ok{color:#10883b}.bad{color:#b30000}p{font-size:18px;line-height:1.45}.btn,button{appearance:none;border:0;display:block;width:100%;text-align:center;text-decoration:none;background:#d70000;color:#fff;border-radius:18px;padding:16px 18px;font-size:20px;font-weight:900;margin:12px 0;box-shadow:0 5px 0 rgba(0,0,0,.18)}.btn2{background:#333}.btn3{background:#10883b}canvas{border:2px solid #222;border-radius:18px;background:#fff;width:100%;height:260px;touch-action:none}.muted{color:#666;font-size:15px}@media(min-width:760px){.client-main{padding:28px}.client-card{padding:34px}.btn,button{display:inline-block;width:auto;min-width:210px;margin-right:10px}}
+
+.contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
+@media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
+
 </style>
 </head>
 <body><div class="client-header"><div class="client-brand">DP RENT</div><div class="client-sub">FIRMA CONTRATTO</div></div><main class="client-main"><div class="client-card">${content}</div></main></body></html>`;
@@ -5157,7 +5183,7 @@ CARGOS_BASE_URL=https://cargos.poliziadistato.it/CARGOS_API</pre>
 
 app.get('/cargos', async (req, res) => {
   const rows = await all(`SELECT p.*, m.targa FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id ORDER BY p.id DESC LIMIT 50`);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} â ${esc(p.data_fine)}</td><td>${esc(p.record_cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.targa)}</td><td>${esc(p.data_inizio)} - ${esc(p.data_fine)}</td><td>${esc(p.record_cargos_stato || '')}</td><td><a class="btn" href="/cargos/record/${p.id}">Record</a><a class="btn btn2" href="/cargos/check/${p.id}">Verifica dati</a><a class="btn btnWarn" href="/cargos/send/${p.id}">Invia report a CaRGOS</a></td></tr>`).join('');
   res.send(page('Ca.R.G.O.S.', `<div class="box"><h2>Ca.R.G.O.S.</h2><p>Modulo pronto. Quando hai username/password/APIKEY e codici tabelle, Check e Send diventano reali.</p><p><b>Configurato:</b> ${cargosConfigured() ? '<span class="ok">SI</span>' : '<span class="bad">NO</span>'}</p><p>Servono: CARGOS_USERNAME, CARGOS_PASSWORD, CARGOS_APIKEY, CARGOS_AGENZIA_ID, CARGOS_OPERATORE_ID, CARGOS_LUOGO_COD.</p></div><table><tr><th>Contratto</th><th>Cliente</th><th>Targa</th><th>Date</th><th>Stato</th><th>CaRGOS</th><th>Azione</th></tr>${trs}</table>`));
 });
 
@@ -6025,15 +6051,17 @@ app.get('/contratto/:id/gestisci', async (req,res)=>{
   res.send(page('Gestisci contratto',`<div class="box">
     <h2>Gestisci ${esc(p.codice||p.id)}</h2>
     <p><b>Cliente:</b> ${esc((p.nome||'')+' '+(p.cognome||''))}</p>
-    <p><b>Periodo:</b> ${esc(p.data_inizio||'')} ${esc(p.ora_inizio||'')} - ${esc(p.data_fine||'')} ${esc(p.ora_fine||'')}</p>
-    <p><b>Totale:</b> &euro; ${esc(p.totale||0)}</p>
+    <p><b>Periodo:</b> ${esc(dpDateTimeLabel(p.data_inizio, p.ora_inizio))} - ${esc(dpDateTimeLabel(p.data_fine, p.ora_fine))}</p>
+    <p><b>Totale:</b> ${euroHtml(p.totale||0)}</p>
     ${cauzioneHtml(p)}
+    <p class="muted"><b>Azioni:</b> da qui fai firmare il cliente, invii il contratto su WhatsApp/Email e carichi foto o documenti.</p>
     ${v63ContractButtons(p)}
     <hr>
-    <a class="btn btn2" href="/contratto/${p.id}">PDF</a>
-    <a class="btn btn2" href="/documenti/${p.id}">Foto/documenti</a>
-    <a class="btn btn2" href="/cargos/check/${p.id}">Ca.R.G.O.S.</a>
-    <a class="btn btn2" href="/">Dashboard</a>
+    <div class="actions contract-secondary-actions">
+      <a class="btn btn2" href="/contratto/${p.id}">Apri riepilogo/PDF</a>
+      <a class="btn btn2" href="/cargos/check/${p.id}">Ca.R.G.O.S.</a>
+      <a class="btn btn2" href="/">Dashboard</a>
+    </div>
   </div>`));
 });
 
@@ -6265,6 +6293,15 @@ function dpNormalizeWhatsAppNumber(n){
   return 'whatsapp:' + n;
 }
 function normalizzaWa(n){ return dpNormalizeWhatsAppNumber(n); }
+
+function dpLabelStatus(v){
+  const raw = String(v || '').replace(/_/g, ' ').trim();
+  if (!raw) return '';
+  return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
+}
+function dpDateTimeLabel(data, ora){
+  return [String(data || '').trim(), String(ora || '').trim()].filter(Boolean).join(' ore ');
+}
 
 function euroHtml(v){
   const n = Number(String(v ?? 0).replace(',', '.'));
@@ -6748,7 +6785,11 @@ app.get('/documenti/:id', async (req, res) => {
         .doc-card{background:#fff;border:1px solid #eee;border-radius:18px;padding:18px;box-shadow:0 10px 30px #0001}
         .thumb{margin:12px 0;padding:16px;background:#f7f7f9;border-radius:14px;word-break:break-all}
         .btn.small{font-size:14px;padding:8px 12px}
-      </style>
+      
+.contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
+@media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
+
+</style>
     `));
   } catch (e) {
     res.status(500).send('Errore documenti: ' + esc(e.message));
