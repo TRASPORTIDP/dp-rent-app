@@ -83,8 +83,9 @@ function v63ContractButtons(p){
     <div class="actions contract-main-actions">
       <a class="btn" href="/prenotazione/${id}/modifica">Modifica</a>
       ${converti}
-      <a class="btn btn2" href="/firma/${id}">Firma cliente</a>
-      <a class="btn btn3" href="/contratto/${id}/invia-whatsapp">Invia WhatsApp</a>
+      <a class="btn btn2" href="/firma/${id}">Firma sul dispositivo</a>
+      <a class="btn btn3" href="/firma-whatsapp/${id}">Invia firma WhatsApp</a>
+      <a class="btn btn3" href="/contratto/${id}/invia-whatsapp">Invia contratto WhatsApp</a>
       <a class="btn btn2" href="/contratto/${id}/email">Invia email</a>
       <a class="btn btn2" href="/documenti/${id}">Foto/documenti</a>
       <a class="btn btn2" href="/preventivo/nuovo">Nuovo preventivo</a>
@@ -1090,10 +1091,26 @@ input,select,textarea{font-size:18px;border-radius:14px;padding:14px}
 .contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
 @media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
 
+
+/* V109 FIX leggibilita mobile */
+header{padding-top:max(22px, env(safe-area-inset-top));}
+.top-actions{max-width:1180px;margin:0 auto 14px!important;padding:10px 0!important;}
+.top-actions .back-btn::before{content:""!important;}
+.top-actions .back-btn,.top-actions a{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;font-size:clamp(18px,2.6vw,24px)!important;letter-spacing:0!important;line-height:1.1!important;white-space:nowrap!important;color:#fff!important;overflow:hidden;text-overflow:ellipsis;}
+.top-actions .back-btn{background:#333!important;}
+.top-actions .home-btn{background:#d70000!important;}
+.client-back button{font-size:18px!important;font-weight:900!important;background:#333!important;color:#fff!important;}
+@media(max-width:700px){
+  nav{padding-top:calc(14px + env(safe-area-inset-top));}
+  .top-actions{position:sticky;top:0;z-index:50;padding:10px 12px!important;gap:10px!important;background:rgba(244,244,244,.96)!important;}
+  .top-actions .back-btn,.top-actions a{min-width:0!important;width:calc(50% - 5px)!important;flex:1 1 calc(50% - 5px)!important;padding:14px 8px!important;}
+  .contract-main-actions .btn{width:100%!important;}
+}
+
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V108 COMPLETA</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V109 FIX</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1110,7 +1127,7 @@ input,select,textarea{font-size:18px;border-radius:14px;padding:14px}
 <a href="/test-email">Test Email</a>
 <a href="/test-drive">Test Drive</a>
 </nav>
-<main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">â Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
+<main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
 </body>
 </html>`;
 }
@@ -1233,15 +1250,14 @@ async function getOrCreateDriveContractFolderV63(p) {
   if (!drive) return null;
   const folderName = `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`.trim();
   const parent = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || null;
-  const safeName = folderName.replace(/'/g, "\\'");
+  const safeName = folderName.replace(/'/g, "\'");
   let q = `mimeType='application/vnd.google-apps.folder' and name='${safeName}' and trashed=false`;
   if (parent) q += ` and '${parent}' in parents`;
-  const found = await drive.files.list({ q, fields:'files(id,name,webViewLink)', spaces:'drive' });
+  const found = await drive.files.list({ q, fields:'files(id,name,webViewLink)', spaces:'drive', supportsAllDrives:true, includeItemsFromAllDrives:true });
   if (found.data.files && found.data.files[0]) return found.data.files[0];
   const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
   if (parent) requestBody.parents = [parent];
-  const created = await v103DeleteOldPdfEverywhere(id || prenotazioneId || req.params.id || p?.id, folderId || folder?.id || praticaFolderId || driveFolderId);
-await drive.files.create({ requestBody, fields:'id,name,webViewLink' });
+  const created = await drive.files.create({ requestBody, fields:'id,name,webViewLink', supportsAllDrives:true });
   return created.data;
 }
 
@@ -1261,13 +1277,13 @@ async function deleteDriveFilesByNameV63(folderId, name) {
 async function uploadFileToDriveFolderV63(localPath, fileName, mimeType, folderId) {
   if (!drive || !folderId) return null;
   const media = { mimeType: mimeType || 'application/octet-stream', body: fs.createReadStream(localPath) };
-  const uploaded = await v103DeleteOldPdfEverywhere(id || prenotazioneId || req.params.id || p?.id, folderId || folder?.id || praticaFolderId || driveFolderId);
-await drive.files.create({
+  const created = await drive.files.create({
     requestBody:{ name:fileName, parents:[folderId] },
     media,
-    fields:'id,name,webViewLink'
+    fields:'id,name,webViewLink',
+    supportsAllDrives:true
   });
-  return uploaded.data;
+  return created.data;
 }
 
 async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
@@ -2299,7 +2315,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V108 COMPLETA - documenti clienti, firma, PDF lock, CaRGOS badge'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V109 FIX - documenti clienti, firma, PDF lock, CaRGOS badge'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -3272,6 +3288,22 @@ textarea{min-height:110px}.full{grid-column:1/-1}.notice{background:#fff8df;bord
 .contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
 @media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
 
+
+/* V109 FIX leggibilita mobile */
+header{padding-top:max(22px, env(safe-area-inset-top));}
+.top-actions{max-width:1180px;margin:0 auto 14px!important;padding:10px 0!important;}
+.top-actions .back-btn::before{content:""!important;}
+.top-actions .back-btn,.top-actions a{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;font-size:clamp(18px,2.6vw,24px)!important;letter-spacing:0!important;line-height:1.1!important;white-space:nowrap!important;color:#fff!important;overflow:hidden;text-overflow:ellipsis;}
+.top-actions .back-btn{background:#333!important;}
+.top-actions .home-btn{background:#d70000!important;}
+.client-back button{font-size:18px!important;font-weight:900!important;background:#333!important;color:#fff!important;}
+@media(max-width:700px){
+  nav{padding-top:calc(14px + env(safe-area-inset-top));}
+  .top-actions{position:sticky;top:0;z-index:50;padding:10px 12px!important;gap:10px!important;background:rgba(244,244,244,.96)!important;}
+  .top-actions .back-btn,.top-actions a{min-width:0!important;width:calc(50% - 5px)!important;flex:1 1 calc(50% - 5px)!important;padding:14px 8px!important;}
+  .contract-main-actions .btn{width:100%!important;}
+}
+
 </style>
 <script>
 function toggleAzienda(){var t=document.querySelector('[name="tipo_cliente"]').value;var box=document.getElementById('aziendaBox');box.style.display=(t==='azienda')?'grid':'none'}
@@ -3548,6 +3580,22 @@ app.post('/prenota-cliente', upload.fields([
     res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial;background:#eef4ff;margin:0;padding:22px;color:#111}.hero{background:linear-gradient(135deg,#07111f,#173b8f);color:#fff;border-radius:28px;padding:28px;margin-bottom:20px}.box{background:#fff;border-radius:24px;padding:22px;box-shadow:0 12px 35px #0001}.ok{color:#157c2d;font-size:36px}.code{font-size:28px;font-weight:900}.btn{display:inline-block;background:#d70000;color:#fff;padding:14px 20px;border-radius:18px;text-decoration:none;font-weight:900;margin-top:18px}
 .contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
 @media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
+
+
+/* V109 FIX leggibilita mobile */
+header{padding-top:max(22px, env(safe-area-inset-top));}
+.top-actions{max-width:1180px;margin:0 auto 14px!important;padding:10px 0!important;}
+.top-actions .back-btn::before{content:""!important;}
+.top-actions .back-btn,.top-actions a{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;font-size:clamp(18px,2.6vw,24px)!important;letter-spacing:0!important;line-height:1.1!important;white-space:nowrap!important;color:#fff!important;overflow:hidden;text-overflow:ellipsis;}
+.top-actions .back-btn{background:#333!important;}
+.top-actions .home-btn{background:#d70000!important;}
+.client-back button{font-size:18px!important;font-weight:900!important;background:#333!important;color:#fff!important;}
+@media(max-width:700px){
+  nav{padding-top:calc(14px + env(safe-area-inset-top));}
+  .top-actions{position:sticky;top:0;z-index:50;padding:10px 12px!important;gap:10px!important;background:rgba(244,244,244,.96)!important;}
+  .top-actions .back-btn,.top-actions a{min-width:0!important;width:calc(50% - 5px)!important;flex:1 1 calc(50% - 5px)!important;padding:14px 8px!important;}
+  .contract-main-actions .btn{width:100%!important;}
+}
 
 </style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerÃ  i dati e ti confermerÃ  contratto e disponibilitÃ .</p><p>Foto ricevute: <b>${files.length}</b></p></div></body></html>`);
   } catch (e) {
@@ -4554,6 +4602,22 @@ function renderClientePulitoPage(p, token, files) {
 .contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
 @media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
 
+
+/* V109 FIX leggibilita mobile */
+header{padding-top:max(22px, env(safe-area-inset-top));}
+.top-actions{max-width:1180px;margin:0 auto 14px!important;padding:10px 0!important;}
+.top-actions .back-btn::before{content:""!important;}
+.top-actions .back-btn,.top-actions a{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;font-size:clamp(18px,2.6vw,24px)!important;letter-spacing:0!important;line-height:1.1!important;white-space:nowrap!important;color:#fff!important;overflow:hidden;text-overflow:ellipsis;}
+.top-actions .back-btn{background:#333!important;}
+.top-actions .home-btn{background:#d70000!important;}
+.client-back button{font-size:18px!important;font-weight:900!important;background:#333!important;color:#fff!important;}
+@media(max-width:700px){
+  nav{padding-top:calc(14px + env(safe-area-inset-top));}
+  .top-actions{position:sticky;top:0;z-index:50;padding:10px 12px!important;gap:10px!important;background:rgba(244,244,244,.96)!important;}
+  .top-actions .back-btn,.top-actions a{min-width:0!important;width:calc(50% - 5px)!important;flex:1 1 calc(50% - 5px)!important;padding:14px 8px!important;}
+  .contract-main-actions .btn{width:100%!important;}
+}
+
 </style>
 
     <div class="client-hero">
@@ -4895,7 +4959,7 @@ app.post('/checkin/:id', async (req, res) => {
 
 app.get('/contratto/:id', async (req, res) => {
   try {
-    const file = await generaPdfContratto(req.params.id, { forceDrive: false });
+    const file = await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
     res.send(page('File pronto', `<div class="box"><h2 class="ok">File pronto</h2><p>File generato. Non scarico automaticamente.</p><a class="btn" href="/cargos">Ca.R.G.O.S.</a></div>`));
   } catch (e) {
     res.status(500).send(page('Errore PDF', `<div class="box"><h2 class="bad">Errore PDF</h2><pre>${esc(e.message)}</pre></div>`));
@@ -4916,9 +4980,25 @@ function publicFirmaPage(title, content) {
 .contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
 @media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
 
+
+/* V109 FIX leggibilita mobile */
+header{padding-top:max(22px, env(safe-area-inset-top));}
+.top-actions{max-width:1180px;margin:0 auto 14px!important;padding:10px 0!important;}
+.top-actions .back-btn::before{content:""!important;}
+.top-actions .back-btn,.top-actions a{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;font-size:clamp(18px,2.6vw,24px)!important;letter-spacing:0!important;line-height:1.1!important;white-space:nowrap!important;color:#fff!important;overflow:hidden;text-overflow:ellipsis;}
+.top-actions .back-btn{background:#333!important;}
+.top-actions .home-btn{background:#d70000!important;}
+.client-back button{font-size:18px!important;font-weight:900!important;background:#333!important;color:#fff!important;}
+@media(max-width:700px){
+  nav{padding-top:calc(14px + env(safe-area-inset-top));}
+  .top-actions{position:sticky;top:0;z-index:50;padding:10px 12px!important;gap:10px!important;background:rgba(244,244,244,.96)!important;}
+  .top-actions .back-btn,.top-actions a{min-width:0!important;width:calc(50% - 5px)!important;flex:1 1 calc(50% - 5px)!important;padding:14px 8px!important;}
+  .contract-main-actions .btn{width:100%!important;}
+}
+
 </style>
 </head>
-<body><div class="client-header"><div class="client-brand">DP RENT</div><div class="client-sub">FIRMA CONTRATTO</div></div><main class="client-main"><div class="client-back"><button type="button" onclick="history.length>1?history.back():location.href='/firma-chiusa'">â Indietro</button></div><div class="client-card">${content}</div></main></body></html>`;
+<body><div class="client-header"><div class="client-brand">DP RENT</div><div class="client-sub">FIRMA CONTRATTO</div></div><main class="client-main"><div class="client-back"><button type="button" onclick="history.length>1?history.back():location.href='/firma-chiusa'">Indietro</button></div><div class="client-card">${content}</div></main></body></html>`;
 }
 
 
@@ -4987,7 +5067,7 @@ app.post('/firma/:id', async (req, res) => {
     const file = path.join(firmeDir, `firma_${req.params.id}.png`);
     fs.writeFileSync(file, base64, 'base64');
     await run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id]);
-    await generaPdfContratto(req.params.id, { forceDrive: false });
+    await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
     res.json({ ok:true, redirect:'/contratto/' + req.params.id + '/firmato' });
   } catch (e) {
     res.status(500).send(e.message);
@@ -5028,7 +5108,7 @@ app.get('/firma-link/:id', async (req, res) => {
 
 
 
-// V108 FIX: alias corretto per il bottone verde Invia WhatsApp
+// V109 FIX: alias corretto per il bottone verde Invia WhatsApp
 app.get('/contratto/:id/invia-whatsapp', (req, res) => {
   res.redirect('/whatsapp-contratto/' + req.params.id);
 });
@@ -5079,7 +5159,7 @@ app.get('/email/:id', async (req,res)=>{
 });
 app.post('/email/:id', async (req,res)=>{
   try {
-    const file = await generaPdfContratto(req.params.id, { forceDrive: false });
+    const file = await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
     await sendEmail(req.body.email, 'Contratto DP RENT', req.body.messaggio || 'In allegato contratto DP RENT.', [{filename:path.basename(file),path:file}]);
     await run(`UPDATE prenotazioni SET stato='inviato_email' WHERE id=?`,[req.params.id]);
     res.send(actionScreen(req.params.id,'Email inviata','Contratto inviato correttamente.'));
@@ -5653,7 +5733,7 @@ app.get('/admin/pulisci-pdf-drive/:id', async (req, res) => {
     if (!folder) return res.send('Drive non configurato');
     const pdfName = pdfFileNameForContract(p);
     await deleteAllContractPdfsInDriveV63(folder.id);
-    const pdf = await generaPdfContratto(req.params.id, { forceDrive:false });
+    const pdf = await generaPdfContratto(req.params.id, { forceDrive:false, skipDrive:true });
     await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
     res.send(page('PDF DRIVE PULITO', `<div class="box"><h2 class="ok">PDF DRIVE PULITO</h2><a class="btn" href="/documenti/${req.params.id}">Documenti</a></div>`));
   } catch(e) {
@@ -5816,7 +5896,7 @@ async function deleteAllContractPdfsInDriveV63(folderId) {
   if (!drive || !folderId) return;
   try {
     const found = await drive.files.list({
-      q: `'${folderId}' in parents and trashed=false and mimeType='application/pdf' and name contains 'contratto_'`,
+      q: `'${folderId}' in parents and trashed=false and mimeType='application/pdf'`,
       fields: 'files(id,name)',
       supportsAllDrives: true,
       includeItemsFromAllDrives: true
@@ -5836,25 +5916,23 @@ async function deleteAllContractPdfsInDriveV63(folderId) {
 async function uploadLocalAllegatiToDriveV63(prenotazioneId, folderId) {
   if (!drive || !folderId) return;
   try {
-    const allegati = await all(
-      `SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id ASC`,
-      [prenotazioneId]
-    );
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+    let allegati = await all(`SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id ASC`, [prenotazioneId]).catch(()=>[]);
+    if (p && p.cliente_id) {
+      const docsCliente = await all(`SELECT * FROM allegati WHERE cliente_id=? AND (prenotazione_id IS NULL OR prenotazione_id=0) ORDER BY id ASC`, [p.cliente_id]).catch(()=>[]);
+      allegati = allegati.concat(docsCliente);
+    }
+    const seen = new Set();
     for (const a of (allegati || [])) {
+      const key = a.id + ':' + (a.path || a.filename || '');
+      if (seen.has(key)) continue;
+      seen.add(key);
       if (a.drive_file_id) continue;
       if (!a.path || !fs.existsSync(a.path)) continue;
       const fileName = safeFileName(a.originalname || a.filename || path.basename(a.path));
-      const up = await uploadFileToDriveFolderV63(
-        a.path,
-        fileName,
-        a.mimetype || 'application/octet-stream',
-        folderId
-      );
+      const up = await uploadFileToDriveFolderV63(a.path, fileName, a.mimetype || 'application/octet-stream', folderId);
       if (up && up.id) {
-        await run(
-          `UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`,
-          [up.id, up.webViewLink || null, a.id]
-        );
+        await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [up.id, up.webViewLink || null, a.id]).catch(()=>{});
       }
     }
   } catch(e) {
@@ -6802,6 +6880,22 @@ app.get('/documenti/:id', async (req, res) => {
 .contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
 @media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
 
+
+/* V109 FIX leggibilita mobile */
+header{padding-top:max(22px, env(safe-area-inset-top));}
+.top-actions{max-width:1180px;margin:0 auto 14px!important;padding:10px 0!important;}
+.top-actions .back-btn::before{content:""!important;}
+.top-actions .back-btn,.top-actions a{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif!important;font-size:clamp(18px,2.6vw,24px)!important;letter-spacing:0!important;line-height:1.1!important;white-space:nowrap!important;color:#fff!important;overflow:hidden;text-overflow:ellipsis;}
+.top-actions .back-btn{background:#333!important;}
+.top-actions .home-btn{background:#d70000!important;}
+.client-back button{font-size:18px!important;font-weight:900!important;background:#333!important;color:#fff!important;}
+@media(max-width:700px){
+  nav{padding-top:calc(14px + env(safe-area-inset-top));}
+  .top-actions{position:sticky;top:0;z-index:50;padding:10px 12px!important;gap:10px!important;background:rgba(244,244,244,.96)!important;}
+  .top-actions .back-btn,.top-actions a{min-width:0!important;width:calc(50% - 5px)!important;flex:1 1 calc(50% - 5px)!important;padding:14px 8px!important;}
+  .contract-main-actions .btn{width:100%!important;}
+}
+
 </style>
     `));
   } catch (e) {
@@ -6853,7 +6947,7 @@ async function v107SaveCargosUid(id, uid) {
 
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V108 COMPLETA porta ' + PORT);
+  console.log('DP RENT APP V109 FIX porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
 
@@ -7085,7 +7179,7 @@ function v104CargosPayload(x) {
 
 
 // =========================
-// V108 COMPLETA - PATCH FINALE DANIELE
+// V109 FIX - PATCH FINALE DANIELE
 // documenti clienti persistenti, PDF lock, firma redirect, badge, azienda completa
 // =========================
 try {
@@ -7105,7 +7199,7 @@ try {
   addColumn('prenotazioni','cargos_uid','TEXT');
   addColumn('allegati','cliente_id','INTEGER');
   addColumn('allegati','size','INTEGER');
-} catch(e) { console.log('V108 add columns skip:', e.message); }
+} catch(e) { console.log('V109 add columns skip:', e.message); }
 
 const v108PdfLocks = new Map();
 const v108OriginalGeneraPdfContratto = generaPdfContratto;
@@ -7174,8 +7268,14 @@ app.get('/contratto/:id/firmato', async (req,res)=>{
   res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} &egrave; stato firmato e registrato da DP RENT.</p>${pdfLink ? `<a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a>` : '<p class="muted">Puoi chiudere questa pagina.</p>'}`));
 });
 
+
+// V109 alias route robuste per WhatsApp/firma
+app.get('/contratto/:id/invia-firma-whatsapp', (req,res)=>res.redirect('/firma-whatsapp/' + req.params.id));
+app.get('/prenotazione/:id/invia-whatsapp', (req,res)=>res.redirect('/contratto/' + req.params.id + '/invia-whatsapp'));
+app.get('/prenotazione/:id/invia-firma-whatsapp', (req,res)=>res.redirect('/firma-whatsapp/' + req.params.id));
+
 app.get('/v108-check', async (req,res)=>{
   const dbOk = fs.existsSync(DB_PATH);
   const dirs = [DATA_DIR, uploadDir, contractsDir, firmeDir].map(d=>`${d}: ${fs.existsSync(d) ? 'OK' : 'NO'}`).join('\n');
-  res.type('text/plain').send(`DP RENT V108 OK\nDB: ${dbOk ? DB_PATH : 'NO'}\n${dirs}`);
+  res.type('text/plain').send(`DP RENT V109 OK\nDB: ${dbOk ? DB_PATH : 'NO'}\n${dirs}`);
 });
