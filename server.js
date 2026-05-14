@@ -1066,6 +1066,8 @@ canvas{border:2px solid #333;background:white;width:100%;height:250px;touch-acti
 .badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}.badge-blue{background:#1155cc;color:white}.premium-card{border:1px solid #eee;border-radius:18px;padding:18px;background:linear-gradient(180deg,#fff,#fafafa);box-shadow:0 10px 25px rgba(0,0,0,.08);margin:10px 0}.big-actions .btn{font-size:17px;padding:14px 18px;border-radius:14px}.muted{color:#777}
 pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;padding:12px;border-radius:8px;overflow:auto}
 
+.top-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}.top-actions .back-btn,.top-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:14px;padding:10px 16px;font-weight:900;text-decoration:none;border:0;background:#333;color:#fff;box-shadow:0 3px 0 rgba(0,0,0,.16);font-size:16px}.top-actions .home-btn{background:#d70000}@media(max-width:700px){.top-actions{position:sticky;top:0;z-index:20;background:rgba(244,244,244,.94);backdrop-filter:blur(8px);padding:8px 0}.top-actions .back-btn,.top-actions a{flex:1;min-width:130px}}
+
 /* V109 responsive premium iPhone/iPad */
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:linear-gradient(180deg,#f7f7f7,#ededed);-webkit-text-size-adjust:100%}
 header{padding:22px clamp(16px,3vw,34px);box-shadow:0 10px 30px rgba(0,0,0,.22);position:relative}
@@ -1108,7 +1110,7 @@ input,select,textarea{font-size:18px;border-radius:14px;padding:14px}
 <a href="/test-email">Test Email</a>
 <a href="/test-drive">Test Drive</a>
 </nav>
-<main>${content}</main>
+<main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">â Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
 </body>
 </html>`;
 }
@@ -4909,15 +4911,20 @@ function publicFirmaPage(title, content) {
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>${esc(title || 'DP RENT')}</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f2f2f2;color:#202020;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-text-size-adjust:100%}.client-header{background:#050505;color:#fff;padding:24px 20px;text-align:center}.client-brand{font-size:34px;font-weight:950;letter-spacing:2px}.client-sub{margin-top:6px;font-size:14px;letter-spacing:2px;color:#ddd}.client-main{max-width:760px;margin:0 auto;padding:18px}.client-card{background:#fff;border-radius:26px;padding:24px;box-shadow:0 18px 45px rgba(0,0,0,.12)}h1,h2{font-size:clamp(28px,7vw,42px);line-height:1.08;margin:0 0 18px}.ok{color:#10883b}.bad{color:#b30000}p{font-size:18px;line-height:1.45}.btn,button{appearance:none;border:0;display:block;width:100%;text-align:center;text-decoration:none;background:#d70000;color:#fff;border-radius:18px;padding:16px 18px;font-size:20px;font-weight:900;margin:12px 0;box-shadow:0 5px 0 rgba(0,0,0,.18)}.btn2{background:#333}.btn3{background:#10883b}canvas{border:2px solid #222;border-radius:18px;background:#fff;width:100%;height:260px;touch-action:none}.muted{color:#666;font-size:15px}@media(min-width:760px){.client-main{padding:28px}.client-card{padding:34px}.btn,button{display:inline-block;width:auto;min-width:210px;margin-right:10px}}
+*{box-sizing:border-box}body{margin:0;background:#f2f2f2;color:#202020;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;-webkit-text-size-adjust:100%}.client-header{background:#050505;color:#fff;padding:24px 20px;text-align:center}.client-brand{font-size:34px;font-weight:950;letter-spacing:2px}.client-sub{margin-top:6px;font-size:14px;letter-spacing:2px;color:#ddd}.client-main{max-width:760px;margin:0 auto;padding:18px}.client-card{background:#fff;border-radius:26px;padding:24px;box-shadow:0 18px 45px rgba(0,0,0,.12)}h1,h2{font-size:clamp(28px,7vw,42px);line-height:1.08;margin:0 0 18px}.ok{color:#10883b}.bad{color:#b30000}p{font-size:18px;line-height:1.45}.btn,button{appearance:none;border:0;display:block;width:100%;text-align:center;text-decoration:none;background:#d70000;color:#fff;border-radius:18px;padding:16px 18px;font-size:20px;font-weight:900;margin:12px 0;box-shadow:0 5px 0 rgba(0,0,0,.18)}.btn2{background:#333}.btn3{background:#10883b}canvas{border:2px solid #222;border-radius:18px;background:#fff;width:100%;height:260px;touch-action:none}.muted{color:#666;font-size:15px}.client-back{display:block;width:100%;text-align:left;margin:0 0 12px}.client-back button{width:auto;min-width:0;background:#333;font-size:16px;padding:10px 14px;border-radius:14px}@media(min-width:760px){.client-main{padding:28px}.client-card{padding:34px}.btn,button{display:inline-block;width:auto;min-width:210px;margin-right:10px}}
 
 .contract-main-actions{margin-top:16px}.contract-main-actions .btn{min-width:190px;text-align:center}.contract-secondary-actions .btn{min-width:150px;text-align:center}
 @media(max-width:700px){.contract-main-actions .btn,.contract-secondary-actions .btn{width:100%;min-width:0}}
 
 </style>
 </head>
-<body><div class="client-header"><div class="client-brand">DP RENT</div><div class="client-sub">FIRMA CONTRATTO</div></div><main class="client-main"><div class="client-card">${content}</div></main></body></html>`;
+<body><div class="client-header"><div class="client-brand">DP RENT</div><div class="client-sub">FIRMA CONTRATTO</div></div><main class="client-main"><div class="client-back"><button type="button" onclick="history.length>1?history.back():location.href='/firma-chiusa'">â Indietro</button></div><div class="client-card">${content}</div></main></body></html>`;
 }
+
+
+app.get('/firma-chiusa', (req,res)=>{
+  res.send(publicFirmaPage('DP RENT', '<h2>Operazione annullata</h2><p>Puoi chiudere questa pagina o tornare al messaggio WhatsApp.</p>'));
+});
 
 app.get('/firma/:id', (req, res) => {
   res.send(publicFirmaPage('Firma contratto DP RENT', `
@@ -5020,6 +5027,12 @@ app.get('/firma-link/:id', async (req, res) => {
 });
 
 
+
+// V108 FIX: alias corretto per il bottone verde Invia WhatsApp
+app.get('/contratto/:id/invia-whatsapp', (req, res) => {
+  res.redirect('/whatsapp-contratto/' + req.params.id);
+});
+
 app.get('/whatsapp-contratto/:id', async (req, res) => {
   try {
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
@@ -5050,7 +5063,7 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
       `Firma online: ${firmaLink}`;
 
     const r = await dpNotify([tel], testo);
-    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p>${pdfLink ? `<p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>` : '<p class="warn">PDF Drive non disponibile: controlla configurazione Google Drive.</p>'}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a></div>`));
+    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p>${pdfLink ? `<p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>` : '<p class="warn">PDF Drive non disponibile: controlla configurazione Google Drive.</p>'}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
   } catch (e) {
     res.status(500).send(page('Errore invio contratto WhatsApp', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
   }
@@ -7158,7 +7171,7 @@ app.get('/contratto/:id/firmato', async (req,res)=>{
   try { await generaPdfContratto(req.params.id, { forceDrive:false }); } catch(e) {}
   const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]).catch(()=>p);
   const pdfLink = fresh?.pdf_drive_web_link || fresh?.pdf_drive_link || p.pdf_drive_web_link || p.pdf_drive_link || '';
-  res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} Ã¨ stato firmato e registrato da DP RENT.</p>${pdfLink ? `<a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a>` : '<p class="muted">Puoi chiudere questa pagina.</p>'}`));
+  res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} &egrave; stato firmato e registrato da DP RENT.</p>${pdfLink ? `<a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a>` : '<p class="muted">Puoi chiudere questa pagina.</p>'}`));
 });
 
 app.get('/v108-check', async (req,res)=>{
