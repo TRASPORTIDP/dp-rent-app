@@ -1189,20 +1189,22 @@ function categoriaClienteNorm(v) {
   return k || 'FURGONE';
 }
 function mezzoCompatibileCategoriaCliente(m, categoriaRichiesta) {
-  // V123: filtro rigido. La nota interna deve seguire ESATTAMENTE la scelta cliente.
-  // Non usare marca/modello generici tipo DAILY/DUCATO per decidere, altrimenti prende mezzi sbagliati.
   const cat = categoriaClienteNorm(categoriaRichiesta);
-  const categoriaMezzo = categoriaClienteNorm(m.categoria || m.tipo || m.codice_tipo || '');
-  const testo = normalize(`${m.categoria || ''} ${m.tipo || ''} ${m.descrizione || ''} ${m.descrizione_pubblica || ''} ${m.codice_tipo || ''}`).toUpperCase();
+  const testo = normalize(`${m.categoria || ''} ${m.tipo || ''} ${m.marca || ''} ${m.modello || ''} ${m.descrizione || ''} ${m.descrizione_pubblica || ''} ${m.codice_tipo || ''}`).toUpperCase();
   const posti = Number(m.posti || 0);
-  if (categoriaMezzo === cat) return true;
-  if (cat === 'FURGONE') return /(^|[^A-Z])(FURGONE|FURGONI|CARGO|MERCI|F1|F2|F3|VAN)([^A-Z]|$)/.test(testo) && !/(DACIA|GOLF|PULMINO|9_POSTI|9 POSTI|ESCAV|SEMOV|PIATTAFORMA)/.test(testo);
-  if (cat === '9_POSTI') return (/(PULMINO|9_POSTI|9 POSTI|8 POSTI|MINIBUS|PASSEGGERI|PERSONE)/.test(testo) || posti >= 8) && !/(RIBALT|CASSON|CARGO|MERCI|ESCAV|SEMOV|PIATTAFORMA)/.test(testo);
-  if (cat === 'AUTO_DACIA') return /(AUTO_DACIA|DACIA|SANDERO)/.test(testo);
-  if (cat === 'AUTO_GOLF') return /(AUTO_GOLF|GOLF)/.test(testo);
-  if (cat === 'ESCAVATORE') return /(ESCAV|X-ESC|MEZZO_SPECIALE|SPECIALE)/.test(testo);
-  if (cat === 'SEMOVENTE') return /(SEMOV|PIATTAFORMA)/.test(testo);
-  return false;
+  if (cat === '9_POSTI') {
+    // V118: pulmino solo con segnali chiari. Se c'e ribaltabile/cassone/furgone/cargo/merci NON basta la categoria sbagliata.
+    const esplicitoPulmino = testo.includes('PULMINO') || testo.includes('9 POSTI') || testo.includes('8/9') || testo.includes('PERSONE') || testo.includes('PASSEGGERI') || testo.includes('MINIBUS');
+    const segnaliMerci = testo.includes('RIBALT') || testo.includes('CASSON') || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI');
+    if (segnaliMerci && !esplicitoPulmino) return false;
+    return esplicitoPulmino || posti >= 8;
+  }
+  if (cat === 'FURGONE') return testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI') || testo.includes('DAILY') || testo.includes('DUCATO') || testo.includes('TRANSIT') || testo.includes('RIBALT') || String(m.categoria||'') === 'FURGONE';
+  if (cat === 'AUTO_DACIA') return testo.includes('DACIA') || String(m.categoria||'') === 'AUTO_DACIA';
+  if (cat === 'AUTO_GOLF') return testo.includes('GOLF') || String(m.categoria||'') === 'AUTO_GOLF';
+  if (cat === 'ESCAVATORE') return testo.includes('ESCAV') || String(m.categoria||'') === 'ESCAVATORE';
+  if (cat === 'SEMOVENTE') return testo.includes('SEMOV') || testo.includes('PIATTAFORMA') || String(m.categoria||'') === 'SEMOVENTE';
+  return categoriaClienteNorm(m.categoria || m.tipo) === cat;
 }
 
 function prezzoCategoria(cat) {
@@ -2365,7 +2367,79 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V123 - fix attese, documenti archivio, categorie, fatturazione'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V123 - fix attese eliminabili, OCR archivio, categoria mezzo, indirizzo fatturazione'));
+
+
+// =========================
+// V123 - helper robusti: colonne, cliente storico, allegati
+// =========================
+async function v123TableColumns(table){
+  try { return (await all(`PRAGMA table_info(${table})`)).map(c => c.name); } catch(e){ return []; }
+}
+async function v123UpdateExisting(table, whereCol, whereVal, data){
+  const cols = await v123TableColumns(table);
+  const keys = Object.keys(data || {}).filter(k => cols.includes(k));
+  if(!keys.length) return false;
+  await run(`UPDATE ${table} SET ${keys.map(k=>`${k}=?`).join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE ${whereCol}=?`, [...keys.map(k=>data[k]), whereVal]).catch(async()=>{
+    await run(`UPDATE ${table} SET ${keys.map(k=>`${k}=?`).join(', ')} WHERE ${whereCol}=?`, [...keys.map(k=>data[k]), whereVal]);
+  });
+  return true;
+}
+async function v123FindOrCreateClienteFromPrenotazione(prenId){
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenId]);
+  if(!p) return null;
+  const cf = String(p.codice_fiscale || '').trim().toUpperCase();
+  let c = null;
+  if(cf) c = await get(`SELECT * FROM clienti WHERE codice_fiscale=?`, [cf]).catch(()=>null);
+  if(!c && p.telefono) c = await get(`SELECT * FROM clienti WHERE telefono=? ORDER BY id DESC LIMIT 1`, [p.telefono]).catch(()=>null);
+  const data = {
+    nome:p.nome||'', cognome:p.cognome||'', telefono:p.telefono||'', email:p.email||'', codice_fiscale:cf,
+    indirizzo:p.indirizzo||p.indirizzo_fatturazione||'', citta:p.citta||p.citta_fatturazione||'', provincia:p.provincia||p.provincia_fatturazione||'', cap:p.cap||p.cap_fatturazione||'',
+    data_nascita:p.data_nascita||'', luogo_nascita:p.luogo_nascita||'', documento_numero:p.documento_numero||'', documento_scadenza:p.documento_scadenza||'',
+    patente_numero:p.patente_numero||p.patente1||'', patente_scadenza:p.patente_scadenza||p.patente1_scadenza||'', categoria_patente:p.categoria_patente||'',
+    tipo_cliente:p.tipo_cliente||'privato', ragione_sociale:p.ragione_sociale||'', piva:p.piva||p.partita_iva||'', partita_iva:p.partita_iva||p.piva||'',
+    pec:p.pec||'', sdi:p.sdi||p.codice_sdi||'', codice_sdi:p.codice_sdi||p.sdi||'',
+    indirizzo_fatturazione:p.indirizzo_fatturazione||p.indirizzo||'', citta_fatturazione:p.citta_fatturazione||p.citta||'', provincia_fatturazione:p.provincia_fatturazione||p.provincia||'', cap_fatturazione:p.cap_fatturazione||p.cap||''
+  };
+  if(c){ await v123UpdateExisting('clienti','id',c.id,data).catch(()=>{}); return c.id; }
+  const cols = await v123TableColumns('clienti');
+  const keys = Object.keys(data).filter(k => cols.includes(k));
+  if(!keys.length) return null;
+  const r = await run(`INSERT INTO clienti (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`, keys.map(k=>data[k]));
+  return r.lastID;
+}
+async function v123CollegaAllegatiPrenotazioneACliente(prenId){
+  const cid = await v123FindOrCreateClienteFromPrenotazione(prenId);
+  if(!cid) return null;
+  const cols = await v123TableColumns('allegati');
+  if(cols.includes('cliente_id')) {
+    await run(`UPDATE allegati SET cliente_id=? WHERE prenotazione_id=? AND (cliente_id IS NULL OR cliente_id='')`, [cid, prenId]).catch(()=>{});
+  }
+  return cid;
+}
+function v123CategoriaMezzo(m){
+  const catRaw = String(m.categoria || '').trim().toUpperCase().replace(/[\s\-]+/g,'_');
+  const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''} ${m.descrizione_pubblica||''} ${m.codice_tipo||''}`.toUpperCase();
+  const posti = Number(m.posti || 0);
+  if(catRaw.includes('9_POSTI') || catRaw.includes('PULMINO') || /\b9\s*POSTI\b/.test(hay) || posti >= 8) return '9_POSTI';
+  if(catRaw.includes('AUTO_DACIA') || hay.includes('DACIA') || hay.includes('SANDERO')) return 'AUTO_DACIA';
+  if(catRaw.includes('AUTO_GOLF') || hay.includes('GOLF')) return 'AUTO_GOLF';
+  if(catRaw.includes('ESCAV') || hay.includes('ESCAV')) return 'ESCAVATORE';
+  if(catRaw.includes('SEMOV') || hay.includes('PIATTAFORMA')) return 'SEMOVENTE';
+  if(catRaw.includes('FURG') || hay.includes('FURG') || hay.includes('CARGO') || hay.includes('MERCI') || hay.includes('DAILY') || hay.includes('DUCATO') || hay.includes('TRANSIT')) return 'FURGONE';
+  return catRaw || '';
+}
+function v123MezzoCompatibile(m, catInfo){
+  const target = categoriaClienteNorm(catInfo?.categoria || catInfo || '');
+  const actual = v123CategoriaMezzo(m);
+  if(target === 'FURGONE') return actual === 'FURGONE';
+  if(target === '9_POSTI') return actual === '9_POSTI';
+  if(target === 'AUTO_DACIA') return actual === 'AUTO_DACIA';
+  if(target === 'AUTO_GOLF') return actual === 'AUTO_GOLF';
+  if(target === 'ESCAVATORE') return actual === 'ESCAVATORE' || actual === 'SEMOVENTE';
+  if(target === 'SEMOVENTE') return actual === 'SEMOVENTE';
+  return actual === target;
+}
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2397,7 +2471,7 @@ app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
     const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`);
-    const attesa = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp'`);
+    const attesa = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa'`);
     const allMezzi = await all(`SELECT * FROM mezzi`);
     const alerts = allMezzi.map(m => {
       const a = alertMezzo(m);
@@ -2417,7 +2491,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
       ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a></div>` : ``}
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V123 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V122 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2438,22 +2512,20 @@ app.get('/', async (req, res) => {
 
 app.get('/richieste-attesa', async (req, res) => {
   try {
-    const rows = await all(`SELECT * FROM prenotazioni WHERE stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp' ORDER BY id DESC LIMIT 100`);
-    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a> <form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questo cliente in attesa?')"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
+    const rows = await all(`SELECT * FROM prenotazioni WHERE (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa' ORDER BY id DESC LIMIT 100`);
+    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a><form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Vuoi davvero eliminare questo cliente in attesa?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
   } catch(e) {
     res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore clienti in attesa</h2><pre>${esc(e.message)}</pre></div>`));
   }
 });
 
 
-app.post('/richieste-attesa/:id/elimina', async (req, res) => {
-  try {
-    await run(`DELETE FROM allegati WHERE prenotazione_id=?`, [req.params.id]).catch(()=>{});
-    await run(`DELETE FROM prenotazioni WHERE id=? AND (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp','non_confermato') OR tipo_record='preventivo_whatsapp')`, [req.params.id]);
+app.post('/richieste-attesa/:id/elimina', async (req,res)=>{
+  try{
+    await run(`UPDATE prenotazioni SET stato='eliminato_attesa', note=COALESCE(note,'') || '
+Eliminato da clienti in attesa V123' WHERE id=?`, [req.params.id]);
     res.redirect('/richieste-attesa');
-  } catch(e) {
-    res.status(500).send(page('Errore eliminazione', `<div class="box"><h2 class="bad">Errore eliminazione</h2><pre>${esc(e.message)}</pre></div>`));
-  }
+  }catch(e){ res.status(500).send(page('Errore elimina attesa', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn" href="/richieste-attesa">Torna</a></div>`)); }
 });
 
 app.get('/logo', (req, res) => {
@@ -3653,36 +3725,6 @@ app.post('/prenota-ocr', upload.fields([
   }
 });
 
-
-async function v123EnsureAllegatiClienteId(){
-  await run(`ALTER TABLE allegati ADD COLUMN cliente_id INTEGER`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN tipo_cliente TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN ragione_sociale TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN piva TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN partita_iva TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN pec TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN sdi TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN codice_sdi TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN indirizzo_fatturazione TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN citta_fatturazione TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN provincia_fatturazione TEXT`).catch(()=>{});
-  await run(`ALTER TABLE clienti ADD COLUMN cap_fatturazione TEXT`).catch(()=>{});
-}
-async function v123UpsertClienteStorico(d){
-  await v123EnsureAllegatiClienteId();
-  const cf = String(d.codice_fiscale || '').trim().toUpperCase();
-  let old = null;
-  if (cf) old = await get(`SELECT id FROM clienti WHERE codice_fiscale=?`, [cf]).catch(()=>null);
-  if (!old && d.telefono) old = await get(`SELECT id FROM clienti WHERE telefono=? ORDER BY id DESC LIMIT 1`, [d.telefono]).catch(()=>null);
-  const vals = [d.nome||'',d.cognome||'',d.telefono||'',d.email||'',cf,d.indirizzo||'',d.citta||'',d.cap||'',d.data_nascita||'',d.luogo_nascita||'',d.documento_numero||'',d.documento_scadenza||'',d.patente_numero||d.patente1||'',d.patente_scadenza||d.patente1_scadenza||'',d.categoria_patente||'',d.tipo_cliente||'privato',d.ragione_sociale||'',d.piva||d.partita_iva||'',d.piva||d.partita_iva||'',d.pec||'',d.sdi||d.codice_sdi||'',d.sdi||d.codice_sdi||'',d.indirizzo_fatturazione||d.indirizzo||'',d.citta_fatturazione||d.citta||'',d.provincia_fatturazione||d.provincia||'',d.cap_fatturazione||d.cap||'',d.note||''];
-  if (old && old.id) {
-    await run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,tipo_cliente=?,ragione_sociale=?,piva=?,partita_iva=?,pec=?,sdi=?,codice_sdi=?,indirizzo_fatturazione=?,citta_fatturazione=?,provincia_fatturazione=?,cap_fatturazione=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`, [...vals, old.id]);
-    return old.id;
-  }
-  const r = await run(`INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,tipo_cliente,ragione_sociale,piva,partita_iva,pec,sdi,codice_sdi,indirizzo_fatturazione,citta_fatturazione,provincia_fatturazione,cap_fatturazione,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
-  return r.lastID;
-}
-
 app.post('/prenota-cliente', upload.fields([
   {name:'documento_fronte', maxCount:1}, {name:'documento_retro', maxCount:1},
   {name:'patente_fronte', maxCount:1}, {name:'patente_retro', maxCount:1},
@@ -3690,7 +3732,6 @@ app.post('/prenota-cliente', upload.fields([
 ]), async (req, res) => {
   try {
     await ensureClienteWebColumnsV92();
-    await v123EnsureAllegatiClienteId();
     const b = req.body || {};
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(`<!doctype html><meta charset="utf-8"><h1>Errore date</h1><p>${esc(erroreDate)}</p><a href="javascript:history.back()">Torna</a>`);
@@ -3705,7 +3746,7 @@ app.post('/prenota-cliente', upload.fields([
 
     const categoriaRichiesta = categoriaClienteNorm(b.categoria);
     const mezziTutti = await all(`SELECT * FROM mezzi ORDER BY id ASC`);
-    const mezzi = mezziTutti.filter(m => mezzoCompatibileCategoriaCliente(m, categoriaRichiesta));
+    const mezzi = mezziTutti.filter(m => v123MezzoCompatibile(m, categoriaRichiesta));
     if (!mezzi.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Nessun mezzo</h1><p>Nessun mezzo configurato correttamente per: ${esc(categoriaRichiesta)}.</p><p>Controlla anagrafica mezzi: categoria e posti.</p><a href="javascript:history.back()">Torna</a>`);
     let mezzo = null;
     for (const m of mezzi) {
@@ -3734,18 +3775,13 @@ app.post('/prenota-cliente', upload.fields([
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
 
-    // V123: salva/aggiorna cliente nello storico con fatturazione completa e collega i documenti all'archivio cliente
-    let clienteStoricoId = null;
-    try { clienteStoricoId = await v123UpsertClienteStorico({
+    // Salva cliente nello storico clienti per non reinserirlo ogni volta
+    try { salvaClienteStorico({
       nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
-      indirizzo:b.indirizzo, citta:b.citta, provincia:b.provincia, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
+      indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
       documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
-      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
-      tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva,
-      pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi,
-      indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap,
-      note:b.note || ''
-    }); } catch(e) { console.log('Storico cliente V123 warning:', e.message); }
+      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente, tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva, pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
+    }, ()=>{}); } catch(_) {}
 
     const files = [];
     for (const [tipo, arr] of Object.entries(req.files || {})) {
@@ -3759,6 +3795,8 @@ app.post('/prenota-cliente', upload.fields([
       await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`,
         [result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]);
     }
+    // V123: collega anche all'archivio cliente interno, non solo Drive/contratto.
+    try { await v123CollegaAllegatiPrenotazioneACliente(result.lastID); } catch(e) { console.log('V123 collega archivio cliente warning:', e.message); }
 
     try { if (typeof uploadContractAssetsToDrive === 'function') await uploadContractAssetsToDrive(result.lastID); } catch(e) { console.log('Drive cliente warning:', e.message); }
 
@@ -4715,6 +4753,19 @@ async function salvaDatiOcrSuContratto(id, b) {
       id
     ]
   );
+
+  // V123: copia dati OCR/fatturazione anche nello storico cliente e collega allegati.
+  try {
+    const fatt = {
+      nome: b.nome || current.nome || '', cognome: b.cognome || current.cognome || '', codice_fiscale: String(b.codice_fiscale || current.codice_fiscale || '').toUpperCase(),
+      indirizzo: b.indirizzo || current.indirizzo || current.indirizzo_fatturazione || '', citta: b.citta || current.citta || current.citta_fatturazione || '', provincia: b.provincia || current.provincia || current.provincia_fatturazione || '', cap: b.cap || current.cap || current.cap_fatturazione || '',
+      tipo_cliente: b.tipo_cliente || current.tipo_cliente || 'privato', ragione_sociale: b.ragione_sociale || current.ragione_sociale || '', piva: b.piva || b.partita_iva || current.piva || current.partita_iva || '', partita_iva: b.partita_iva || b.piva || current.partita_iva || current.piva || '', pec: b.pec || current.pec || '', sdi: b.sdi || b.codice_sdi || current.sdi || current.codice_sdi || '', codice_sdi: b.codice_sdi || b.sdi || current.codice_sdi || current.sdi || '',
+      indirizzo_fatturazione: b.indirizzo_fatturazione || b.indirizzo || current.indirizzo_fatturazione || current.indirizzo || '', citta_fatturazione: b.citta_fatturazione || b.citta || current.citta_fatturazione || current.citta || '', provincia_fatturazione: b.provincia_fatturazione || b.provincia || current.provincia_fatturazione || current.provincia || '', cap_fatturazione: b.cap_fatturazione || b.cap || current.cap_fatturazione || current.cap || '',
+      documento_numero: b.numero_documento || b.documento_numero || current.documento_numero || '', documento_scadenza: b.data_scadenza || b.documento_scadenza || current.documento_scadenza || '', patente_numero: b.numero_patente || b.patente_numero || current.patente_numero || current.patente1 || '', patente_scadenza: b.patente_scadenza || current.patente_scadenza || current.patente1_scadenza || '', categoria_patente: b.categoria_patente || current.categoria_patente || ''
+    };
+    await v123UpdateExisting('prenotazioni','id',id,fatt).catch(()=>{});
+    await v123CollegaAllegatiPrenotazioneACliente(id);
+  } catch(e) { console.log('V123 salva storico cliente warning:', e.message); }
 }
 
 app.get('/ocr-documenti/:id', async (req, res) => {
@@ -4951,6 +5002,7 @@ app.post('/cliente-documenti/:id/:token/ocr-multiplo', upload.fields([
 
       await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
         [p.id, `OCR CLIENTE ${item.field}`, f.filename, f.originalname, f.path, f.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
+      try { await v123CollegaAllegatiPrenotazioneACliente(p.id); } catch(e) { console.log('V123 collega allegato OCR multiplo:', e.message); }
 
       try {
         const dati = await estraiDatiDocumentoConAI(f.path, f.mimetype);
@@ -4988,6 +5040,7 @@ app.post('/cliente-documenti/:id/:token', upload.single('file'), async (req, res
 
     await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
       [p.id, `CLIENTE ${req.body.tipo}`, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
+    try { await v123CollegaAllegatiPrenotazioneACliente(p.id); } catch(e) { console.log('V123 collega allegato cliente:', e.message); }
 
     const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
     res.send(renderOcrConfirmPage(p, dati, `/cliente-documenti/${p.id}/${req.params.token}/salva`, `/cliente-documenti/${p.id}/${req.params.token}`));
@@ -6882,9 +6935,16 @@ function dpCategoryFromChoice(txt){
   return null;
 }
 function dpVehicleMatchesCat(m, catInfo){
+  // V123: filtro categoria secco. Non prende più il primo mezzo libero di altra categoria.
+  try { return v123MezzoCompatibile(m, catInfo); } catch(e) {}
   const target = catInfo?.categoria || '';
-  if (!target) return false;
-  try { return mezzoCompatibileCategoriaCliente(m, target); } catch(_) { return false; }
+  const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''}`.toUpperCase();
+  if(target === 'FURGONE') return /(FURG|VAN|CARGO|MERCI|DAILY|DUCATO|TRANSIT)/.test(hay) && !/(DACIA|GOLF|PULMINO|9\s*POSTI|ESCAV|SEMOV)/.test(hay);
+  if(target === '9_POSTI') return /(9_POSTI|PULMINO|9\s*POSTI|8\s*POSTI|MINIBUS)/.test(hay);
+  if(target === 'AUTO_DACIA') return /DACIA|SANDERO|AUTO_DACIA/.test(hay);
+  if(target === 'AUTO_GOLF') return /GOLF|AUTO_GOLF/.test(hay);
+  if(target === 'ESCAVATORE') return /ESCAV|SEMOVENTE|PIATTAFORMA|X-ESC|SPECIALE/.test(hay);
+  return false;
 }
 async function dpFindAvailableVehicle(catInfo, startIso, endIso){
   let mezzi = [];
