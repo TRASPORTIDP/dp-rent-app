@@ -1128,7 +1128,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V119 ATTESE/FATTURAZIONE</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V122 AREA CLIENTE OK</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -2367,7 +2367,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V119 - alert clienti attesa, menu globale, categorie mezzi corrette, fatturazione archivio'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V122 - alert clienti attesa, menu globale, categorie mezzi corrette, fatturazione archivio'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2419,7 +2419,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
       ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a></div>` : ``}
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V119 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V122 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -3443,11 +3443,6 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
 </script>
 </head>
 <body>
-<nav class="client-nav">
-  <button class="back" type="button" onclick="if(document.referrer){history.back()}else{location.href='/'}">↩️ Indietro</button>
-  <a class="dash" href="/">🏠 Dashboard</a>
-  <a class="wait wide" href="/richieste-attesa">🚨 Clienti in attesa</a>
-</nav>
 <section class="hero">
   <h1>DP RENT</h1>
   <p>Preventivo confermato. Compila tutti i dati per preparare pratica interna, contratto e controlli Ca.R.G.O.S.</p>
@@ -3615,7 +3610,7 @@ app.post('/prenota-ocr', upload.fields([
       }
     }
     if (!uploaded.length) {
-      return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Nessuna foto caricata</h1><p>Carica almeno documento o patente.</p><p><a href="javascript:history.back()">↩️ Torna indietro</a> &nbsp; <a href="/">🏠 Dashboard</a> &nbsp; <a href="/richieste-attesa">🚨 Clienti in attesa</a></p>`);
+      return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Nessuna foto caricata</h1><p>Carica almeno documento o patente.</p><p><a href="javascript:history.back()">↩️ Torna indietro</a></p>`);
     }
     const preuploadId = 'OCR' + Date.now() + Math.floor(Math.random()*9999);
     PREN_OCR_UPLOADS[preuploadId] = uploaded;
@@ -4732,10 +4727,29 @@ function mergeOcrObjects(list) {
   return out;
 }
 
+
+function publicClientePage(title, content) {
+  return `<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>${esc(title)}</title>
+<style>
+:root{--dp-red:#d70000;--dp-blue:#173f9d;--dp-dark:#07111f;--bg:#eef4ff;--card:#fff;--line:#d9dbe7}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef4ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#0b1226;-webkit-text-size-adjust:100%;font-size:18px}main{max-width:900px;margin:0 auto;padding:16px 14px 38px}.client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:#fff;border-radius:0 0 30px 30px;padding:calc(28px + env(safe-area-inset-top)) 24px 30px;margin:0 -14px 22px;box-shadow:0 16px 40px rgba(0,0,0,.18)}.client-hero h1{font-size:44px;line-height:1;margin:0 0 14px;color:#fff;letter-spacing:.8px}.client-hero p{font-size:21px;line-height:1.35;margin:0;opacity:.96}.pill{display:inline-block;background:#fff;color:#173f9d;border-radius:999px;padding:11px 18px;margin:16px 8px 0 0;font-weight:900;font-size:20px}.card,.step-card,details.manual{background:#fff;border-radius:26px;padding:24px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.10);border:1px solid #e3e7f2}.card h2,.step-card h2{font-size:34px;margin:0 0 16px;color:#0b1226}.grid,.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-weight:900;margin:10px 0 7px;color:#0b1226}input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none}textarea{min-height:110px}.notice{background:#fff8df;border:1px solid #f1d98a;border-radius:20px;padding:16px;line-height:1.35;font-size:18px}.okbox{background:#ecfff1;border:1px solid #b8efc4;border-radius:20px;padding:16px;line-height:1.35}.btn,button,.big-red{border:0;border-radius:20px;background:linear-gradient(135deg,#e21818,#a80d0d);color:#fff;padding:18px 24px;font-size:22px;font-weight:900;box-shadow:0 12px 25px rgba(210,0,0,.25);width:100%;margin-top:18px}.small{font-size:15px;color:#596275;font-weight:700}.upload-box{border:2px dashed #cbd5e1;border-radius:22px;padding:18px;background:#f8fafc}.upload-box label{font-size:20px}.upload-box input{font-size:18px;margin-top:12px}details.manual summary{font-size:30px;font-weight:900;cursor:pointer}.fixed-save{position:sticky;bottom:12px;z-index:9;background:rgba(255,255,255,.96);padding:12px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.16)}@media(max-width:720px){main{padding-left:14px;padding-right:14px}.grid,.upload-grid{grid-template-columns:1fr}.client-hero h1{font-size:36px}.client-hero p{font-size:20px}.card,.step-card,details.manual{padding:20px;border-radius:24px}.card h2,.step-card h2{font-size:31px}input,select,textarea{font-size:19px}}
+</style>
+<script>
+function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var t=el.value; var box=document.getElementById('aziendaBox'); if(!box) return; var isAz=t==='azienda'; box.style.display=isAz?'grid':'none'; ['ragione_sociale','partita_iva','pec','codice_sdi'].forEach(function(n){var f=document.querySelector('[name="'+n+'"]'); if(f) f.required=isAz;});}
+window.addEventListener('DOMContentLoaded',toggleAzienda);
+</script>
+</head><body><main>${content}</main></body></html>`;
+}
+
 function renderClientePulitoPage(p, token, files) {
   const lista = (files || []).map(f => `<li>${esc(f.tipo)} - ${esc(f.originalname)} ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Drive</a>` : ''}</li>`).join('');
   const actionBase = `/cliente-documenti/${p.id}/${token}`;
-  return page('DP RENT - Pratica cliente', `
+  return publicClientePage('DP RENT - Pratica cliente', `
     <style>
       .client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:white;border-radius:30px;padding:36px 42px;margin-bottom:26px;box-shadow:0 16px 40px rgba(0,0,0,.18)}
       .client-hero h1{font-size:54px;line-height:1;margin:0 0 18px 0;color:white}
@@ -7356,7 +7370,7 @@ app.post('/scansione-documenti/salva', async (req,res)=>{
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V119 alert attese porta ' + PORT);
+  console.log('DP RENT APP V122 alert attese porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
 
