@@ -971,7 +971,7 @@ db.run(`
     ['telefono','TEXT'],['email','TEXT'],['codice_fiscale','TEXT'],['indirizzo','TEXT'],
     ['citta','TEXT'],['cap','TEXT'],['data_nascita','TEXT'],['luogo_nascita','TEXT'],
     ['documento_numero','TEXT'],['documento_scadenza','TEXT'],['patente_numero','TEXT'],
-    ['patente_scadenza','TEXT'],['categoria_patente','TEXT'],['tipo_cliente','TEXT'],['ragione_sociale','TEXT'],['piva','TEXT'],['partita_iva','TEXT'],['pec','TEXT'],['sdi','TEXT'],['codice_sdi','TEXT'],['indirizzo_fatturazione','TEXT'],['citta_fatturazione','TEXT'],['provincia_fatturazione','TEXT'],['cap_fatturazione','TEXT'],['provincia','TEXT'],['documento_file','TEXT'],['patente_file','TEXT'],['scansione_batch','TEXT'],['note','TEXT'],['updated_at','TEXT']
+    ['patente_scadenza','TEXT'],['categoria_patente','TEXT'],['note','TEXT'],['updated_at','TEXT']
   ].forEach(c => addColumn('clienti', c[0], c[1]));
 
 db.run(`
@@ -989,10 +989,6 @@ db.run(`
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     )
   `);
-  ['cliente_id INTEGER','size INTEGER'].forEach(def => {
-    const name = def.split(' ')[0];
-    db.run(`ALTER TABLE allegati ADD COLUMN ${def}`, ()=>{});
-  });
 });
 
 function esc(v) {
@@ -1132,7 +1128,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V127 FIX REALE</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V122 AREA CLIENTE OK</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1605,7 +1601,8 @@ async function generaPdfContratto(id, opts = {}) {
   row(doc, 'Email', p.email || '', 55, yLeft, 220); yLeft += 18;
   row(doc, 'Codice fiscale', p.codice_fiscale || p.cf || '', 55, yLeft, 220); yLeft += 18;
   row(doc, 'Indirizzo', `${p.indirizzo || ''} ${p.cap || ''} ${p.citta || ''} ${p.provincia || ''}`, 55, yLeft, 220); yLeft += 18;
-  row(doc, 'Fatturazione', `${p.tipo_cliente || p.fatturazione || ''} ${p.ragione_sociale || p.azienda || ''} ${p.piva || ''}`, 55, yLeft, 220); yLeft += 18;
+  row(doc, 'Fatturazione', `${p.tipo_cliente || p.fatturazione || ''} ${p.ragione_sociale || p.azienda || ''} ${p.piva || p.partita_iva || ''}`, 55, yLeft, 220); yLeft += 18;
+  row(doc, 'Indirizzo fatt.', `${p.indirizzo_fatturazione || p.indirizzo || ''} ${p.cap_fatturazione || p.cap || ''} ${p.citta_fatturazione || p.citta || ''} ${p.provincia_fatturazione || p.provincia || ''}`, 55, yLeft, 220); yLeft += 18;
   row(doc, 'PEC / SDI', `${p.pec || ''} ${p.sdi || ''}`, 55, yLeft, 220); yLeft += 18;
 
   yRight = section(doc, 'CONDUCENTI', 310, yRight, 245);
@@ -2371,7 +2368,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V127 - fix reale documenti, fatturazione, alert'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V128 - fix indirizzo fatturazione azienda'));
 
 
 // =========================
@@ -2446,39 +2443,30 @@ function v123MezzoCompatibile(m, catInfo){
 }
 
 function salvaClienteStorico(dati, cb) {
-  dati = dati || {};
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
-  const tel = String(dati.telefono || '').trim();
-  const data = {
-    nome:dati.nome||'', cognome:dati.cognome||'', telefono:tel, email:dati.email||'', codice_fiscale:cf||null,
-    indirizzo:dati.indirizzo||dati.indirizzo_fatturazione||'', citta:dati.citta||dati.citta_fatturazione||'', provincia:dati.provincia||dati.provincia_fatturazione||'', cap:dati.cap||dati.cap_fatturazione||'',
-    data_nascita:dati.data_nascita||'', luogo_nascita:dati.luogo_nascita||'',
-    documento_numero:dati.documento_numero||'', documento_scadenza:dati.documento_scadenza||'',
-    patente_numero:dati.patente_numero||dati.patente1||'', patente_scadenza:dati.patente_scadenza||dati.patente1_scadenza||'', categoria_patente:dati.categoria_patente||'',
-    tipo_cliente:String(dati.tipo_cliente||'privato').toLowerCase(), ragione_sociale:dati.ragione_sociale||'',
-    piva:dati.piva||dati.partita_iva||'', partita_iva:dati.partita_iva||dati.piva||'',
-    pec:dati.pec||'', sdi:dati.sdi||dati.codice_sdi||'', codice_sdi:dati.codice_sdi||dati.sdi||'',
-    indirizzo_fatturazione:dati.indirizzo_fatturazione||dati.indirizzo||'', citta_fatturazione:dati.citta_fatturazione||dati.citta||'', provincia_fatturazione:dati.provincia_fatturazione||dati.provincia||'', cap_fatturazione:dati.cap_fatturazione||dati.cap||'',
-    note:dati.note_cliente||dati.note||''
-  };
-  db.all(`PRAGMA table_info(clienti)`, [], (e, colsInfo)=>{
-    const cols = new Set((colsInfo||[]).map(c=>c.name));
-    const keys = Object.keys(data).filter(k=>cols.has(k));
-    const finish = (err,id)=> cb && cb(err,id);
-    const upsert = (old)=>{
-      if(old && old.id){
-        const updateKeys = keys.filter(k=>k!=='codice_fiscale' || data[k]);
-        db.run(`UPDATE clienti SET ${updateKeys.map(k=>`${k}=?`).join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [...updateKeys.map(k=>data[k]), old.id], err=>finish(err, old.id));
-      } else {
-        db.run(`INSERT INTO clienti (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`, keys.map(k=>data[k]), function(err){ finish(err, this ? this.lastID : null); });
-      }
-    };
-    if(cf) db.get(`SELECT id FROM clienti WHERE codice_fiscale=?`, [cf], (err, old)=> upsert(old));
-    else if(tel) db.get(`SELECT id FROM clienti WHERE telefono=? ORDER BY id DESC LIMIT 1`, [tel], (err, old)=> upsert(old));
-    else upsert(null);
-  });
+  const params = [
+    dati.nome || '', dati.cognome || '', dati.telefono || '', dati.email || '', cf || null,
+    dati.indirizzo || '', dati.citta || '', dati.cap || '', dati.data_nascita || '', dati.luogo_nascita || '',
+    dati.documento_numero || '', dati.documento_scadenza || '', dati.patente1 || dati.patente_numero || '',
+    dati.patente1_scadenza || dati.patente_scadenza || '', dati.categoria_patente || '', dati.note_cliente || ''
+  ];
+  const doInsert = () => db.run(`
+    INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,
+    documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,note)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+  `, params, function(err){ cb && cb(err, this ? this.lastID : null); });
+  if (cf) {
+    db.get(`SELECT id FROM clienti WHERE codice_fiscale=?`, [cf], (e, old) => {
+      if (old) {
+        db.run(`
+          UPDATE clienti SET nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?, indirizzo=?, citta=?, cap=?,
+          data_nascita=?, luogo_nascita=?, documento_numero=?, documento_scadenza=?, patente_numero=?, patente_scadenza=?,
+          categoria_patente=?, note=?, updated_at=CURRENT_TIMESTAMP WHERE id=?
+        `, [...params, old.id], err => cb && cb(err, old.id));
+      } else doInsert();
+    });
+  } else doInsert();
 }
-
 
 app.get('/', async (req, res) => {
   try {
@@ -2734,20 +2722,6 @@ function alertCliente(c, alertDays = 60) {
   if (d2 === null) parts.push('<div class="alert">Patente mancante</div>');
   else if (d2 < 0) parts.push(`<div class="alert">Patente scaduta da ${Math.abs(d2)} giorni</div>`);
   else if (d2 <= alertDays) parts.push(`<div class="alert">Patente in scadenza tra ${d2} giorni</div>`);
-  return parts.join('');
-}
-function alertClienteV127(c, alertDays = 60) {
-  const parts = [];
-  const hasDocFile = Number(c.documento_file_count || 0) > 0 || !!c.documento_file;
-  const hasPatFile = Number(c.patente_file_count || 0) > 0 || !!c.patente_file;
-  const d1 = dpDateDiffDays(c.documento_scadenza);
-  const d2 = dpDateDiffDays(c.patente_scadenza || c.patente1_scadenza);
-  if (d1 === null && !hasDocFile && !c.documento_numero) parts.push('<div class="alert">Documento mancante</div>');
-  else if (d1 !== null && d1 < 0) parts.push(`<div class="alert">Documento scaduto da ${Math.abs(d1)} giorni</div>`);
-  else if (d1 !== null && d1 <= alertDays) parts.push(`<div class="alert">Documento in scadenza tra ${d1} giorni</div>`);
-  if (d2 === null && !hasPatFile && !(c.patente_numero||c.patente1)) parts.push('<div class="alert">Patente mancante</div>');
-  else if (d2 !== null && d2 < 0) parts.push(`<div class="alert">Patente scaduta da ${Math.abs(d2)} giorni</div>`);
-  else if (d2 !== null && d2 <= alertDays) parts.push(`<div class="alert">Patente in scadenza tra ${d2} giorni</div>`);
   return parts.join('');
 }
 
@@ -3012,7 +2986,7 @@ app.get('/scadenze-clienti', async (req, res) => {
 
 app.get('/clienti', (req, res) => {
   const q = String(req.query.q || '').trim();
-  let sql = `SELECT clienti.*, (SELECT COUNT(*) FROM allegati a WHERE a.cliente_id=clienti.id AND lower(a.tipo) LIKE '%documento%') AS documento_file_count, (SELECT COUNT(*) FROM allegati a WHERE a.cliente_id=clienti.id AND lower(a.tipo) LIKE '%patente%') AS patente_file_count FROM clienti WHERE 1=1`;
+  let sql = `SELECT * FROM clienti WHERE 1=1`;
   const params = [];
   if (q) {
     sql += ` AND (nome LIKE ? OR cognome LIKE ? OR telefono LIKE ? OR email LIKE ? OR codice_fiscale LIKE ? OR patente_numero LIKE ?)`;
@@ -3025,9 +2999,9 @@ app.get('/clienti', (req, res) => {
         <td><a href="/cliente/${c.id}"><b>${esc(c.nome)} ${esc(c.cognome)}</b></a></td>
         <td>${esc(c.telefono||'')}<br>${esc(c.email||'')}</td>
         <td>${esc(c.codice_fiscale||'')}</td>
-        <td>${esc(c.documento_numero||'')}<br>Scad. ${esc(c.documento_scadenza||'')}<br>${(!c.documento_numero && !c.documento_scadenza && Number(c.documento_file_count||0)>0) ? '<span class="badge badge-green">Documento caricato</span>' : badgeScadenzaCliente('Documento', c.documento_scadenza)}</td>
-        <td>${esc(c.patente_numero||c.patente1||'')}<br>Scad. ${esc(c.patente_scadenza||c.patente1_scadenza||'')}<br>${(!(c.patente_numero||c.patente1) && !(c.patente_scadenza||c.patente1_scadenza) && Number(c.patente_file_count||0)>0) ? '<span class="badge badge-green">Patente caricata</span>' : badgeScadenzaCliente('Patente', c.patente_scadenza || c.patente1_scadenza)}</td>
-        <td>${alertClienteV127(c) || '<span class="badge badge-green">OK</span>'}</td>
+        <td>${esc(c.documento_numero||'')}<br>Scad. ${esc(c.documento_scadenza||'')}<br>${badgeScadenzaCliente('Documento', c.documento_scadenza)}</td>
+        <td>${esc(c.patente_numero||c.patente1||'')}<br>Scad. ${esc(c.patente_scadenza||c.patente1_scadenza||'')}<br>${badgeScadenzaCliente('Patente', c.patente_scadenza || c.patente1_scadenza)}</td>
+        <td>${alertCliente(c) || '<span class="badge badge-green">OK</span>'}</td>
         <td><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto</a> <a class="btn btn3" href="/cliente/${c.id}/documenti">Documenti</a> <a class="btn btn2" href="/cliente/${c.id}/modifica">Modifica</a> <a class="btn bad" href="/cliente/${c.id}/elimina">Elimina</a></td>
       </tr>`).join('');
     res.send(page('Clienti', `
@@ -3093,11 +3067,11 @@ function clienteManualForm(c, action, title) {
         <h3>Fatturazione</h3>
         <div class="grid">
           <div><label>Tipo cliente</label><select name="tipo_cliente"><option value="privato" ${c.tipo_cliente!=='azienda'?'selected':''}>Privato</option><option value="azienda" ${c.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></div>
-          <div class="aziendaOnly"><label>Ragione sociale</label><input name="ragione_sociale" value="${val('ragione_sociale')}"></div>
-          <div class="aziendaOnly"><label>Partita IVA</label><input name="piva" value="${val('piva') || val('partita_iva')}"></div>
-          <div class="aziendaOnly"><label>PEC</label><input name="pec" value="${val('pec')}"></div>
-          <div class="aziendaOnly"><label>Codice SDI</label><input name="sdi" value="${val('sdi') || val('codice_sdi')}"></div>
-          <div class="full"><label>Indirizzo fatturazione</label><input name="indirizzo_fatturazione" value="${val('indirizzo_fatturazione')}"></div>
+          <div><label>Ragione sociale</label><input name="ragione_sociale" value="${val('ragione_sociale')}"></div>
+          <div><label>Partita IVA</label><input name="piva" value="${val('piva') || val('partita_iva')}"></div>
+          <div><label>PEC</label><input name="pec" value="${val('pec')}"></div>
+          <div><label>Codice SDI</label><input name="sdi" value="${val('sdi') || val('codice_sdi')}"></div>
+          <div class="full"><label>Indirizzo fatturazione / sede azienda</label><input name="indirizzo_fatturazione" value="${val('indirizzo_fatturazione') || val('indirizzo')}"></div>
           <div><label>Città fatturazione</label><input name="citta_fatturazione" value="${val('citta_fatturazione')}"></div>
           <div><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${val('provincia_fatturazione')}"></div>
           <div><label>CAP fatturazione</label><input name="cap_fatturazione" value="${val('cap_fatturazione')}"></div>
@@ -3106,7 +3080,6 @@ function clienteManualForm(c, action, title) {
         <button>Salva cliente</button>
         <a class="btn btn2" href="/clienti">Annulla</a>
       </form>
-      <script>function toggleAz(){var s=document.querySelector('[name=tipo_cliente]'); var show=s&&s.value==='azienda'; document.querySelectorAll('.aziendaOnly').forEach(function(el){el.style.display=show?'block':'none'});} document.addEventListener('DOMContentLoaded',function(){var s=document.querySelector('[name=tipo_cliente]'); if(s){s.addEventListener('change',toggleAz); toggleAz();}});</script>
     </div>`);
 }
 function clienteManualData(b){
@@ -3454,7 +3427,7 @@ app.post('/prenota-admin', async (req, res) => {
       documento_numero: b.documento_numero, documento_scadenza: b.documento_scadenza,
       patente1: b.patente1 || b.patente_numero, patente_numero: b.patente1 || b.patente_numero,
       patente1_scadenza: b.patente1_scadenza || b.patente_scadenza, patente_scadenza: b.patente1_scadenza || b.patente_scadenza,
-      categoria_patente: b.categoria_patente, tipo_cliente:b.tipo_cliente||'privato', ragione_sociale:b.ragione_sociale||'', piva:b.piva||b.partita_iva||'', partita_iva:b.piva||b.partita_iva||'', pec:b.pec||'', sdi:b.sdi||b.codice_sdi||'', codice_sdi:b.sdi||b.codice_sdi||'', indirizzo_fatturazione:b.indirizzo_fatturazione||b.indirizzo||'', citta_fatturazione:b.citta_fatturazione||b.citta||'', provincia_fatturazione:b.provincia_fatturazione||b.provincia||'', cap_fatturazione:b.cap_fatturazione||b.cap||'', note_cliente: b.note_cliente
+      categoria_patente: b.categoria_patente, note_cliente: b.note_cliente
     }, () => {});
 
     const calc = calcolaTotale(mezzo, b.data_inizio, b.data_fine, b.ora_inizio, b.ora_fine, b.km_previsti);
@@ -3646,8 +3619,8 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
       <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${clienteWebSelected(req,'tipo_cliente','privato','privato')}>Privato</option><option value="azienda" ${clienteWebSelected(req,'tipo_cliente','azienda')}>Azienda</option></select></div>
     </div>
     <div class="grid">
-      <div class="full"><label>Indirizzo fatturazione</label><input name="indirizzo_fatturazione" value="${clienteWebVal(req,'indirizzo_fatturazione')}"></div>
-      <div><label>Città fatturazione</label><input name="citta_fatturazione" value="${clienteWebVal(req,'citta_fatturazione')}"></div>
+      <div class="full"><label>Indirizzo fatturazione / sede azienda</label><input name="indirizzo_fatturazione" value="${clienteWebVal(req,'indirizzo_fatturazione')}"></div>
+      <div><label>Città fatturazione / sede</label><input name="citta_fatturazione" value="${clienteWebVal(req,'citta_fatturazione')}"></div>
       <div><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${clienteWebVal(req,'provincia_fatturazione')}"></div>
       <div><label>CAP fatturazione</label><input name="cap_fatturazione" value="${clienteWebVal(req,'cap_fatturazione')}"></div>
     </div>
@@ -3769,6 +3742,9 @@ app.post('/prenota-cliente', upload.fields([
       if (!(b.partita_iva || b.piva)) mancanti.push('partita IVA');
       if (!b.pec) mancanti.push('PEC');
       if (!(b.codice_sdi || b.sdi)) mancanti.push('codice SDI');
+      if (!(b.indirizzo_fatturazione || b.indirizzo)) mancanti.push('indirizzo fatturazione');
+      if (!(b.citta_fatturazione || b.citta)) mancanti.push('città fatturazione');
+      if (!(b.cap_fatturazione || b.cap)) mancanti.push('CAP fatturazione');
       if (mancanti.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Dati fatturazione mancanti</h1><p>Per azienda mancano: ${esc(mancanti.join(', '))}</p><a href="javascript:history.back()">Torna</a>`);
     }
 
@@ -4968,6 +4944,10 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
           <div><label>Partita IVA</label><input name="piva" value="${esc(p.piva||p.partita_iva||'')}"></div>
           <div><label>PEC</label><input name="pec" value="${esc(p.pec||'')}"></div>
           <div><label>Codice SDI</label><input name="codice_sdi" value="${esc(p.codice_sdi||'')}"></div>
+          <div class="full"><label>Indirizzo fatturazione / sede azienda</label><input name="indirizzo_fatturazione" value="${esc(p.indirizzo_fatturazione||p.indirizzo||'')}"></div>
+          <div><label>Città fatturazione</label><input name="citta_fatturazione" value="${esc(p.citta_fatturazione||p.citta||'')}"></div>
+          <div><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${esc(p.provincia_fatturazione||p.provincia||'')}"></div>
+          <div><label>CAP fatturazione</label><input name="cap_fatturazione" value="${esc(p.cap_fatturazione||p.cap||'')}"></div>
         </div>
         <div class="fixed-save"><button class="big-red">Salva dati cliente e documenti</button></div>
       </form>
@@ -7485,25 +7465,17 @@ app.post('/scansione-documenti/salva', async (req,res)=>{
   try{
     await v115EnsureBillingAndScanDb();
     const b=req.body||{};
-    const d={ nome:b.nome||'', cognome:b.cognome||'', telefono:b.telefono||'', email:b.email||'', codice_fiscale:String(b.codice_fiscale||'').toUpperCase(), indirizzo:b.indirizzo||'', citta:b.citta||'', provincia:b.provincia||'', cap:b.cap||'', data_nascita:b.data_nascita||'', luogo_nascita:b.luogo_nascita||'', documento_numero:b.documento_numero||'', documento_scadenza:b.documento_scadenza||'', patente_numero:b.patente_numero||'', patente_scadenza:b.patente_scadenza||'', categoria_patente:b.categoria_patente||'', tipo_cliente:b.tipo_cliente||'privato', ragione_sociale:b.ragione_sociale||'', piva:b.piva||b.partita_iva||'', partita_iva:b.piva||b.partita_iva||'', pec:b.pec||'', sdi:b.sdi||b.codice_sdi||'', codice_sdi:b.sdi||b.codice_sdi||'', indirizzo_fatturazione:b.indirizzo_fatturazione||b.indirizzo||'', citta_fatturazione:b.citta_fatturazione||b.citta||'', provincia_fatturazione:b.provincia_fatturazione||b.provincia||'', cap_fatturazione:b.cap_fatturazione||b.cap||'', scansione_batch:b.scan_batch||'' };
-    const cols = await v123TableColumns('clienti');
-    const keys = Object.keys(d).filter(k=>cols.includes(k));
-    let old = null;
-    if(d.codice_fiscale) old = await get(`SELECT id FROM clienti WHERE codice_fiscale=?`, [d.codice_fiscale]).catch(()=>null);
-    if(!old && d.telefono) old = await get(`SELECT id FROM clienti WHERE telefono=? ORDER BY id DESC LIMIT 1`, [d.telefono]).catch(()=>null);
-    let cid;
-    if(old){ await run(`UPDATE clienti SET ${keys.map(k=>`${k}=?`).join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [...keys.map(k=>d[k]), old.id]); cid=old.id; }
-    else { const r=await run(`INSERT INTO clienti (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`, keys.map(k=>d[k])); cid=r.lastID; }
+    const d={ nome:b.nome||'', cognome:b.cognome||'', telefono:b.telefono||'', email:b.email||'', codice_fiscale:String(b.codice_fiscale||'').toUpperCase(), indirizzo:b.indirizzo||'', citta:b.citta||'', cap:b.cap||'', data_nascita:b.data_nascita||'', luogo_nascita:b.luogo_nascita||'', documento_numero:b.documento_numero||'', documento_scadenza:b.documento_scadenza||'', patente_numero:b.patente_numero||'', patente_scadenza:b.patente_scadenza||'', categoria_patente:b.categoria_patente||'', tipo_cliente:b.tipo_cliente||'privato', ragione_sociale:b.ragione_sociale||'', piva:b.piva||b.partita_iva||'', partita_iva:b.piva||b.partita_iva||'', pec:b.pec||'', sdi:b.sdi||b.codice_sdi||'', codice_sdi:b.sdi||b.codice_sdi||'', indirizzo_fatturazione:b.indirizzo_fatturazione||b.indirizzo||'', citta_fatturazione:b.citta_fatturazione||b.citta||'', provincia_fatturazione:b.provincia_fatturazione||'', cap_fatturazione:b.cap_fatturazione||b.cap||'', scansione_batch:b.scan_batch||'' };
+    const r=await run(`INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,tipo_cliente,ragione_sociale,piva,partita_iva,pec,sdi,codice_sdi,indirizzo_fatturazione,citta_fatturazione,provincia_fatturazione,cap_fatturazione,scansione_batch,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`, [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.tipo_cliente,d.ragione_sociale,d.piva,d.partita_iva,d.pec,d.sdi,d.codice_sdi,d.indirizzo_fatturazione,d.citta_fatturazione,d.provincia_fatturazione,d.cap_fatturazione,d.scansione_batch]);
     const files = PREN_OCR_UPLOADS[d.scansione_batch] || [];
-    for (const item of files) await run(`INSERT INTO allegati (cliente_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`, [cid, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]).catch(()=>{});
+    for (const item of files) await run(`INSERT INTO allegati (cliente_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`, [r.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]).catch(()=>{});
     delete PREN_OCR_UPLOADS[d.scansione_batch];
-    res.redirect('/cliente/'+cid);
+    res.redirect('/cliente/'+r.lastID);
   }catch(e){ res.status(500).send(page('Errore salvataggio cliente', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/scansione-documenti">Torna</a></div>`)); }
 });
 
-
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V127 porta ' + PORT);
+  console.log('DP RENT APP V122 alert attese porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
 
@@ -7782,12 +7754,7 @@ function v108FileUrl(f){
   return '/uploads/' + encodeURIComponent(name);
 }
 function v108DocRows(files){
-  const list = v99DedupeAllegati(files || []);
-  if(!list.length) return '<tr><td colspan="5">Nessun documento caricato.</td></tr>';
-  return list.map(a => {
-    const href = a.drive_web_link || `/uploads/${encodeURIComponent(path.basename(a.path||a.filename||''))}`;
-    return `<tr><td>${esc(a.tipo||'documento')}</td><td>${esc(a.originalname||a.filename||'file')}</td><td>${esc(a.created_at||'')}</td><td><a class="btn btn2" target="_blank" href="${esc(href)}">Apri</a></td><td><form method="POST" action="/allegato/${a.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questo documento?');"><input type="hidden" name="back" value="${esc(a.cliente_id ? '/cliente/'+a.cliente_id+'/documenti' : '/documenti-clienti')}"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`;
-  }).join('');
+  return (files || []).map(a => `<tr><td>${esc(a.tipo||'documento')}</td><td>${esc(a.originalname||a.filename||'file')}</td><td>${esc(a.created_at||'')}</td><td><a class="btn btn2" target="_blank" href="/uploads/${encodeURIComponent(path.basename(a.path||a.filename||''))}">Apri</a></td></tr>`).join('') || '<tr><td colspan="4">Nessun documento caricato.</td></tr>';
 }
 
 app.get('/documenti-clienti', async (req,res)=>{
@@ -7799,8 +7766,8 @@ app.get('/documenti-clienti', async (req,res)=>{
 app.get('/cliente/:id/documenti', async (req,res)=>{
   const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
   if(!c) return res.redirect('/clienti');
-  const files = await all(`SELECT * FROM allegati WHERE cliente_id=? ORDER BY id DESC`, [req.params.id]).catch(()=>[]);
-  res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identità / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri</th><th>Elimina</th></tr>${v108DocRows(files)}</table>`));
+  const files = await all(`SELECT * FROM allegati WHERE cliente_id=? OR (prenotazione_id IS NULL AND tipo LIKE 'cliente_%' AND originalname LIKE ?) ORDER BY id DESC`, [req.params.id, `%${c.cognome||''}%`]).catch(()=>[]);
+  res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identità / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri</th></tr>${v108DocRows(files)}</table>`));
 });
 
 app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
@@ -7818,26 +7785,6 @@ app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
     if(req.body.tipo === 'cliente_patente') await run(`UPDATE clienti SET patente_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
     res.redirect(`/cliente/${req.params.id}/documenti`);
   } catch(e){ res.status(500).send(page('Errore documento', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
-});
-
-app.post('/allegato/:id/elimina', async (req,res)=>{
-  try{
-    const a = await get(`SELECT * FROM allegati WHERE id=?`, [req.params.id]);
-    if(a){
-      if(a.path && fs.existsSync(a.path)) { try{ fs.unlinkSync(a.path); }catch(_){} }
-      await run(`DELETE FROM allegati WHERE id=?`, [req.params.id]);
-      if(a.cliente_id){
-        const files = await all(`SELECT * FROM allegati WHERE cliente_id=?`, [a.cliente_id]).catch(()=>[]);
-        const hasDoc = files.some(x=>String(x.tipo||'').toLowerCase().includes('documento'));
-        const hasPat = files.some(x=>String(x.tipo||'').toLowerCase().includes('patente'));
-        const updates=[]; const vals=[];
-        if(!hasDoc){ updates.push('documento_file=?'); vals.push(''); }
-        if(!hasPat){ updates.push('patente_file=?'); vals.push(''); }
-        if(updates.length) await run(`UPDATE clienti SET ${updates.join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [...vals,a.cliente_id]).catch(()=>{});
-      }
-    }
-    res.redirect((req.body && req.body.back) || '/documenti-clienti');
-  }catch(e){ res.status(500).send(page('Errore elimina documento', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn" href="/documenti-clienti">Torna</a></div>`)); }
 });
 
 app.get('/contratto/:id/firmato', async (req,res)=>{
