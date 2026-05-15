@@ -6989,21 +6989,56 @@ async function dpSaveWhatsAppQuote(session, from, profileName, status){
     const calc = data.calc || {};
     const startIso = data.start ? dpDateIso(data.start) : '';
     const endIso = data.end ? dpDateIso(data.end) : '';
+    const telefono = String(from||'').replace('whatsapp:','');
+    const categoria = data.cat?.categoria || data.cat?.cats?.[0] || '';
+    const kmPrevisti = data.km || 150;
+
+    // V133 FIX DUPLICATI WHATSAPP:
+    // Twilio puo ritentare lo stesso webhook oppure il cliente puo inviare due volte i km.
+    // Prima di creare una nuova riga controllo se esiste gia una pratica uguale
+    // per telefono + categoria + date + km ancora in attesa/conferma.
+    const existing = await get(`SELECT * FROM prenotazioni
+      WHERE telefono=?
+        AND COALESCE(categoria,'')=?
+        AND COALESCE(data_inizio,'')=?
+        AND COALESCE(data_fine,'')=?
+        AND COALESCE(km_previsti,0)=?
+        AND (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp')
+        AND COALESCE(stato,'') <> 'eliminato_attesa'
+      ORDER BY id DESC LIMIT 1`, [telefono, categoria, startIso, endIso, kmPrevisti]).catch(()=>null);
+
     const payload = {
-      codice:'TEMP', nome:profileName || 'Cliente', cognome:'', telefono:String(from||'').replace('whatsapp:',''), email:'',
-      categoria:data.cat?.categoria || data.cat?.cats?.[0] || '', tipo:data.cat?.label || '', mezzo_id:mezzo.id || null,
+      codice:'TEMP', nome:profileName || 'Cliente', cognome:'', telefono, email:'',
+      categoria, tipo:data.cat?.label || '', mezzo_id:mezzo.id || null,
       targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '',
-      data_inizio:startIso, data_fine:endIso, ora_inizio:'08:30', ora_fine:'18:00', km_previsti:data.km || 150,
+      data_inizio:startIso, data_fine:endIso, ora_inizio:'08:30', ora_fine:'18:00', km_previsti:kmPrevisti,
       giorni:calc.giorni || (data.start && data.end ? dpDays(data.start,data.end) : 1), imponibile:calc.imponibile || 0, iva:calc.iva || 0, totale:calc.totale || 0,
-      stato:status || 'attesa_si_no', tipo_record:'preventivo_whatsapp', note:'Creato automaticamente dal bot WhatsApp - cliente in attesa risposta SI/NO'
+      stato:status || 'attesa_si_no', tipo_record:'preventivo_whatsapp', note:'Creato/aggiornato automaticamente dal bot WhatsApp - cliente in attesa risposta SI/NO'
     };
+
+    if(existing && existing.id){
+      await run(`UPDATE prenotazioni SET
+        nome=?, cognome=?, telefono=?, email=?, categoria=?, tipo=?, mezzo_id=?, targa=?, marca=?, modello=?,
+        data_inizio=?, data_fine=?, ora_inizio=?, ora_fine=?, km_previsti=?, giorni=?, imponibile=?, iva=?, totale=?,
+        stato=?, tipo_record=?, note=COALESCE(note,'') || ?
+        WHERE id=?`, [
+        payload.nome, payload.cognome, payload.telefono, payload.email, payload.categoria, payload.tipo, payload.mezzo_id, payload.targa, payload.marca, payload.modello,
+        payload.data_inizio, payload.data_fine, payload.ora_inizio, payload.ora_fine, payload.km_previsti, payload.giorni, payload.imponibile, payload.iva, payload.totale,
+        payload.stato, payload.tipo_record, '\nAggiornato preventivo WhatsApp senza duplicare', existing.id
+      ]);
+      session.data.prenotazione_id = existing.id;
+      session.data.codice = existing.codice || codicePratica(existing.id);
+      if(!existing.codice) await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [session.data.codice, existing.id]).catch(()=>{});
+      return { ok:true, id:existing.id, codice:session.data.codice, reused:true };
+    }
+
     const cols = Object.keys(payload);
     const r = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`, cols.map(k=>payload[k]));
     const cod = codicePratica(r.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, r.lastID]);
     session.data.prenotazione_id = r.lastID;
     session.data.codice = cod;
-    return { ok:true, id:r.lastID, codice:cod };
+    return { ok:true, id:r.lastID, codice:cod, reused:false };
   }catch(e){ console.log('Salvataggio preventivo WhatsApp non riuscito:', e.message); return { ok:false, error:e.message }; }
 }
 async function dpUpdateWhatsAppQuote(session, stato){
