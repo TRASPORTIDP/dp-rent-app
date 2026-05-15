@@ -1760,6 +1760,18 @@ function cargosCheckinLuogoCodV63() {
   return String(process.env.CARGOS_CHECKIN_LUOGO_COD || process.env.CHECKIN_LUOGO_COD || process.env.CARGOS_LUOGO_COD || cargosCheckoutLuogoCodV63()).replace(/\D/g,'').trim() || cargosCheckoutLuogoCodV63();
 }
 
+function cargosNumCodV135(value, fallback) {
+  const v = String(value || '').replace(/\D/g,'').trim();
+  const f = String(fallback || cargosCheckoutLuogoCodV63() || CARGOS_DEFAULT_LUOGO_NARNI).replace(/\D/g,'').trim();
+  return v || f || CARGOS_DEFAULT_LUOGO_NARNI;
+}
+function cargosCittadinanzaCodV135(value) {
+  return cargosNumCodV135(value || process.env.CARGOS_CITTADINANZA_COD || '100000100', '100000100');
+}
+function cargosDocTipoV135(p) {
+  return String((p && (p.documento_tipo || p.tipo_documento)) || process.env.CARGOS_TIPO_DOCUMENTO || 'IDENT').trim().slice(0,5) || 'IDENT';
+}
+
 function cargosOperatoreIdV63() {
   return String(process.env.CARGOS_OPERATORE_ID || 'DPRENT01').trim().slice(0,50) || 'DPRENT01';
 }
@@ -1905,22 +1917,22 @@ Object.assign(p, cargosPatchDefaultsV76(p));
 const fields = [
     cargosPad(p.codice,50), cargosDateTime(p.created_at || moment(), moment().format('HH:mm')),
     cargosPad(process.env.CARGOS_TIPO_PAGAMENTO || '1',1,'number'),
-    cargosDateTime(p.data_inizio,p.ora_inizio || '08:30'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
-    cargosDateTime(p.data_fine,p.ora_fine || '18:00'), cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150),
+    cargosDateTime(p.data_inizio,p.ora_inizio || '08:30'), cargosPad(cargosNumCodV135(process.env.CARGOS_LUOGO_COD, CARGOS_DEFAULT_LUOGO_NARNI),9,'number'), cargosPad(AZIENDA.indirizzo,150),
+    cargosDateTime(p.data_fine,p.ora_fine || '18:00'), cargosPad(cargosNumCodV135(process.env.CARGOS_LUOGO_COD, CARGOS_DEFAULT_LUOGO_NARNI),9,'number'), cargosPad(AZIENDA.indirizzo,150),
     cargosPad(process.env.CARGOS_OPERATORE_ID || '',50), cargosPad(process.env.CARGOS_AGENZIA_ID || '',30), cargosPad(process.env.CARGOS_AGENZIA_NOME || AZIENDA.nome,70),
-    cargosPad(process.env.CARGOS_LUOGO_COD || '',9,'number'), cargosPad(AZIENDA.indirizzo,150), cargosPad(AZIENDA.telefono,20,'number'),
+    cargosPad(cargosNumCodV135(process.env.CARGOS_LUOGO_COD, CARGOS_DEFAULT_LUOGO_NARNI),9,'number'), cargosPad(AZIENDA.indirizzo,150), cargosPad(AZIENDA.telefono,20,'number'),
     cargosPad(cargosTipoVeicoloFinaleV76(p),1), cargosPad(cargosMarcaFinaleV76(p) || p.marca || '',50), cargosPad(cargosModelloFinaleV76(p) || p.modello || '',100), cargosPad(p.targa || '',15),
     cargosPad('',50), cargosPad('',1,'number'), cargosPad('',1,'number'),
     cargosPad(p.cognome || '',50), cargosPad(p.nome || '',30), cargosDate(p.data_nascita || ''),
-    cargosPad(process.env.CARGOS_NASCITA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(process.env.CARGOS_CITTADINANZA_COD || '',9,'number'),
-    cargosPad(process.env.CARGOS_RESIDENZA_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(cargosNumCodV135(p.luogo_nascita_cod || process.env.CARGOS_NASCITA_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'),
+    cargosPad(cargosCittadinanzaCodV135(p.cittadinanza_cod || p.conducente_cittadinanza_cod),9,'number'),
+    cargosPad(cargosNumCodV135(p.residenza_luogo_cod || process.env.CARGOS_RESIDENZA_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'),
     cargosPad(p.indirizzo || '',150),
-    cargosPad(process.env.CARGOS_TIPO_DOCUMENTO || 'CI',5),
-    cargosPad(process.env.CARGOS_DOC_NUMERO_FALLBACK || '',20),
-    cargosPad(process.env.CARGOS_DOC_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
-    cargosPad(p.patente1 || '',20),
-    cargosPad(process.env.CARGOS_PATENTE_LUOGO_COD || process.env.CARGOS_LUOGO_COD || '',9,'number'),
+    cargosPad(cargosDocTipoV135(p),5),
+    cargosPad(p.documento_numero || process.env.CARGOS_DOC_NUMERO_FALLBACK || '',20),
+    cargosPad(cargosNumCodV135(p.documento_luogo_rilascio_cod || process.env.CARGOS_DOC_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'),
+    cargosPad(p.patente1 || p.patente_numero || '',20),
+    cargosPad(cargosNumCodV135(p.patente_luogo_rilascio_cod || process.env.CARGOS_PATENTE_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'),
     cargosPad(p.telefono || '',20),
     cargosPad('',50), cargosPad('',30), cargosDate(''), cargosPad('',9,'number'), cargosPad('',9,'number'),
     cargosPad('',5), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20)
@@ -2483,7 +2495,12 @@ app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
     const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`);
-    const attesa = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa'`);
+    const condAttesaDash = `(stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa'`;
+    const attesa = await get(`SELECT COUNT(*) as tot FROM (
+      SELECT MAX(id) FROM prenotazioni
+      WHERE ${condAttesaDash}
+      GROUP BY COALESCE(telefono,''), COALESCE(categoria,''), COALESCE(data_inizio,''), COALESCE(data_fine,''), COALESCE(km_previsti,'')
+    ) x`);
     const allMezzi = await all(`SELECT * FROM mezzi`);
     const alerts = allMezzi.map(m => {
       const a = alertMezzo(m);
@@ -2503,7 +2520,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
       ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a></div>` : ``}
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V122 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V135 FIX ATTESA + CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -4202,7 +4219,7 @@ function cargosRecordDataV40(p) {
   const agenziaNome = process.env.CARGOS_AGENZIA_NOME || 'TRASPORTI DP S.R.L. - DP RENT';
   const agenziaInd = process.env.CARGOS_AGENZIA_INDIRIZZO || 'VIA TUDERTE 466, NARNI (TR)';
   const tel = process.env.CARGOS_AGENZIA_TEL || '0744817108';
-  const luogo = process.env.CARGOS_LUOGO_COD || p.record_cargos_luogo_cod || '410055022';
+  const luogo = cargosNumCodV135(p.record_cargos_luogo_cod || process.env.CARGOS_LUOGO_COD, CARGOS_DEFAULT_LUOGO_NARNI);
   const tipoPagamento = process.env.CARGOS_TIPO_PAGAMENTO || p.record_cargos_pagamento_tipo || '1';
   const tipoVeicolo = p.record_cargos_veicolo_tipo || process.env.CARGOS_VEICOLO_TIPO || '1';
 
@@ -4211,15 +4228,15 @@ function cargosRecordDataV40(p) {
     CONTRATTO_DATA: cargosDateOnly(p.created_at || new Date().toISOString()),
     CONTRATTO_TIPOP: getTipoPagamentoCargosV63(p.pagamento || p.tipo_pagamento || '9'),
     CONTRATTO_CHECKOUT_DATA: cargosDateOnly(p.data_inizio || p.checkout_data || p.data_checkout || ''),
-    CONTRATTO_CHECKOUT_LUOGO_COD: cargosCheckoutLuogoCodV63(),
+    CONTRATTO_CHECKOUT_LUOGO_COD: cargosNumCodV135(cargosCheckoutLuogoCodV63(), luogo),
     CONTRATTO_CHECKOUT_INDIRIZZO: p.record_cargos_checkout_indirizzo || agenziaInd,
     CONTRATTO_CHECKIN_DATA: cargosDateOnly(p.data_fine || p.checkin_data || p.data_checkin || ''),
-    CONTRATTO_CHECKIN_LUOGO_COD: cargosCheckinLuogoCodV63(),
+    CONTRATTO_CHECKIN_LUOGO_COD: cargosNumCodV135(cargosCheckinLuogoCodV63(), luogo),
     CONTRATTO_CHECKIN_INDIRIZZO: p.record_cargos_checkin_indirizzo || agenziaInd,
     OPERATORE_ID: cargosOperatoreIdV63(),
     AGENZIA_ID: cargosAgenziaIdV63(),
     AGENZIA_NOME: p.record_cargos_agenzia_nome || agenziaNome,
-    AGENZIA_LUOGO_COD: p.record_cargos_agenzia_luogo_cod || luogo,
+    AGENZIA_LUOGO_COD: cargosNumCodV135(p.record_cargos_agenzia_luogo_cod, luogo),
     AGENZIA_INDIRIZZO: p.record_cargos_agenzia_indirizzo || agenziaInd,
     AGENZIA_RECAPITO_TEL: p.record_cargos_agenzia_tel || tel,
     // V76 FIX REALE: getPrenotazioneCompleta() legge il mezzo con alias mezzo_*
@@ -4239,15 +4256,15 @@ function cargosRecordDataV40(p) {
     CONDUCENTE_CONTRAENTE_COGNOME: n.cognome,
     CONDUCENTE_CONTRAENTE_NOME: n.nome,
     CONDUCENTE_CONTRAENTE_NASCITA_DATA: v67DefaultBirth(p),
-    CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: p.record_cargos_nascita_luogo_cod || luogo,
-    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: V104_CITTADINANZA_ITALIA_CARGOS,
-    CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: p.record_cargos_residenza_luogo_cod || luogo,
+    CONDUCENTE_CONTRAENTE_NASCITA_LUOGO_COD: cargosNumCodV135(p.record_cargos_nascita_luogo_cod || p.luogo_nascita_cod, luogo),
+    CONDUCENTE_CONTRAENTE_CITTADINANZA_COD: cargosCittadinanzaCodV135(p.cittadinanza_cod || V104_CITTADINANZA_ITALIA_CARGOS),
+    CONDUCENTE_CONTRAENTE_RESIDENZA_LUOGO_COD: cargosNumCodV135(p.record_cargos_residenza_luogo_cod || p.residenza_luogo_cod, luogo),
     CONDUCENTE_CONTRAENTE_RESIDENZA_INDIRIZZO: p.indirizzo || '',
     CONDUCENTE_CONTRAENTE_DOCIDE_TIPO_COD: getTipoDocumentoCargosV61(p.documento_tipo || p.tipo_documento || 'IDENT'),
     CONDUCENTE_CONTRAENTE_DOCIDE_NUMERO: String(p.documento_numero || p.doc_numero || p.patente_numero || p.codice_fiscale || 'DOC00000').slice(0,20),
-    CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD: p.record_cargos_doc_luogoril_cod || luogo,
+    CONDUCENTE_CONTRAENTE_DOCIDE_LUOGORIL_COD: cargosNumCodV135(p.record_cargos_doc_luogoril_cod || p.documento_luogo_rilascio_cod, luogo),
     CONDUCENTE_CONTRAENTE_PATENTE_NUMERO: String(p.patente_numero || p.documento_numero || 'PAT00000').slice(0,20),
-    CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD: p.record_cargos_patente_luogoril_cod || luogo,
+    CONDUCENTE_CONTRAENTE_PATENTE_LUOGORIL_COD: cargosNumCodV135(p.record_cargos_patente_luogoril_cod || p.patente_luogo_rilascio_cod, luogo),
     CONDUCENTE_CONTRAENTE_RECAPITO: p.telefono || '',
     CONDUCENTE2_COGNOME: p.conducente2_cognome || '',
     CONDUCENTE2_NOME: p.conducente2_nome || '',
@@ -5728,6 +5745,22 @@ app.use((err, req, res, next) => {
   res.status(500).send(page('Errore server', `<div class="box"><h2 class="bad">Errore server</h2><pre>${esc(err.message)}</pre></div>`));
 });
 
+
+// V135 utility: pulizia doppioni clienti in attesa (mantiene solo ultimo per telefono/mezzo/date/km)
+app.get('/admin/pulisci-attese-duplicate', async (req,res)=>{
+  try{
+    const cond = `(stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa'`;
+    const dups = await all(`SELECT GROUP_CONCAT(id) ids, MAX(id) keep_id, COUNT(*) c FROM prenotazioni WHERE ${cond} GROUP BY COALESCE(telefono,''), COALESCE(categoria,''), COALESCE(data_inizio,''), COALESCE(data_fine,''), COALESCE(km_previsti,'') HAVING c>1`);
+    let n=0;
+    for(const g of dups||[]){
+      const ids=String(g.ids||'').split(',').map(x=>Number(x)).filter(Boolean).filter(x=>x!==Number(g.keep_id));
+      for(const id of ids){ await run(`UPDATE prenotazioni SET stato='eliminato_attesa', note=COALESCE(note,'') || '
+V135 nascosta perché duplicata in attesa' WHERE id=?`, [id]); n++; }
+    }
+    res.send(page('Pulizia attese duplicate', `<div class="box"><h2 class="ok">Pulizia completata</h2><p>Doppioni nascosti: <b>${n}</b></p><a class="btn" href="/richieste-attesa">Clienti in attesa</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore pulizia', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
 // =========================
 // RENDER PORT BINDING - VERSIONE DEFINITIVA
 // =========================
@@ -6525,6 +6558,7 @@ app.get('/admin/fix-tutto-v61',(req,res)=>res.redirect('/admin/fix-tutto-v63'));
 
 
 app.get('/contratto/:id/gestisci', async (req,res)=>{
+  await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=? AND (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp')`, [req.params.id]).catch(()=>{});
   const p=await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);
   if(!p)return res.status(404).send(page('Non trovato',`<div class="box"><h2 class="bad">Contratto non trovato</h2></div>`));
   res.send(page('Gestisci contratto',`<div class="box">
@@ -7839,6 +7873,7 @@ generaPdfContratto = async function v108GeneraPdfContrattoLocked(id, opts = {}) 
         if (age < 1500) return p.pdf_path;
       }
     } catch(_) {}
+    await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=? AND (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp')`, [id]).catch(()=>{});
     return await v108OriginalGeneraPdfContratto(id, opts);
   }).finally(() => setTimeout(()=>v108PdfLocks.delete(key), 3500));
   v108PdfLocks.set(key, job);
