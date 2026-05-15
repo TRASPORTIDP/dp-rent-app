@@ -2524,7 +2524,15 @@ app.get('/', async (req, res) => {
 
 app.get('/richieste-attesa', async (req, res) => {
   try {
-    const rows = await all(`SELECT * FROM prenotazioni WHERE (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa' ORDER BY id DESC LIMIT 100`);
+    const condAttesa = `(stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa'`;
+    const rows = await all(`SELECT * FROM prenotazioni p
+      WHERE ${condAttesa}
+        AND p.id IN (
+          SELECT MAX(id) FROM prenotazioni
+          WHERE ${condAttesa}
+          GROUP BY COALESCE(telefono,''), COALESCE(categoria,''), COALESCE(data_inizio,''), COALESCE(data_fine,''), COALESCE(km_previsti,'')
+        )
+      ORDER BY p.id DESC LIMIT 100`);
     res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a><form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Vuoi davvero eliminare questo cliente in attesa?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
   } catch(e) {
     res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore clienti in attesa</h2><pre>${esc(e.message)}</pre></div>`));
@@ -3768,13 +3776,39 @@ app.post('/prenota-cliente', upload.fields([
     }
 
     const categoriaRichiesta = categoriaClienteNorm(b.categoria);
+
+    // V134 ANTIDUPLICATO REALE:
+    // Il preventivo WhatsApp crea gia una pratica in attesa. Quando il cliente apre il link e invia i dati,
+    // NON va creata una nuova pratica: va aggiornata quella esistente (ref nel link).
+    // Se per qualche motivo manca ref, riconosco comunque la stessa richiesta da telefono+mezzo+date+km.
+    const refId = String(b.ref || '').match(/\d+/) ? Number(String(b.ref).match(/\d+/)[0]) : 0;
+    let existingPren = null;
+    if (refId) existingPren = await get(`SELECT * FROM prenotazioni WHERE id=?`, [refId]).catch(()=>null);
+    if (!existingPren) {
+      existingPren = await get(`SELECT * FROM prenotazioni
+        WHERE COALESCE(telefono,'')=?
+          AND COALESCE(categoria,'')=?
+          AND COALESCE(data_inizio,'')=?
+          AND COALESCE(data_fine,'')=?
+          AND COALESCE(km_previsti,'')=COALESCE(?,'')
+          AND COALESCE(stato,'') <> 'eliminato_attesa'
+        ORDER BY id DESC LIMIT 1`, [String(b.telefono||''), categoriaRichiesta, String(b.data_inizio||''), String(b.data_fine||''), String(b.km_previsti||'')]).catch(()=>null);
+    }
+
     const mezziTutti = await all(`SELECT * FROM mezzi ORDER BY id ASC`);
     const mezzi = mezziTutti.filter(m => v123MezzoCompatibile(m, categoriaRichiesta));
     if (!mezzi.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Nessun mezzo</h1><p>Nessun mezzo configurato correttamente per: ${esc(categoriaRichiesta)}.</p><p>Controlla anagrafica mezzi: categoria e posti.</p><a href="javascript:history.back()">Torna</a>`);
     let mezzo = null;
-    for (const m of mezzi) {
-      const occ = await queryDisponibilita(m.id, b.data_inizio, b.data_fine);
-      if (!occ) { mezzo = m; break; }
+    if (existingPren && existingPren.mezzo_id) {
+      const oldMezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [existingPren.mezzo_id]).catch(()=>null);
+      if (oldMezzo && v123MezzoCompatibile(oldMezzo, categoriaRichiesta)) mezzo = oldMezzo;
+    }
+    if (!mezzo) {
+      for (const m of mezzi) {
+        // Se sto aggiornando la stessa pratica, ignoro la sua occupazione; altrimenti queryDisponibilita la vede occupata da se stessa.
+        const occ = await queryDisponibilita(m.id, b.data_inizio, b.data_fine);
+        if (!occ || (existingPren && Number(occ.id) === Number(existingPren.id))) { mezzo = m; break; }
+      }
     }
     if (!mezzo) return res.send(`<!doctype html><meta charset="utf-8"><h1>Non disponibile</h1><p>Nessun mezzo libero per ${esc(categoriaRichiesta)} nelle date richieste. DP RENT ti ricontatterà.</p><a href="javascript:history.back()">Torna</a>`);
 
@@ -3794,9 +3828,21 @@ app.post('/prenota-cliente', upload.fields([
       stato:'richiesta_cliente', tipo_record:'preventivo', note:b.note || ''
     };
     const cols = Object.keys(data);
-    const result = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`, cols.map(k=>data[k]));
-    const cod = codicePratica(result.lastID);
-    await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
+    let targetId;
+    let cod;
+    if (existingPren && existingPren.id) {
+      targetId = existingPren.id;
+      cod = existingPren.codice || codicePratica(targetId);
+      const upCols = cols.filter(k => k !== 'codice');
+      await run(`UPDATE prenotazioni SET ${upCols.map(k => `${k}=?`).join(', ')}, codice=?, stato='richiesta_cliente', tipo_record='preventivo', note=COALESCE(note,'') || ? WHERE id=?`,
+        [...upCols.map(k=>data[k]), cod, '\nAggiornata da link cliente senza creare duplicati', targetId]);
+    } else {
+      const result = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`, cols.map(k=>data[k]));
+      targetId = result.lastID;
+      cod = codicePratica(targetId);
+      await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, targetId]);
+    }
+    const result = { lastID: targetId };
 
     // Salva cliente nello storico clienti per non reinserirlo ogni volta
     try { salvaClienteStorico({
@@ -7288,6 +7334,7 @@ Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
     }
     if(yn !== 'SI') return dpTwimlResponse(res, 'Rispondi SI per confermare oppure NO per annullare.');
     const q = new URLSearchParams({
+      ref: String(session.data.prenotazione_id || ''),
       categoria: session.data.cat.cats[0] || '',
       data_inizio: dpDateIso(session.data.start),
       data_fine: dpDateIso(session.data.end),
