@@ -1126,32 +1126,6 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 }
 
 </style>
-
-<script>
-(function(){
-  function closestField(el){
-    var n=el; for(var i=0;i<5 && n;i++,n=n.parentElement){
-      if(n.tagName==='LABEL' || (n.className && String(n.className).indexOf('field')>=0) || n.classList?.contains('full') || n.classList?.contains('az-field')) return n;
-    }
-    return el.parentElement || el;
-  }
-  function dpToggleFatturazione(){
-    var sel=document.querySelector('select[name="tipo_cliente"]'); if(!sel) return;
-    var az = String(sel.value||'').toLowerCase()==='azienda';
-    var names=['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'];
-    names.forEach(function(n){
-      document.querySelectorAll('[name="'+n+'"]').forEach(function(el){
-        var box=closestField(el); if(box) box.style.display=az?'':'none';
-        if(['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].indexOf(n)>=0) el.required=az;
-      });
-    });
-    document.querySelectorAll('#aziendaBox').forEach(function(box){box.style.display=az?'grid':'none';});
-  }
-  window.dpToggleFatturazione=dpToggleFatturazione;
-  document.addEventListener('change',function(e){if(e.target && e.target.name==='tipo_cliente') dpToggleFatturazione();});
-  document.addEventListener('DOMContentLoaded',dpToggleFatturazione);
-})();
-</script>
 </head>
 <body>
 <header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V122 AREA CLIENTE OK</small></h1></header>
@@ -2393,7 +2367,17 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V130 - archivio unico clienti/pratiche/documenti + fatturazione corretta'));
+
+// V131 ensure colonne fatturazione azienda su clienti e prenotazioni
+(async function v131EnsureFatturazione(){
+  try{
+    if(typeof db==='undefined') return;
+    const cols={tipo_cliente:'TEXT',ragione_sociale:'TEXT',piva:'TEXT',partita_iva:'TEXT',pec:'TEXT',sdi:'TEXT',codice_sdi:'TEXT',indirizzo_fatturazione:'TEXT',citta_fatturazione:'TEXT',provincia_fatturazione:'TEXT',cap_fatturazione:'TEXT'};
+    for (const t of ['clienti','prenotazioni']) for (const [c,typ] of Object.entries(cols)) await new Promise(r=>db.run(`ALTER TABLE ${t} ADD COLUMN ${c} ${typ}`,()=>r()));
+  }catch(e){ console.log('V131 ensure fatturazione:', e.message); }
+})();
+
+app.get('/versione', (req, res) => res.send('DP RENT APP V131 - fatturazione completa cliente/azienda'));
 
 
 // =========================
@@ -3540,17 +3524,14 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 </style>
 <script>
 function toggleAzienda(){
-  var el=document.querySelector('[name="tipo_cliente"]');
-  var t=el ? String(el.value||'').toLowerCase() : 'privato';
-  var isAz=t==='azienda';
+  var sel=document.querySelector('[name="tipo_cliente"]');
+  var t=sel ? String(sel.value||'').toLowerCase() : 'privato';
   var box=document.getElementById('aziendaBox');
+  var isAz=t==='azienda';
   if(box) box.style.display=isAz?'grid':'none';
   ['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(function(n){
-    document.querySelectorAll('[name="'+n+'"]').forEach(function(f){
-      var wrap=f.closest('.az-field') || f.closest('.full') || f.parentElement;
-      if(wrap && wrap.classList && wrap.classList.contains('az-field')) wrap.style.display=isAz?'':'none';
-      if(['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].includes(n)) f.required=isAz;
-    });
+    var el=document.querySelector('[name="'+n+'"]');
+    if(el) el.required = isAz && ['ragione_sociale','partita_iva','piva','indirizzo_fatturazione','citta_fatturazione','cap_fatturazione'].indexOf(n)>=0;
   });
 }
 window.addEventListener('DOMContentLoaded',toggleAzienda)
@@ -3650,15 +3631,16 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
     <div class="grid">
       <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${clienteWebSelected(req,'tipo_cliente','privato','privato')}>Privato</option><option value="azienda" ${clienteWebSelected(req,'tipo_cliente','azienda')}>Azienda</option></select></div>
     </div>
+    <p class="small">Se è privato usiamo i dati di residenza sopra. Se è azienda compila tutti i dati sotto per fattura.</p>
     <div class="grid" id="aziendaBox">
-      <div class="full az-field"><label>Ragione sociale</label><input name="ragione_sociale" value="${clienteWebVal(req,'ragione_sociale')}"></div>
-      <div class="az-field"><label>Partita IVA</label><input name="partita_iva" value="${clienteWebVal(req,'partita_iva') || clienteWebVal(req,'piva')}"></div>
-      <div class="az-field"><label>PEC</label><input name="pec" value="${clienteWebVal(req,'pec')}"></div>
-      <div class="az-field"><label>Codice SDI</label><input name="codice_sdi" value="${clienteWebVal(req,'codice_sdi') || clienteWebVal(req,'sdi')}"></div>
-      <div class="full az-field"><label>Indirizzo fatturazione azienda</label><input name="indirizzo_fatturazione" value="${clienteWebVal(req,'indirizzo_fatturazione') || clienteWebVal(req,'indirizzo')}"></div>
-      <div class="az-field"><label>Città fatturazione</label><input name="citta_fatturazione" value="${clienteWebVal(req,'citta_fatturazione') || clienteWebVal(req,'citta')}"></div>
-      <div class="az-field"><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${clienteWebVal(req,'provincia_fatturazione') || clienteWebVal(req,'provincia')}"></div>
-      <div class="az-field"><label>CAP fatturazione</label><input name="cap_fatturazione" value="${clienteWebVal(req,'cap_fatturazione') || clienteWebVal(req,'cap')}"></div>
+      <div class="full"><label>Ragione sociale</label><input name="ragione_sociale" value="${clienteWebVal(req,'ragione_sociale')}"></div>
+      <div><label>Partita IVA</label><input name="partita_iva" value="${clienteWebVal(req,'partita_iva') || clienteWebVal(req,'piva')}"></div>
+      <div><label>PEC</label><input name="pec" value="${clienteWebVal(req,'pec')}"></div>
+      <div><label>Codice SDI</label><input name="codice_sdi" value="${clienteWebVal(req,'codice_sdi') || clienteWebVal(req,'sdi')}"></div>
+      <div class="full"><label>Indirizzo fatturazione azienda</label><input name="indirizzo_fatturazione" value="${clienteWebVal(req,'indirizzo_fatturazione')}"></div>
+      <div><label>Città fatturazione</label><input name="citta_fatturazione" value="${clienteWebVal(req,'citta_fatturazione')}"></div>
+      <div><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${clienteWebVal(req,'provincia_fatturazione')}"></div>
+      <div><label>CAP fatturazione</label><input name="cap_fatturazione" value="${clienteWebVal(req,'cap_fatturazione')}"></div>
     </div>
   </div>
 
@@ -6600,11 +6582,11 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Ragione sociale<input name="ragione_sociale" value="${esc(p.ragione_sociale)}"></label>
           <label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva)}"></label>
           <label>PEC<input name="pec" value="${esc(p.pec)}"></label>
-          <label class="az-field">Codice SDI<input name="codice_sdi" value="${esc(p.codice_sdi || p.sdi || '')}"></label>
-          <label class="az-field">Indirizzo fatturazione azienda<input name="indirizzo_fatturazione" value="${esc(p.indirizzo_fatturazione || p.indirizzo || '')}"></label>
-          <label class="az-field">Città fatturazione<input name="citta_fatturazione" value="${esc(p.citta_fatturazione || p.citta || '')}"></label>
-          <label class="az-field">Provincia fatturazione<input name="provincia_fatturazione" value="${esc(p.provincia_fatturazione || p.provincia || '')}"></label>
-          <label class="az-field">CAP fatturazione<input name="cap_fatturazione" value="${esc(p.cap_fatturazione || p.cap || '')}"></label>
+          <label>Codice SDI<input name="codice_sdi" value="${esc(p.codice_sdi)}"></label>
+          <label>Indirizzo fatturazione azienda<input name="indirizzo_fatturazione" value="${esc(p.indirizzo_fatturazione || p.indirizzo || '')}"></label>
+          <label>Città fatturazione<input name="citta_fatturazione" value="${esc(p.citta_fatturazione || p.citta || '')}"></label>
+          <label>Provincia fatturazione<input name="provincia_fatturazione" value="${esc(p.provincia_fatturazione || p.provincia || '')}"></label>
+          <label>CAP fatturazione<input name="cap_fatturazione" value="${esc(p.cap_fatturazione || p.cap || '')}"></label>
           <label>Data inizio<input type="date" name="data_inizio" value="${esc(p.data_inizio)}"></label>
           <label>Ora inizio<input type="time" name="ora_inizio" value="${esc(p.ora_inizio)}"></label>
           <label>Data fine<input type="date" name="data_fine" value="${esc(p.data_fine)}"></label>
@@ -6665,7 +6647,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?,
         documento_tipo=?, documento_numero=?, documento_scadenza=?,
         patente_numero=?, patente_scadenza=?,
-        tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?, citta_fatturazione=?, provincia_fatturazione=?, cap_fatturazione=?,
+        tipo_cliente=?, ragione_sociale=?, partita_iva=?, pec=?, codice_sdi=?, indirizzo_fatturazione=?, citta_fatturazione=?, provincia_fatturazione=?, cap_fatturazione=?,
         data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, totale=?, stato=?,
         cauzione_richiesta=?, cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, cauzione_restituita=?, note=?
         WHERE id=?`, [
@@ -6673,7 +6655,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'),
           v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
           v62Val(b.patente_numero), v62Val(b.patente_scadenza),
-          v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva || b.piva), v62Val(b.partita_iva || b.piva), v62Val(b.pec), v62Val(b.codice_sdi || b.sdi), v62Val(b.codice_sdi || b.sdi), v62Val(b.indirizzo_fatturazione), v62Val(b.citta_fatturazione), v62Val(b.provincia_fatturazione), v62Val(b.cap_fatturazione),
+          v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva || b.piva), v62Val(b.pec), v62Val(b.codice_sdi || b.sdi), v62Val(b.indirizzo_fatturazione), v62Val(b.citta_fatturazione), v62Val(b.provincia_fatturazione), v62Val(b.cap_fatturazione),
           v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Money(b.totale), v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_richiesta || 'no'), v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.cauzione_restituita || 'no'), v62Val(b.note),
           req.params.id
@@ -7781,7 +7763,7 @@ function v108FileUrl(f){
   return '/uploads/' + encodeURIComponent(name);
 }
 function v108DocRows(files){
-  return (files || []).map(a => `<tr><td>${esc(a.tipo||'documento')}</td><td>${esc(a.originalname||a.filename||'file')}</td><td>${esc(a.created_at||'')}</td><td><a class="btn btn2" target="_blank" href="/uploads/${encodeURIComponent(path.basename(a.path||a.filename||''))}">Apri</a> <form method="POST" action="/allegato/${a.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questo documento?')"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') || '<tr><td colspan="4">Nessun documento caricato.</td></tr>';
+  return (files || []).map(a => `<tr><td>${esc(a.tipo||'documento')}</td><td>${esc(a.originalname||a.filename||'file')}</td><td>${esc(a.created_at||'')}</td><td><a class="btn btn2" target="_blank" href="/uploads/${encodeURIComponent(path.basename(a.path||a.filename||''))}">Apri</a></td></tr>`).join('') || '<tr><td colspan="4">Nessun documento caricato.</td></tr>';
 }
 
 app.get('/documenti-clienti', async (req,res)=>{
@@ -7794,7 +7776,7 @@ app.get('/cliente/:id/documenti', async (req,res)=>{
   const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
   if(!c) return res.redirect('/clienti');
   const files = await all(`SELECT * FROM allegati WHERE cliente_id=? OR (prenotazione_id IS NULL AND tipo LIKE 'cliente_%' AND originalname LIKE ?) ORDER BY id DESC`, [req.params.id, `%${c.cognome||''}%`]).catch(()=>[]);
-  res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identità / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri / Elimina</th></tr>${v108DocRows(files)}</table>`));
+  res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identità / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri</th></tr>${v108DocRows(files)}</table>`));
 });
 
 app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
@@ -7813,25 +7795,6 @@ app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
     res.redirect(`/cliente/${req.params.id}/documenti`);
   } catch(e){ res.status(500).send(page('Errore documento', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
-
-app.post('/allegato/:id/elimina', async (req,res)=>{
-  try{
-    const a = await get(`SELECT * FROM allegati WHERE id=?`, [req.params.id]);
-    if(a){
-      const f = a.path || (a.filename ? path.join(uploadDir, path.basename(a.filename)) : '');
-      if(f && fs.existsSync(f)) { try{ fs.unlinkSync(f); }catch(_){} }
-      await run(`DELETE FROM allegati WHERE id=?`, [req.params.id]);
-      if(a.cliente_id){
-        if(String(a.tipo||'').includes('documento')) await run(`UPDATE clienti SET documento_file=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND documento_file=?`, [a.cliente_id, f]).catch(()=>{});
-        if(String(a.tipo||'').includes('patente')) await run(`UPDATE clienti SET patente_file=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND patente_file=?`, [a.cliente_id, f]).catch(()=>{});
-        return res.redirect(`/cliente/${a.cliente_id}/documenti`);
-      }
-      if(a.prenotazione_id) return res.redirect(`/contratto/${a.prenotazione_id}/gestisci`);
-    }
-    res.redirect('/documenti-clienti');
-  }catch(e){res.status(500).send(page('Errore elimina documento', `<div class="box"><h2 class="bad">Errore eliminazione</h2><pre>${esc(e.message)}</pre></div>`));}
-});
-
 
 app.get('/contratto/:id/firmato', async (req,res)=>{
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
