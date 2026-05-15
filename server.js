@@ -1081,9 +1081,6 @@ canvas{border:2px solid #333;background:white;width:100%;height:250px;touch-acti
 .badge{display:inline-block;padding:4px 7px;border-radius:5px;font-size:12px;margin:2px;background:#eee}
 .badge-red{background:#d90000;color:white}.badge-green{background:#1fae4b;color:white}.badge-orange{background:#ffb000;color:#111}.badge-blue{background:#1155cc;color:white}.premium-card{border:1px solid #eee;border-radius:18px;padding:18px;background:linear-gradient(180deg,#fff,#fafafa);box-shadow:0 10px 25px rgba(0,0,0,.08);margin:10px 0}.big-actions .btn{font-size:17px;padding:14px 18px;border-radius:14px}.muted{color:#777}
 pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;padding:12px;border-radius:8px;overflow:auto}
-@keyframes dpBlink{0%,100%{box-shadow:0 0 0 0 rgba(215,0,0,.0);filter:brightness(1)}50%{box-shadow:0 0 28px 8px rgba(215,0,0,.45);filter:brightness(1.15)}}
-.dp-alert-wait{animation:dpBlink 1s infinite;border:5px solid #d70000!important;background:#fff1f1!important}
-.dp-alert-wait h2{color:#d70000!important}
 
 .top-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}.top-actions .back-btn,.top-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:14px;padding:10px 16px;font-weight:900;text-decoration:none;border:0;background:#333;color:#fff;box-shadow:0 3px 0 rgba(0,0,0,.16);font-size:16px}.top-actions .home-btn{background:#d70000}@media(max-width:700px){.top-actions{position:sticky;top:0;z-index:20;background:rgba(244,244,244,.94);backdrop-filter:blur(8px);padding:8px 0}.top-actions .back-btn,.top-actions a{flex:1;min-width:130px}}
 
@@ -1128,7 +1125,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 </style>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V122 AREA CLIENTE OK</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V124 FIX REALE</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -1136,9 +1133,9 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 <a href="/import-mezzi">Import Excel</a>
 <a href="/nuova-prenotazione">Nuova prenotazione</a>
 <a href="/clienti">Clienti</a>
+<a href="/clienti-attesa">Clienti in attesa</a>
 <a href="/scansione-documenti">Scansione documenti</a>
 <a href="/documenti-clienti">Documenti clienti</a>
-<a href="/richieste-attesa">Clienti in attesa</a>
 <a href="/scadenze-clienti">Scadenze clienti</a>
 <a href="/prenotazioni">Storico</a>
 <a href="/planning">Planning</a>
@@ -1149,6 +1146,23 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 <a href="/test-drive">Test Drive</a>
 </nav>
 <main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
+
+<script>
+(function(){
+  function fixTipoCliente(){
+    var sel=document.querySelector('select[name="tipo_cliente"]');
+    if(!sel) return;
+    var labels=['P.IVA','Partita IVA','Ragione sociale','PEC','SDI','Codice SDI'];
+    function rowOf(inp){ var e=inp; for(var i=0;i<4 && e;i++,e=e.parentElement){ if(e.tagName==='DIV') return e; } return inp.parentElement; }
+    function apply(){
+      var azienda=String(sel.value||'').toLowerCase()==='azienda';
+      document.querySelectorAll('input[name="piva"],input[name="partita_iva"],input[name="ragione_sociale"],input[name="pec"],input[name="sdi"],input[name="codice_sdi"]').forEach(function(inp){ var r=rowOf(inp); if(r) r.style.display=azienda?'':'none'; });
+    }
+    sel.addEventListener('change',apply); apply();
+  }
+  document.addEventListener('DOMContentLoaded',fixTipoCliente);
+})();
+</script>
 </body>
 </html>`;
 }
@@ -1193,13 +1207,14 @@ function mezzoCompatibileCategoriaCliente(m, categoriaRichiesta) {
   const testo = normalize(`${m.categoria || ''} ${m.tipo || ''} ${m.marca || ''} ${m.modello || ''} ${m.descrizione || ''} ${m.descrizione_pubblica || ''} ${m.codice_tipo || ''}`).toUpperCase();
   const posti = Number(m.posti || 0);
   if (cat === '9_POSTI') {
-    // V118: pulmino solo con segnali chiari. Se c'e ribaltabile/cassone/furgone/cargo/merci NON basta la categoria sbagliata.
-    const esplicitoPulmino = testo.includes('PULMINO') || testo.includes('9 POSTI') || testo.includes('8/9') || testo.includes('PERSONE') || testo.includes('PASSEGGERI') || testo.includes('MINIBUS');
-    const segnaliMerci = testo.includes('RIBALT') || testo.includes('CASSON') || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI');
-    if (segnaliMerci && !esplicitoPulmino) return false;
-    return esplicitoPulmino || posti >= 8;
+    // Pulmino solo se dichiarato pulmino/9 posti/persona o posti >= 8.
+    // Esclude Daily/furgoni/ribaltabili caricati male come categoria 9_POSTI.
+    if (testo.includes('RIBALT') || testo.includes('CASSON') || testo.includes('DAILY') || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI')) {
+      return testo.includes('PULMINO') || testo.includes('9 POSTI') || testo.includes('8/9') || testo.includes('PERSONE') || posti >= 8;
+    }
+    return testo.includes('PULMINO') || testo.includes('9 POSTI') || testo.includes('8/9') || testo.includes('PERSONE') || posti >= 8;
   }
-  if (cat === 'FURGONE') return testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI') || testo.includes('DAILY') || testo.includes('DUCATO') || testo.includes('TRANSIT') || testo.includes('RIBALT') || String(m.categoria||'') === 'FURGONE';
+  if (cat === 'FURGONE') { if (testo.includes('PULMINO') || testo.includes('9 POSTI') || testo.includes('DACIA') || testo.includes('GOLF') || testo.includes('ESCAV') || testo.includes('SEMOV') || testo.includes('PIATTAFORMA')) return false; return String(m.categoria||'').toUpperCase()==='FURGONE' || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI') || testo.includes('DAILY') || testo.includes('DUCATO') || testo.includes('TRANSIT') || testo.includes('RIBALT'); }
   if (cat === 'AUTO_DACIA') return testo.includes('DACIA') || String(m.categoria||'') === 'AUTO_DACIA';
   if (cat === 'AUTO_GOLF') return testo.includes('GOLF') || String(m.categoria||'') === 'AUTO_GOLF';
   if (cat === 'ESCAVATORE') return testo.includes('ESCAV') || String(m.categoria||'') === 'ESCAVATORE';
@@ -2367,79 +2382,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V123 - fix attese eliminabili, OCR archivio, categoria mezzo, indirizzo fatturazione'));
-
-
-// =========================
-// V123 - helper robusti: colonne, cliente storico, allegati
-// =========================
-async function v123TableColumns(table){
-  try { return (await all(`PRAGMA table_info(${table})`)).map(c => c.name); } catch(e){ return []; }
-}
-async function v123UpdateExisting(table, whereCol, whereVal, data){
-  const cols = await v123TableColumns(table);
-  const keys = Object.keys(data || {}).filter(k => cols.includes(k));
-  if(!keys.length) return false;
-  await run(`UPDATE ${table} SET ${keys.map(k=>`${k}=?`).join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE ${whereCol}=?`, [...keys.map(k=>data[k]), whereVal]).catch(async()=>{
-    await run(`UPDATE ${table} SET ${keys.map(k=>`${k}=?`).join(', ')} WHERE ${whereCol}=?`, [...keys.map(k=>data[k]), whereVal]);
-  });
-  return true;
-}
-async function v123FindOrCreateClienteFromPrenotazione(prenId){
-  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenId]);
-  if(!p) return null;
-  const cf = String(p.codice_fiscale || '').trim().toUpperCase();
-  let c = null;
-  if(cf) c = await get(`SELECT * FROM clienti WHERE codice_fiscale=?`, [cf]).catch(()=>null);
-  if(!c && p.telefono) c = await get(`SELECT * FROM clienti WHERE telefono=? ORDER BY id DESC LIMIT 1`, [p.telefono]).catch(()=>null);
-  const data = {
-    nome:p.nome||'', cognome:p.cognome||'', telefono:p.telefono||'', email:p.email||'', codice_fiscale:cf,
-    indirizzo:p.indirizzo||p.indirizzo_fatturazione||'', citta:p.citta||p.citta_fatturazione||'', provincia:p.provincia||p.provincia_fatturazione||'', cap:p.cap||p.cap_fatturazione||'',
-    data_nascita:p.data_nascita||'', luogo_nascita:p.luogo_nascita||'', documento_numero:p.documento_numero||'', documento_scadenza:p.documento_scadenza||'',
-    patente_numero:p.patente_numero||p.patente1||'', patente_scadenza:p.patente_scadenza||p.patente1_scadenza||'', categoria_patente:p.categoria_patente||'',
-    tipo_cliente:p.tipo_cliente||'privato', ragione_sociale:p.ragione_sociale||'', piva:p.piva||p.partita_iva||'', partita_iva:p.partita_iva||p.piva||'',
-    pec:p.pec||'', sdi:p.sdi||p.codice_sdi||'', codice_sdi:p.codice_sdi||p.sdi||'',
-    indirizzo_fatturazione:p.indirizzo_fatturazione||p.indirizzo||'', citta_fatturazione:p.citta_fatturazione||p.citta||'', provincia_fatturazione:p.provincia_fatturazione||p.provincia||'', cap_fatturazione:p.cap_fatturazione||p.cap||''
-  };
-  if(c){ await v123UpdateExisting('clienti','id',c.id,data).catch(()=>{}); return c.id; }
-  const cols = await v123TableColumns('clienti');
-  const keys = Object.keys(data).filter(k => cols.includes(k));
-  if(!keys.length) return null;
-  const r = await run(`INSERT INTO clienti (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`, keys.map(k=>data[k]));
-  return r.lastID;
-}
-async function v123CollegaAllegatiPrenotazioneACliente(prenId){
-  const cid = await v123FindOrCreateClienteFromPrenotazione(prenId);
-  if(!cid) return null;
-  const cols = await v123TableColumns('allegati');
-  if(cols.includes('cliente_id')) {
-    await run(`UPDATE allegati SET cliente_id=? WHERE prenotazione_id=? AND (cliente_id IS NULL OR cliente_id='')`, [cid, prenId]).catch(()=>{});
-  }
-  return cid;
-}
-function v123CategoriaMezzo(m){
-  const catRaw = String(m.categoria || '').trim().toUpperCase().replace(/[\s\-]+/g,'_');
-  const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''} ${m.descrizione_pubblica||''} ${m.codice_tipo||''}`.toUpperCase();
-  const posti = Number(m.posti || 0);
-  if(catRaw.includes('9_POSTI') || catRaw.includes('PULMINO') || /\b9\s*POSTI\b/.test(hay) || posti >= 8) return '9_POSTI';
-  if(catRaw.includes('AUTO_DACIA') || hay.includes('DACIA') || hay.includes('SANDERO')) return 'AUTO_DACIA';
-  if(catRaw.includes('AUTO_GOLF') || hay.includes('GOLF')) return 'AUTO_GOLF';
-  if(catRaw.includes('ESCAV') || hay.includes('ESCAV')) return 'ESCAVATORE';
-  if(catRaw.includes('SEMOV') || hay.includes('PIATTAFORMA')) return 'SEMOVENTE';
-  if(catRaw.includes('FURG') || hay.includes('FURG') || hay.includes('CARGO') || hay.includes('MERCI') || hay.includes('DAILY') || hay.includes('DUCATO') || hay.includes('TRANSIT')) return 'FURGONE';
-  return catRaw || '';
-}
-function v123MezzoCompatibile(m, catInfo){
-  const target = categoriaClienteNorm(catInfo?.categoria || catInfo || '');
-  const actual = v123CategoriaMezzo(m);
-  if(target === 'FURGONE') return actual === 'FURGONE';
-  if(target === '9_POSTI') return actual === '9_POSTI';
-  if(target === 'AUTO_DACIA') return actual === 'AUTO_DACIA';
-  if(target === 'AUTO_GOLF') return actual === 'AUTO_GOLF';
-  if(target === 'ESCAVATORE') return actual === 'ESCAVATORE' || actual === 'SEMOVENTE';
-  if(target === 'SEMOVENTE') return actual === 'SEMOVENTE';
-  return actual === target;
-}
+app.get('/versione', (req, res) => res.send('DP RENT APP V109 FIX - documenti clienti, firma, PDF lock, CaRGOS badge'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2471,7 +2414,6 @@ app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
     const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`);
-    const attesa = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa'`);
     const allMezzi = await all(`SELECT * FROM mezzi`);
     const alerts = allMezzi.map(m => {
       const a = alertMezzo(m);
@@ -2486,12 +2428,10 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/prenotazioni"><span>&#128193;</span>Storico</a>
         <a class="tile" href="/scadenze-mezzi"><span>&#9888;</span>Scadenze</a>
         <a class="tile" href="/prenota"><span>&#128241;</span>Pagina cliente</a>
-        <a class="tile" href="/richieste-attesa"><span>&#128680;</span>Clienti in attesa</a>
         <a class="tile" href="/import-mezzi"><span>&#128202;</span>Import Excel</a>
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
-      ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a></div>` : ``}
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V122 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V124 FIX REALE</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2508,24 +2448,6 @@ app.get('/', async (req, res) => {
   } catch (e) {
     res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore Dashboard</h2><pre>${esc(e.message)}</pre></div>`));
   }
-});
-
-app.get('/richieste-attesa', async (req, res) => {
-  try {
-    const rows = await all(`SELECT * FROM prenotazioni WHERE (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp') AND COALESCE(stato,'') <> 'eliminato_attesa' ORDER BY id DESC LIMIT 100`);
-    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a><form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Vuoi davvero eliminare questo cliente in attesa?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
-  } catch(e) {
-    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore clienti in attesa</h2><pre>${esc(e.message)}</pre></div>`));
-  }
-});
-
-
-app.post('/richieste-attesa/:id/elimina', async (req,res)=>{
-  try{
-    await run(`UPDATE prenotazioni SET stato='eliminato_attesa', note=COALESCE(note,'') || '
-Eliminato da clienti in attesa V123' WHERE id=?`, [req.params.id]);
-    res.redirect('/richieste-attesa');
-  }catch(e){ res.status(500).send(page('Errore elimina attesa', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn" href="/richieste-attesa">Torna</a></div>`)); }
 });
 
 app.get('/logo', (req, res) => {
@@ -3481,10 +3403,6 @@ function clienteWebHtml(req) {
 <style>
 :root{--dp-red:#d70000;--dp-dark:#101015;--dp-blue:#173b8f;--bg:#eef4ff;--card:#fff;--line:#d9dbe7;--green:#1f7a36}
 *{box-sizing:border-box} body{margin:0;background:linear-gradient(180deg,#edf5ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;color:#111827;font-size:18px}
-.client-nav{position:sticky;top:0;z-index:999;background:rgba(7,17,31,.96);backdrop-filter:blur(10px);padding:calc(10px + env(safe-area-inset-top)) 14px 10px;display:flex;gap:10px;flex-wrap:wrap;box-shadow:0 8px 22px rgba(0,0,0,.22)}
-.client-nav a,.client-nav button{appearance:none;border:0;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border-radius:16px;padding:13px 16px;font-size:17px;font-weight:900;color:#fff;background:#24242b;cursor:pointer;box-shadow:0 8px 18px rgba(0,0,0,.18)}
-.client-nav .dash{background:#d70000}.client-nav .wait{background:#173b8f}.client-nav .back{background:#333}
-@media(max-width:720px){.client-nav a,.client-nav button{flex:1 1 calc(50% - 6px);font-size:16px;padding:13px 8px}.client-nav .wide{flex-basis:100%}}
 .hero{background:linear-gradient(135deg,#07111f,#163d91);color:#fff;padding:28px 22px 30px;border-radius:0 0 28px 28px;box-shadow:0 12px 35px rgba(0,0,0,.18)}
 .hero h1{margin:0;font-size:38px;letter-spacing:.5px}.hero p{font-size:20px;line-height:1.35;margin:12px 0 0;opacity:.95}.pill{display:inline-block;background:#fff;color:#163d91;font-weight:900;border-radius:999px;padding:10px 16px;margin:14px 8px 0 0}
 .wrap{max-width:900px;margin:20px auto;padding:0 14px 36px}.card{background:var(--card);border:1px solid #e3e7f2;border-radius:24px;padding:22px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.08)}
@@ -3513,13 +3431,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 
 </style>
 <script>
-function toggleAzienda(){
-  var t=document.querySelector('[name="tipo_cliente"]').value;
-  var box=document.getElementById('aziendaBox');
-  var isAz=t==='azienda';
-  box.style.display=isAz?'grid':'none';
-  ['ragione_sociale','partita_iva','pec','codice_sdi'].forEach(function(n){var el=document.querySelector('[name="'+n+'"]'); if(el) el.required=isAz;});
-}
+function toggleAzienda(){var t=document.querySelector('[name="tipo_cliente"]').value;var box=document.getElementById('aziendaBox');box.style.display=(t==='azienda')?'grid':'none'}
 window.addEventListener('DOMContentLoaded',toggleAzienda)
 </script>
 </head>
@@ -3531,7 +3443,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
   ${categoria ? `<span class="pill">${esc(categoria)}</span>` : ''}
 </section>
 <div class="wrap">
-  ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : `<div class="card" style="border:3px solid #173b8f">
+  <div class="card" style="border:3px solid #173b8f">
     <h2>📸 Prima carica documento e patente</h2>
     <p class="notice">Carica le foto qui: il sistema prova a leggere i dati automaticamente. Dopo trovi i campi già compilati e puoi correggere tutto a mano.</p>
     ${req.query && req.query.ocr_done ? `<p class="okbox"><b>✅ OCR eseguito.</b><br>Controlla i campi sotto e completa quelli mancanti.</p>` : ``}
@@ -3553,7 +3465,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
       <button class="btn" type="submit">Leggi dati automaticamente</button>
     </form>
     <p class="small">Se l'OCR non legge tutto, puoi comunque compilare manualmente sotto.</p>
-  </div>`}
+  </div>
 
 <form method="POST" action="/prenota-cliente" enctype="multipart/form-data">
   <input type="hidden" name="ref" value="${clienteWebVal(req,'ref')}">
@@ -3615,7 +3527,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
   <div class="card">
     <h2>Fatturazione</h2>
     <div class="grid">
-      <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${clienteWebSelected(req,'tipo_cliente','privato','privato')}>Privato</option><option value="azienda" ${clienteWebSelected(req,'tipo_cliente','azienda')}>Azienda</option></select></div>
+      <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato">Privato</option><option value="azienda">Azienda</option></select></div>
     </div>
     <div class="grid">
       <div class="full"><label>Indirizzo fatturazione</label><input name="indirizzo_fatturazione" value="${clienteWebVal(req,'indirizzo_fatturazione')}"></div>
@@ -3631,7 +3543,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
     </div>
   </div>
 
-  ${req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
+  <div class="card">
     <h2>Foto documento / patente</h2>
     <div class="grid">
       <div><label>Documento fronte</label><input class="file" type="file" name="documento_fronte" accept="image/*,application/pdf" capture="environment"></div>
@@ -3640,7 +3552,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
       <div><label>Patente retro</label><input class="file" type="file" name="patente_retro" accept="image/*,application/pdf" capture="environment"></div>
       <div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div>
     </div>
-  </div>`}
+  </div>
 
   <div class="card">
     <h2>Note</h2>
@@ -3691,7 +3603,7 @@ app.post('/prenota-ocr', upload.fields([
       }
     }
     if (!uploaded.length) {
-      return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Nessuna foto caricata</h1><p>Carica almeno documento o patente.</p><p><a href="javascript:history.back()">↩️ Torna indietro</a></p>`);
+      return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Nessuna foto caricata</h1><p>Carica almeno documento o patente.</p><a href="javascript:history.back()">Torna</a>`);
     }
     const preuploadId = 'OCR' + Date.now() + Math.floor(Math.random()*9999);
     PREN_OCR_UPLOADS[preuploadId] = uploaded;
@@ -3735,18 +3647,10 @@ app.post('/prenota-cliente', upload.fields([
     const b = req.body || {};
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(`<!doctype html><meta charset="utf-8"><h1>Errore date</h1><p>${esc(erroreDate)}</p><a href="javascript:history.back()">Torna</a>`);
-    if (String(b.tipo_cliente || '').toLowerCase() === 'azienda') {
-      const mancanti = [];
-      if (!b.ragione_sociale) mancanti.push('ragione sociale');
-      if (!(b.partita_iva || b.piva)) mancanti.push('partita IVA');
-      if (!b.pec) mancanti.push('PEC');
-      if (!(b.codice_sdi || b.sdi)) mancanti.push('codice SDI');
-      if (mancanti.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Dati fatturazione mancanti</h1><p>Per azienda mancano: ${esc(mancanti.join(', '))}</p><a href="javascript:history.back()">Torna</a>`);
-    }
 
     const categoriaRichiesta = categoriaClienteNorm(b.categoria);
     const mezziTutti = await all(`SELECT * FROM mezzi ORDER BY id ASC`);
-    const mezzi = mezziTutti.filter(m => v123MezzoCompatibile(m, categoriaRichiesta));
+    const mezzi = mezziTutti.filter(m => mezzoCompatibileCategoriaCliente(m, categoriaRichiesta));
     if (!mezzi.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Nessun mezzo</h1><p>Nessun mezzo configurato correttamente per: ${esc(categoriaRichiesta)}.</p><p>Controlla anagrafica mezzi: categoria e posti.</p><a href="javascript:history.back()">Torna</a>`);
     let mezzo = null;
     for (const m of mezzi) {
@@ -3775,13 +3679,19 @@ app.post('/prenota-cliente', upload.fields([
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
 
-    // Salva cliente nello storico clienti per non reinserirlo ogni volta
-    try { salvaClienteStorico({
-      nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
-      indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
-      documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
-      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente, tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva, pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
-    }, ()=>{}); } catch(_) {}
+    // Salva cliente nello storico e collega pratica + allegati all'archivio cliente.
+    let clienteId = null;
+    try {
+      clienteId = await new Promise(resolve => salvaClienteStorico({
+        nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
+        indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
+        documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
+        patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
+        tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva, pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi,
+        indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
+      }, (err,id)=>resolve(id || null)));
+      if (clienteId) await run(`UPDATE prenotazioni SET cliente_id=? WHERE id=?`, [clienteId, result.lastID]).catch(()=>{});
+    } catch(_) {}
 
     const files = [];
     for (const [tipo, arr] of Object.entries(req.files || {})) {
@@ -3792,11 +3702,12 @@ app.post('/prenota-cliente', upload.fields([
       delete PREN_OCR_UPLOADS[b.preupload_id];
     }
     for (const item of files) {
-      await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`,
-        [result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]);
+      await run(`INSERT INTO allegati (cliente_id,prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?,?)`,
+        [clienteId, result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]).catch(async()=>{
+          await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`,
+            [result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]);
+        });
     }
-    // V123: collega anche all'archivio cliente interno, non solo Drive/contratto.
-    try { await v123CollegaAllegatiPrenotazioneACliente(result.lastID); } catch(e) { console.log('V123 collega archivio cliente warning:', e.message); }
 
     try { if (typeof uploadContractAssetsToDrive === 'function') await uploadContractAssetsToDrive(result.lastID); } catch(e) { console.log('Drive cliente warning:', e.message); }
 
@@ -4568,6 +4479,13 @@ app.get('/prenotazione/:id', async (req, res) => {
     </div>`));
 });
 
+
+app.get('/clienti-attesa', async (req,res)=>{
+  const rows = await all(`SELECT * FROM prenotazioni WHERE stato IN ('richiesta_cliente','preventivo') ORDER BY id DESC LIMIT 200`).catch(()=>[]);
+  const trs = rows.map(p=>`<tr><td><b>${esc(p.codice||p.id)}</b><br>${esc((p.nome||'')+' '+(p.cognome||''))}<br>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}<br>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>€ ${euro(p.totale||0)}</td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn bad" href="/prenotazione/${p.id}/elimina">Elimina</a></td></tr>`).join('');
+  res.send(page('Clienti in attesa', `<div class="box"><h2>Clienti in attesa</h2><p class="notice">Qui puoi aprire o cancellare le richieste arrivate dal cliente/WhatsApp.</p></div><table><tr><th>Cliente</th><th>Richiesta</th><th>Totale</th><th>Azioni</th></tr>${trs || '<tr><td colspan="4">Nessun cliente in attesa.</td></tr>'}</table>`));
+});
+
 app.get('/prenotazioni', async (req, res) => {
   const q = normalize(req.query.q), stato = normalize(req.query.stato), dal = normalize(req.query.dal), al = normalize(req.query.al);
   let sql = `SELECT p.*, m.targa, m.marca, m.modello, m.descrizione_pubblica FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE 1=1`;
@@ -4753,19 +4671,6 @@ async function salvaDatiOcrSuContratto(id, b) {
       id
     ]
   );
-
-  // V123: copia dati OCR/fatturazione anche nello storico cliente e collega allegati.
-  try {
-    const fatt = {
-      nome: b.nome || current.nome || '', cognome: b.cognome || current.cognome || '', codice_fiscale: String(b.codice_fiscale || current.codice_fiscale || '').toUpperCase(),
-      indirizzo: b.indirizzo || current.indirizzo || current.indirizzo_fatturazione || '', citta: b.citta || current.citta || current.citta_fatturazione || '', provincia: b.provincia || current.provincia || current.provincia_fatturazione || '', cap: b.cap || current.cap || current.cap_fatturazione || '',
-      tipo_cliente: b.tipo_cliente || current.tipo_cliente || 'privato', ragione_sociale: b.ragione_sociale || current.ragione_sociale || '', piva: b.piva || b.partita_iva || current.piva || current.partita_iva || '', partita_iva: b.partita_iva || b.piva || current.partita_iva || current.piva || '', pec: b.pec || current.pec || '', sdi: b.sdi || b.codice_sdi || current.sdi || current.codice_sdi || '', codice_sdi: b.codice_sdi || b.sdi || current.codice_sdi || current.sdi || '',
-      indirizzo_fatturazione: b.indirizzo_fatturazione || b.indirizzo || current.indirizzo_fatturazione || current.indirizzo || '', citta_fatturazione: b.citta_fatturazione || b.citta || current.citta_fatturazione || current.citta || '', provincia_fatturazione: b.provincia_fatturazione || b.provincia || current.provincia_fatturazione || current.provincia || '', cap_fatturazione: b.cap_fatturazione || b.cap || current.cap_fatturazione || current.cap || '',
-      documento_numero: b.numero_documento || b.documento_numero || current.documento_numero || '', documento_scadenza: b.data_scadenza || b.documento_scadenza || current.documento_scadenza || '', patente_numero: b.numero_patente || b.patente_numero || current.patente_numero || current.patente1 || '', patente_scadenza: b.patente_scadenza || current.patente_scadenza || current.patente1_scadenza || '', categoria_patente: b.categoria_patente || current.categoria_patente || ''
-    };
-    await v123UpdateExisting('prenotazioni','id',id,fatt).catch(()=>{});
-    await v123CollegaAllegatiPrenotazioneACliente(id);
-  } catch(e) { console.log('V123 salva storico cliente warning:', e.message); }
 }
 
 app.get('/ocr-documenti/:id', async (req, res) => {
@@ -4823,29 +4728,10 @@ function mergeOcrObjects(list) {
   return out;
 }
 
-
-function publicClientePage(title, content) {
-  return `<!doctype html>
-<html lang="it">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>${esc(title)}</title>
-<style>
-:root{--dp-red:#d70000;--dp-blue:#173f9d;--dp-dark:#07111f;--bg:#eef4ff;--card:#fff;--line:#d9dbe7}
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef4ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#0b1226;-webkit-text-size-adjust:100%;font-size:18px}main{max-width:900px;margin:0 auto;padding:16px 14px 38px}.client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:#fff;border-radius:0 0 30px 30px;padding:calc(28px + env(safe-area-inset-top)) 24px 30px;margin:0 -14px 22px;box-shadow:0 16px 40px rgba(0,0,0,.18)}.client-hero h1{font-size:44px;line-height:1;margin:0 0 14px;color:#fff;letter-spacing:.8px}.client-hero p{font-size:21px;line-height:1.35;margin:0;opacity:.96}.pill{display:inline-block;background:#fff;color:#173f9d;border-radius:999px;padding:11px 18px;margin:16px 8px 0 0;font-weight:900;font-size:20px}.card,.step-card,details.manual{background:#fff;border-radius:26px;padding:24px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.10);border:1px solid #e3e7f2}.card h2,.step-card h2{font-size:34px;margin:0 0 16px;color:#0b1226}.grid,.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-weight:900;margin:10px 0 7px;color:#0b1226}input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none}textarea{min-height:110px}.notice{background:#fff8df;border:1px solid #f1d98a;border-radius:20px;padding:16px;line-height:1.35;font-size:18px}.okbox{background:#ecfff1;border:1px solid #b8efc4;border-radius:20px;padding:16px;line-height:1.35}.btn,button,.big-red{border:0;border-radius:20px;background:linear-gradient(135deg,#e21818,#a80d0d);color:#fff;padding:18px 24px;font-size:22px;font-weight:900;box-shadow:0 12px 25px rgba(210,0,0,.25);width:100%;margin-top:18px}.small{font-size:15px;color:#596275;font-weight:700}.upload-box{border:2px dashed #cbd5e1;border-radius:22px;padding:18px;background:#f8fafc}.upload-box label{font-size:20px}.upload-box input{font-size:18px;margin-top:12px}details.manual summary{font-size:30px;font-weight:900;cursor:pointer}.fixed-save{position:sticky;bottom:12px;z-index:9;background:rgba(255,255,255,.96);padding:12px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.16)}@media(max-width:720px){main{padding-left:14px;padding-right:14px}.grid,.upload-grid{grid-template-columns:1fr}.client-hero h1{font-size:36px}.client-hero p{font-size:20px}.card,.step-card,details.manual{padding:20px;border-radius:24px}.card h2,.step-card h2{font-size:31px}input,select,textarea{font-size:19px}}
-</style>
-<script>
-function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var t=el.value; var box=document.getElementById('aziendaBox'); if(!box) return; var isAz=t==='azienda'; box.style.display=isAz?'grid':'none'; ['ragione_sociale','partita_iva','pec','codice_sdi'].forEach(function(n){var f=document.querySelector('[name="'+n+'"]'); if(f) f.required=isAz;});}
-window.addEventListener('DOMContentLoaded',toggleAzienda);
-</script>
-</head><body><main>${content}</main></body></html>`;
-}
-
 function renderClientePulitoPage(p, token, files) {
   const lista = (files || []).map(f => `<li>${esc(f.tipo)} - ${esc(f.originalname)} ${f.drive_web_link ? `- <a target="_blank" href="${esc(f.drive_web_link)}">Drive</a>` : ''}</li>`).join('');
   const actionBase = `/cliente-documenti/${p.id}/${token}`;
-  return publicClientePage('DP RENT - Pratica cliente', `
+  return page('DP RENT - Pratica cliente', `
     <style>
       .client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:white;border-radius:30px;padding:36px 42px;margin-bottom:26px;box-shadow:0 16px 40px rgba(0,0,0,.18)}
       .client-hero h1{font-size:54px;line-height:1;margin:0 0 18px 0;color:white}
@@ -5002,7 +4888,6 @@ app.post('/cliente-documenti/:id/:token/ocr-multiplo', upload.fields([
 
       await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
         [p.id, `OCR CLIENTE ${item.field}`, f.filename, f.originalname, f.path, f.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
-      try { await v123CollegaAllegatiPrenotazioneACliente(p.id); } catch(e) { console.log('V123 collega allegato OCR multiplo:', e.message); }
 
       try {
         const dati = await estraiDatiDocumentoConAI(f.path, f.mimetype);
@@ -5040,7 +4925,6 @@ app.post('/cliente-documenti/:id/:token', upload.single('file'), async (req, res
 
     await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,drive_file_id,drive_web_link) VALUES (?,?,?,?,?,?,?,?)`,
       [p.id, `CLIENTE ${req.body.tipo}`, req.file.filename, req.file.originalname, req.file.path, req.file.mimetype, driveRes?.id || null, driveRes?.webViewLink || null]);
-    try { await v123CollegaAllegatiPrenotazioneACliente(p.id); } catch(e) { console.log('V123 collega allegato cliente:', e.message); }
 
     const dati = await estraiDatiDocumentoConAI(req.file.path, req.file.mimetype);
     res.send(renderOcrConfirmPage(p, dati, `/cliente-documenti/${p.id}/${req.params.token}/salva`, `/cliente-documenti/${p.id}/${req.params.token}`));
@@ -6787,7 +6671,7 @@ function dpMenu(name){
 }
 function dpIsMenuKeyword(body){
   const t = dpNorm(body);
-  return ['ciao','salve','buongiorno','buonasera','menu','start','inizio','info','informazioni','aiuto'].includes(t);
+  return ['ciao','salve','buongiorno','buonasera','menu','start','inizio','info','informazioni','aiuto','indietro','annulla','ho sbagliato','sbagliato','torna al menu','torna menu'].includes(t);
 }
 function dpAlreadySid(sid){
   if(!sid) return false;
@@ -6927,29 +6811,20 @@ function dpDays(a,b){ return Math.round((new Date(b.getFullYear(),b.getMonth(),b
 function dpExtractKm(text){ const m = String(text||'').replace(/\./g,'').match(/\d{1,6}/); return m ? Number(m[0]) : 150; }
 function dpCategoryFromChoice(txt){
   const t = dpNorm(txt);
-  if(t === '1' || t.includes('furg')) return { label:'Furgone cargo/merci', categoria:'FURGONE', cats:['FURGONE','FURGONI','F1-VAN','F2-PC','F3-PL'] };
-  if(t === '2' || t.includes('pulmino') || t.includes('9') || t.includes('posti')) return { label:'Pulmino 8/9 posti', categoria:'9_POSTI', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
-  if(t === '3' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', categoria:'AUTO_DACIA', cats:['AUTO_DACIA','DACIA'] };
-  if(t === '4' || t.includes('golf')) return { label:'Auto categoria Golf', categoria:'AUTO_GOLF', cats:['AUTO_GOLF','GOLF'] };
-  if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', categoria:'ESCAVATORE', cats:['ESCAVATORE','SEMOVENTE','X-ESC'] };
+  if(t === '1' || t.includes('furg')) return { label:'Furgone cargo/merci', cats:['FURGONE','FURGONI','F1-VAN','F2-PC','F3-PL'] };
+  if(t === '2' || t.includes('pulmino') || t.includes('9') || t.includes('posti')) return { label:'Pulmino 8/9 posti', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
+  if(t === '3' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', cats:['AUTO_DACIA','AUTO','A1 - Compact Eco'] };
+  if(t === '4' || t.includes('golf')) return { label:'Auto categoria Golf', cats:['AUTO_GOLF','AUTO','A2 - Compact'] };
+  if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', cats:['ESCAVATORE','X-ESC'] };
   return null;
 }
-function dpVehicleMatchesCat(m, catInfo){
-  // V123: filtro categoria secco. Non prende più il primo mezzo libero di altra categoria.
-  try { return v123MezzoCompatibile(m, catInfo); } catch(e) {}
-  const target = catInfo?.categoria || '';
-  const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''}`.toUpperCase();
-  if(target === 'FURGONE') return /(FURG|VAN|CARGO|MERCI|DAILY|DUCATO|TRANSIT)/.test(hay) && !/(DACIA|GOLF|PULMINO|9\s*POSTI|ESCAV|SEMOV)/.test(hay);
-  if(target === '9_POSTI') return /(9_POSTI|PULMINO|9\s*POSTI|8\s*POSTI|MINIBUS)/.test(hay);
-  if(target === 'AUTO_DACIA') return /DACIA|SANDERO|AUTO_DACIA/.test(hay);
-  if(target === 'AUTO_GOLF') return /GOLF|AUTO_GOLF/.test(hay);
-  if(target === 'ESCAVATORE') return /ESCAV|SEMOVENTE|PIATTAFORMA|X-ESC|SPECIALE/.test(hay);
-  return false;
-}
 async function dpFindAvailableVehicle(catInfo, startIso, endIso){
-  let mezzi = [];
-  try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore select mezzi:', e.message); }
-  mezzi = (mezzi || []).filter(m => dpVehicleMatchesCat(m, catInfo));
+  // FIX REALE: non prendere mai il primo mezzo libero se la categoria non combacia.
+  // Prima carico tutti i mezzi, poi filtro con la stessa logica stretta usata dalla pagina cliente.
+  let tutti = [];
+  try{ tutti = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore select mezzi:', e.message); }
+  const catRichiesta = categoriaClienteNorm((catInfo && catInfo.cats && catInfo.cats[0]) || (catInfo && catInfo.label) || 'FURGONE');
+  const mezzi = (tutti || []).filter(m => mezzoCompatibileCategoriaCliente(m, catRichiesta));
   for(const m of mezzi){
     try{
       const occ = await queryDisponibilita(m.id, startIso, endIso);
@@ -6957,34 +6832,6 @@ async function dpFindAvailableVehicle(catInfo, startIso, endIso){
     }catch(e){ return m; }
   }
   return null;
-}
-async function dpSaveWhatsAppQuote(session, from, profileName, status){
-  try{
-    if (typeof ensureClienteWebColumnsV92 === 'function') await ensureClienteWebColumnsV92();
-    const data = session.data || {};
-    const mezzo = data.mezzo || {};
-    const calc = data.calc || {};
-    const startIso = data.start ? dpDateIso(data.start) : '';
-    const endIso = data.end ? dpDateIso(data.end) : '';
-    const payload = {
-      codice:'TEMP', nome:profileName || 'Cliente', cognome:'', telefono:String(from||'').replace('whatsapp:',''), email:'',
-      categoria:data.cat?.categoria || data.cat?.cats?.[0] || '', tipo:data.cat?.label || '', mezzo_id:mezzo.id || null,
-      targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '',
-      data_inizio:startIso, data_fine:endIso, ora_inizio:'08:30', ora_fine:'18:00', km_previsti:data.km || 150,
-      giorni:calc.giorni || (data.start && data.end ? dpDays(data.start,data.end) : 1), imponibile:calc.imponibile || 0, iva:calc.iva || 0, totale:calc.totale || 0,
-      stato:status || 'attesa_si_no', tipo_record:'preventivo_whatsapp', note:'Creato automaticamente dal bot WhatsApp - cliente in attesa risposta SI/NO'
-    };
-    const cols = Object.keys(payload);
-    const r = await run(`INSERT INTO prenotazioni (${cols.join(',')}) VALUES (${cols.map(()=>'?').join(',')})`, cols.map(k=>payload[k]));
-    const cod = codicePratica(r.lastID);
-    await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, r.lastID]);
-    session.data.prenotazione_id = r.lastID;
-    session.data.codice = cod;
-    return { ok:true, id:r.lastID, codice:cod };
-  }catch(e){ console.log('Salvataggio preventivo WhatsApp non riuscito:', e.message); return { ok:false, error:e.message }; }
-}
-async function dpUpdateWhatsAppQuote(session, stato){
-  try{ if(session?.data?.prenotazione_id) await run(`UPDATE prenotazioni SET stato=?, note=COALESCE(note,'') || ? WHERE id=?`, [stato, '\nAggiornamento WhatsApp: '+stato, session.data.prenotazione_id]); }catch(e){ console.log('Update preventivo WhatsApp:', e.message); }
 }
 const DP_OFFICINA_SLOTS = (process.env.OFFICINA_SLOTS || '08:30,09:30,10:30,11:30,14:30,15:30,16:30,17:30')
   .split(',')
@@ -7107,12 +6954,6 @@ async function dpHandleWhatsApp(req,res){
 
   let session = dpSession(from, profileName);
 
-  const tGlobal = dpNorm(body);
-  if(['indietro','torna','torna menu','menu principale','annulla','annullare','ho sbagliato','sbagliato','ricomincia','restart'].includes(tGlobal)){
-    dpReset(from, profileName);
-    return dpTwimlResponse(res, 'Nessun problema 👍\n\n' + dpMenu(profileName));
-  }
-
   if(dpIsMenuKeyword(body) || body === ''){
     dpReset(from, profileName);
     return dpTwimlResponse(res, dpMenu(profileName));
@@ -7210,24 +7051,12 @@ async function dpHandleWhatsApp(req,res){
     let calc = { totale: 0, giorni: dpDays(session.data.start, session.data.end) };
     try{ calc = calcolaTotale(mezzo, startIso, endIso, '08:30', '18:00', km); }catch(e){ console.error(e.message); }
     session.data.km = km; session.data.mezzo = mezzo; session.data.calc = calc; session.state = 'noleggio_confirm'; session.ts = Date.now();
-    const savedQuote = await dpSaveWhatsAppQuote(session, from, profileName, 'attesa_si_no');
-    const appBaseQuote = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
-    const quoteAdminLink = savedQuote.ok ? `${appBaseQuote}/prenotazione/${savedQuote.id}` : `${appBaseQuote}/richieste-attesa`;
-    try {
-      await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO GENERATO - IN ATTESA SI/NO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}\nTotale: EUR ${euro(calc.totale || 0)}\n\nNota interna mezzo assegnabile: ${mezzo.marca || ''} ${mezzo.modello || ''} ${mezzo.targa || ''}\n\nApri in app: ${quoteAdminLink}
-
-Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
-    } catch(e) { console.log('Notifica preventivo warning:', e.message); }
     return dpTwimlResponse(res, `${EMJ.ok} *Disponibile*\n\nMezzo: *${session.data.cat.label}*\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nGiorni: ${calc.giorni || dpDays(session.data.start, session.data.end)}\nKm previsti: ${km}\nPreventivo: *EUR ${euro(calc.totale || 0)}*\n\nConfermi il preventivo?\nRispondi *SI* oppure *NO*.`);
   }
 
   if(session.state === 'noleggio_confirm'){
     const yn = dpYesNo(body);
-    if(yn === 'NO') {
-      await dpUpdateWhatsAppQuote(session, 'non_confermato');
-      try { await dpNotify(DP_STAFF_NUMBERS, `${EMJ.warn} PREVENTIVO NOLEGGIO NON CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat?.label || ''}\nDate: ${session.data.start ? dpDateIt(session.data.start) : ''} - ${session.data.end ? dpDateIt(session.data.end) : ''}\nKm: ${session.data.km || ''}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nCliente da richiamare se interessa recuperare la richiesta.`); } catch(e) {}
-      delete DP_BOT_SESSIONS[from]; return dpTwimlResponse(res, 'Preventivo annullato. Lo staff DP ha comunque ricevuto la richiesta, così non perdiamo il contatto. Scrivi MENU per ricominciare.');
-    }
+    if(yn === 'NO') { delete DP_BOT_SESSIONS[from]; return dpTwimlResponse(res, 'Preventivo annullato. Scrivi MENU per ricominciare.'); }
     if(yn !== 'SI') return dpTwimlResponse(res, 'Rispondi SI per confermare oppure NO per annullare.');
     const q = new URLSearchParams({
       categoria: session.data.cat.cats[0] || '',
@@ -7238,7 +7067,6 @@ Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
     });
     const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
     const link = `${base}/prenota?${q.toString()}`;
-    await dpUpdateWhatsAppQuote(session, 'richiesta_cliente');
     await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
     delete DP_BOT_SESSIONS[from];
     return dpTwimlResponse(res, `Perfetto ${EMJ.ok}\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verra preparato il contratto definitivo.`);
@@ -7467,7 +7295,7 @@ app.post('/scansione-documenti/salva', async (req,res)=>{
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V122 alert attese porta ' + PORT);
+  console.log('DP RENT APP V117 fatturazione azienda porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
 
@@ -7758,7 +7586,7 @@ app.get('/documenti-clienti', async (req,res)=>{
 app.get('/cliente/:id/documenti', async (req,res)=>{
   const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
   if(!c) return res.redirect('/clienti');
-  const files = await all(`SELECT * FROM allegati WHERE cliente_id=? OR (prenotazione_id IS NULL AND tipo LIKE 'cliente_%' AND originalname LIKE ?) ORDER BY id DESC`, [req.params.id, `%${c.cognome||''}%`]).catch(()=>[]);
+  const files = await all(`SELECT * FROM allegati WHERE cliente_id=? OR prenotazione_id IN (SELECT id FROM prenotazioni WHERE cliente_id=? OR codice_fiscale=? OR telefono=?) ORDER BY id DESC`, [req.params.id, req.params.id, c.codice_fiscale||'', c.telefono||'']).catch(()=>[]);
   res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identità / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri</th></tr>${v108DocRows(files)}</table>`));
 });
 
