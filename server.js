@@ -1189,22 +1189,20 @@ function categoriaClienteNorm(v) {
   return k || 'FURGONE';
 }
 function mezzoCompatibileCategoriaCliente(m, categoriaRichiesta) {
+  // V123: filtro rigido. La nota interna deve seguire ESATTAMENTE la scelta cliente.
+  // Non usare marca/modello generici tipo DAILY/DUCATO per decidere, altrimenti prende mezzi sbagliati.
   const cat = categoriaClienteNorm(categoriaRichiesta);
-  const testo = normalize(`${m.categoria || ''} ${m.tipo || ''} ${m.marca || ''} ${m.modello || ''} ${m.descrizione || ''} ${m.descrizione_pubblica || ''} ${m.codice_tipo || ''}`).toUpperCase();
+  const categoriaMezzo = categoriaClienteNorm(m.categoria || m.tipo || m.codice_tipo || '');
+  const testo = normalize(`${m.categoria || ''} ${m.tipo || ''} ${m.descrizione || ''} ${m.descrizione_pubblica || ''} ${m.codice_tipo || ''}`).toUpperCase();
   const posti = Number(m.posti || 0);
-  if (cat === '9_POSTI') {
-    // V118: pulmino solo con segnali chiari. Se c'e ribaltabile/cassone/furgone/cargo/merci NON basta la categoria sbagliata.
-    const esplicitoPulmino = testo.includes('PULMINO') || testo.includes('9 POSTI') || testo.includes('8/9') || testo.includes('PERSONE') || testo.includes('PASSEGGERI') || testo.includes('MINIBUS');
-    const segnaliMerci = testo.includes('RIBALT') || testo.includes('CASSON') || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI');
-    if (segnaliMerci && !esplicitoPulmino) return false;
-    return esplicitoPulmino || posti >= 8;
-  }
-  if (cat === 'FURGONE') return testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI') || testo.includes('DAILY') || testo.includes('DUCATO') || testo.includes('TRANSIT') || testo.includes('RIBALT') || String(m.categoria||'') === 'FURGONE';
-  if (cat === 'AUTO_DACIA') return testo.includes('DACIA') || String(m.categoria||'') === 'AUTO_DACIA';
-  if (cat === 'AUTO_GOLF') return testo.includes('GOLF') || String(m.categoria||'') === 'AUTO_GOLF';
-  if (cat === 'ESCAVATORE') return testo.includes('ESCAV') || String(m.categoria||'') === 'ESCAVATORE';
-  if (cat === 'SEMOVENTE') return testo.includes('SEMOV') || testo.includes('PIATTAFORMA') || String(m.categoria||'') === 'SEMOVENTE';
-  return categoriaClienteNorm(m.categoria || m.tipo) === cat;
+  if (categoriaMezzo === cat) return true;
+  if (cat === 'FURGONE') return /(^|[^A-Z])(FURGONE|FURGONI|CARGO|MERCI|F1|F2|F3|VAN)([^A-Z]|$)/.test(testo) && !/(DACIA|GOLF|PULMINO|9_POSTI|9 POSTI|ESCAV|SEMOV|PIATTAFORMA)/.test(testo);
+  if (cat === '9_POSTI') return (/(PULMINO|9_POSTI|9 POSTI|8 POSTI|MINIBUS|PASSEGGERI|PERSONE)/.test(testo) || posti >= 8) && !/(RIBALT|CASSON|CARGO|MERCI|ESCAV|SEMOV|PIATTAFORMA)/.test(testo);
+  if (cat === 'AUTO_DACIA') return /(AUTO_DACIA|DACIA|SANDERO)/.test(testo);
+  if (cat === 'AUTO_GOLF') return /(AUTO_GOLF|GOLF)/.test(testo);
+  if (cat === 'ESCAVATORE') return /(ESCAV|X-ESC|MEZZO_SPECIALE|SPECIALE)/.test(testo);
+  if (cat === 'SEMOVENTE') return /(SEMOV|PIATTAFORMA)/.test(testo);
+  return false;
 }
 
 function prezzoCategoria(cat) {
@@ -2367,7 +2365,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V122 - alert clienti attesa, menu globale, categorie mezzi corrette, fatturazione archivio'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V123 - fix attese, documenti archivio, categorie, fatturazione'));
 
 function salvaClienteStorico(dati, cb) {
   const cf = String(dati.codice_fiscale || '').trim().toUpperCase();
@@ -2419,7 +2417,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
       ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a></div>` : ``}
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V122 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V123 COMPLETA</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2441,9 +2439,20 @@ app.get('/', async (req, res) => {
 app.get('/richieste-attesa', async (req, res) => {
   try {
     const rows = await all(`SELECT * FROM prenotazioni WHERE stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp' ORDER BY id DESC LIMIT 100`);
-    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Apri</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
+    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a> <form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questo cliente in attesa?')"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
   } catch(e) {
     res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore clienti in attesa</h2><pre>${esc(e.message)}</pre></div>`));
+  }
+});
+
+
+app.post('/richieste-attesa/:id/elimina', async (req, res) => {
+  try {
+    await run(`DELETE FROM allegati WHERE prenotazione_id=?`, [req.params.id]).catch(()=>{});
+    await run(`DELETE FROM prenotazioni WHERE id=? AND (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp','non_confermato') OR tipo_record='preventivo_whatsapp')`, [req.params.id]);
+    res.redirect('/richieste-attesa');
+  } catch(e) {
+    res.status(500).send(page('Errore eliminazione', `<div class="box"><h2 class="bad">Errore eliminazione</h2><pre>${esc(e.message)}</pre></div>`));
   }
 });
 
@@ -3644,6 +3653,36 @@ app.post('/prenota-ocr', upload.fields([
   }
 });
 
+
+async function v123EnsureAllegatiClienteId(){
+  await run(`ALTER TABLE allegati ADD COLUMN cliente_id INTEGER`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN tipo_cliente TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN ragione_sociale TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN piva TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN partita_iva TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN pec TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN sdi TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN codice_sdi TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN indirizzo_fatturazione TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN citta_fatturazione TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN provincia_fatturazione TEXT`).catch(()=>{});
+  await run(`ALTER TABLE clienti ADD COLUMN cap_fatturazione TEXT`).catch(()=>{});
+}
+async function v123UpsertClienteStorico(d){
+  await v123EnsureAllegatiClienteId();
+  const cf = String(d.codice_fiscale || '').trim().toUpperCase();
+  let old = null;
+  if (cf) old = await get(`SELECT id FROM clienti WHERE codice_fiscale=?`, [cf]).catch(()=>null);
+  if (!old && d.telefono) old = await get(`SELECT id FROM clienti WHERE telefono=? ORDER BY id DESC LIMIT 1`, [d.telefono]).catch(()=>null);
+  const vals = [d.nome||'',d.cognome||'',d.telefono||'',d.email||'',cf,d.indirizzo||'',d.citta||'',d.cap||'',d.data_nascita||'',d.luogo_nascita||'',d.documento_numero||'',d.documento_scadenza||'',d.patente_numero||d.patente1||'',d.patente_scadenza||d.patente1_scadenza||'',d.categoria_patente||'',d.tipo_cliente||'privato',d.ragione_sociale||'',d.piva||d.partita_iva||'',d.piva||d.partita_iva||'',d.pec||'',d.sdi||d.codice_sdi||'',d.sdi||d.codice_sdi||'',d.indirizzo_fatturazione||d.indirizzo||'',d.citta_fatturazione||d.citta||'',d.provincia_fatturazione||d.provincia||'',d.cap_fatturazione||d.cap||'',d.note||''];
+  if (old && old.id) {
+    await run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,tipo_cliente=?,ragione_sociale=?,piva=?,partita_iva=?,pec=?,sdi=?,codice_sdi=?,indirizzo_fatturazione=?,citta_fatturazione=?,provincia_fatturazione=?,cap_fatturazione=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`, [...vals, old.id]);
+    return old.id;
+  }
+  const r = await run(`INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,tipo_cliente,ragione_sociale,piva,partita_iva,pec,sdi,codice_sdi,indirizzo_fatturazione,citta_fatturazione,provincia_fatturazione,cap_fatturazione,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
+  return r.lastID;
+}
+
 app.post('/prenota-cliente', upload.fields([
   {name:'documento_fronte', maxCount:1}, {name:'documento_retro', maxCount:1},
   {name:'patente_fronte', maxCount:1}, {name:'patente_retro', maxCount:1},
@@ -3651,6 +3690,7 @@ app.post('/prenota-cliente', upload.fields([
 ]), async (req, res) => {
   try {
     await ensureClienteWebColumnsV92();
+    await v123EnsureAllegatiClienteId();
     const b = req.body || {};
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(`<!doctype html><meta charset="utf-8"><h1>Errore date</h1><p>${esc(erroreDate)}</p><a href="javascript:history.back()">Torna</a>`);
@@ -3694,13 +3734,18 @@ app.post('/prenota-cliente', upload.fields([
     const cod = codicePratica(result.lastID);
     await run(`UPDATE prenotazioni SET codice=? WHERE id=?`, [cod, result.lastID]);
 
-    // Salva cliente nello storico clienti per non reinserirlo ogni volta
-    try { salvaClienteStorico({
+    // V123: salva/aggiorna cliente nello storico con fatturazione completa e collega i documenti all'archivio cliente
+    let clienteStoricoId = null;
+    try { clienteStoricoId = await v123UpsertClienteStorico({
       nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
-      indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
+      indirizzo:b.indirizzo, citta:b.citta, provincia:b.provincia, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
       documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
-      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente, tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva, pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
-    }, ()=>{}); } catch(_) {}
+      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
+      tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva,
+      pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi,
+      indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap,
+      note:b.note || ''
+    }); } catch(e) { console.log('Storico cliente V123 warning:', e.message); }
 
     const files = [];
     for (const [tipo, arr] of Object.entries(req.files || {})) {
@@ -6838,16 +6883,8 @@ function dpCategoryFromChoice(txt){
 }
 function dpVehicleMatchesCat(m, catInfo){
   const target = catInfo?.categoria || '';
-  if (typeof mezzoCompatibileCategoriaCliente === 'function' && target) {
-    try { if (mezzoCompatibileCategoriaCliente(m, target)) return true; } catch(_) {}
-  }
-  const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''}`.toUpperCase();
-  if(target === 'FURGONE') return /(FURG|VAN|CARGO|MERCI|F1|F2|F3)/.test(hay) && !/(DACIA|GOLF|PULMINO|9\s*POSTI|ESCAV)/.test(hay);
-  if(target === '9_POSTI') return /(9_POSTI|PULMINO|9\s*POSTI|8\s*POSTI|P1|P2)/.test(hay);
-  if(target === 'AUTO_DACIA') return /DACIA|SANDERO|AUTO_DACIA/.test(hay);
-  if(target === 'AUTO_GOLF') return /GOLF|AUTO_GOLF/.test(hay);
-  if(target === 'ESCAVATORE') return /ESCAV|SEMOVENTE|PIATTAFORMA|X-ESC|SPECIALE/.test(hay);
-  return false;
+  if (!target) return false;
+  try { return mezzoCompatibileCategoriaCliente(m, target); } catch(_) { return false; }
 }
 async function dpFindAvailableVehicle(catInfo, startIso, endIso){
   let mezzi = [];
