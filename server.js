@@ -1126,6 +1126,18 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 }
 
 </style>
+<script>
+function toggleAzienda(){
+  var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return;
+  var isAz=String(el.value||'').toLowerCase()==='azienda';
+  document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';});
+  document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';});
+  ['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(function(n){
+    document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; });
+  });
+}
+window.addEventListener('DOMContentLoaded',toggleAzienda);
+</script>
 </head>
 <body>
 <header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V122 AREA CLIENTE OK</small></h1></header>
@@ -2367,17 +2379,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-
-// V131 ensure colonne fatturazione azienda su clienti e prenotazioni
-(async function v131EnsureFatturazione(){
-  try{
-    if(typeof db==='undefined') return;
-    const cols={tipo_cliente:'TEXT',ragione_sociale:'TEXT',piva:'TEXT',partita_iva:'TEXT',pec:'TEXT',sdi:'TEXT',codice_sdi:'TEXT',indirizzo_fatturazione:'TEXT',citta_fatturazione:'TEXT',provincia_fatturazione:'TEXT',cap_fatturazione:'TEXT'};
-    for (const t of ['clienti','prenotazioni']) for (const [c,typ] of Object.entries(cols)) await new Promise(r=>db.run(`ALTER TABLE ${t} ADD COLUMN ${c} ${typ}`,()=>r()));
-  }catch(e){ console.log('V131 ensure fatturazione:', e.message); }
-})();
-
-app.get('/versione', (req, res) => res.send('DP RENT APP V131 - fatturazione completa cliente/azienda'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V132 - fatturazione azienda completa e toggle privato/azienda'));
 
 
 // =========================
@@ -2766,11 +2768,17 @@ function formPrenotazione(mezzi, selectedMezzo, selectedData, action, query = {}
         <div><label>Indirizzo</label><input name="indirizzo" value="${qv('indirizzo')}"></div>
         <div><label>Citta</label><input name="citta" value="${qv('citta')}"></div>
         <div><label>CAP</label><input name="cap" value="${qv('cap')}"></div>
-        <div><label>Tipo cliente</label><select name="tipo_cliente"><option value="privato" ${tipoCliente==='privato'?'selected':''}>Privato</option><option value="azienda" ${tipoCliente==='azienda'?'selected':''}>Azienda</option></select></div>
+        <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${tipoCliente==='privato'?'selected':''}>Privato</option><option value="azienda" ${tipoCliente==='azienda'?'selected':''}>Azienda</option></select></div>
+      </div>
+      <div class="grid azienda-grid" id="aziendaBox">
         <div><label>P.IVA</label><input name="piva" value="${qv('piva')}"></div>
-        <div><label>Ragione sociale</label><input name="ragione_sociale" value="${qv('ragione_sociale')}"></div>
+        <div><label>Ragione sociale azienda</label><input name="ragione_sociale" value="${qv('ragione_sociale')}"></div>
         <div><label>PEC</label><input name="pec" value="${qv('pec')}"></div>
         <div><label>SDI</label><input name="sdi" value="${qv('sdi')}"></div>
+        <div><label>Indirizzo azienda/fatturazione</label><input name="indirizzo_fatturazione" value="${qv('indirizzo_fatturazione', query.indirizzo || '')}"></div>
+        <div><label>Città azienda</label><input name="citta_fatturazione" value="${qv('citta_fatturazione', query.citta || '')}"></div>
+        <div><label>Provincia azienda</label><input name="provincia_fatturazione" value="${qv('provincia_fatturazione', query.provincia || '')}"></div>
+        <div><label>CAP azienda</label><input name="cap_fatturazione" value="${qv('cap_fatturazione', query.cap || '')}"></div>
       </div>
       <h3>Documento / patente</h3>
       <div class="grid">
@@ -3524,17 +3532,15 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 </style>
 <script>
 function toggleAzienda(){
-  var sel=document.querySelector('[name="tipo_cliente"]');
-  var t=sel ? String(sel.value||'').toLowerCase() : 'privato';
-  var box=document.getElementById('aziendaBox');
-  var isAz=t==='azienda';
-  if(box) box.style.display=isAz?'grid':'none';
+  var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return;
+  var isAz=String(el.value||'').toLowerCase()==='azienda';
+  document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';});
+  document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';});
   ['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(function(n){
-    var el=document.querySelector('[name="'+n+'"]');
-    if(el) el.required = isAz && ['ragione_sociale','partita_iva','piva','indirizzo_fatturazione','citta_fatturazione','cap_fatturazione'].indexOf(n)>=0;
+    document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; });
   });
 }
-window.addEventListener('DOMContentLoaded',toggleAzienda)
+window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
@@ -3631,17 +3637,17 @@ window.addEventListener('DOMContentLoaded',toggleAzienda)
     <div class="grid">
       <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${clienteWebSelected(req,'tipo_cliente','privato','privato')}>Privato</option><option value="azienda" ${clienteWebSelected(req,'tipo_cliente','azienda')}>Azienda</option></select></div>
     </div>
-    <p class="small">Se è privato usiamo i dati di residenza sopra. Se è azienda compila tutti i dati sotto per fattura.</p>
-    <div class="grid" id="aziendaBox">
-      <div class="full"><label>Ragione sociale</label><input name="ragione_sociale" value="${clienteWebVal(req,'ragione_sociale')}"></div>
+    <div class="grid azienda-grid" id="aziendaBox">
+      <div class="full"><label>Ragione sociale azienda</label><input name="ragione_sociale" value="${clienteWebVal(req,'ragione_sociale')}"></div>
       <div><label>Partita IVA</label><input name="partita_iva" value="${clienteWebVal(req,'partita_iva') || clienteWebVal(req,'piva')}"></div>
       <div><label>PEC</label><input name="pec" value="${clienteWebVal(req,'pec')}"></div>
       <div><label>Codice SDI</label><input name="codice_sdi" value="${clienteWebVal(req,'codice_sdi') || clienteWebVal(req,'sdi')}"></div>
-      <div class="full"><label>Indirizzo fatturazione azienda</label><input name="indirizzo_fatturazione" value="${clienteWebVal(req,'indirizzo_fatturazione')}"></div>
-      <div><label>Città fatturazione</label><input name="citta_fatturazione" value="${clienteWebVal(req,'citta_fatturazione')}"></div>
-      <div><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${clienteWebVal(req,'provincia_fatturazione')}"></div>
-      <div><label>CAP fatturazione</label><input name="cap_fatturazione" value="${clienteWebVal(req,'cap_fatturazione')}"></div>
+      <div class="full"><label>Indirizzo azienda / fatturazione</label><input name="indirizzo_fatturazione" value="${clienteWebVal(req,'indirizzo_fatturazione') || clienteWebVal(req,'indirizzo')}"></div>
+      <div><label>Città azienda</label><input name="citta_fatturazione" value="${clienteWebVal(req,'citta_fatturazione') || clienteWebVal(req,'citta')}"></div>
+      <div><label>Provincia azienda</label><input name="provincia_fatturazione" value="${clienteWebVal(req,'provincia_fatturazione') || clienteWebVal(req,'provincia')}"></div>
+      <div><label>CAP azienda</label><input name="cap_fatturazione" value="${clienteWebVal(req,'cap_fatturazione') || clienteWebVal(req,'cap')}"></div>
     </div>
+    <p class="small azienda-only">Se scegli Privato questi campi azienda vengono nascosti e non sono obbligatori.</p>
   </div>
 
   ${req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
@@ -3754,6 +3760,10 @@ app.post('/prenota-cliente', upload.fields([
       if (!(b.partita_iva || b.piva)) mancanti.push('partita IVA');
       if (!b.pec) mancanti.push('PEC');
       if (!(b.codice_sdi || b.sdi)) mancanti.push('codice SDI');
+      if (!b.indirizzo_fatturazione) mancanti.push('indirizzo azienda/fatturazione');
+      if (!b.citta_fatturazione) mancanti.push('città azienda');
+      if (!b.provincia_fatturazione) mancanti.push('provincia azienda');
+      if (!b.cap_fatturazione) mancanti.push('CAP azienda');
       if (mancanti.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Dati fatturazione mancanti</h1><p>Per azienda mancano: ${esc(mancanti.join(', '))}</p><a href="javascript:history.back()">Torna</a>`);
     }
 
@@ -4849,7 +4859,7 @@ function publicClientePage(title, content) {
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef4ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#0b1226;-webkit-text-size-adjust:100%;font-size:18px}main{max-width:900px;margin:0 auto;padding:16px 14px 38px}.client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:#fff;border-radius:0 0 30px 30px;padding:calc(28px + env(safe-area-inset-top)) 24px 30px;margin:0 -14px 22px;box-shadow:0 16px 40px rgba(0,0,0,.18)}.client-hero h1{font-size:44px;line-height:1;margin:0 0 14px;color:#fff;letter-spacing:.8px}.client-hero p{font-size:21px;line-height:1.35;margin:0;opacity:.96}.pill{display:inline-block;background:#fff;color:#173f9d;border-radius:999px;padding:11px 18px;margin:16px 8px 0 0;font-weight:900;font-size:20px}.card,.step-card,details.manual{background:#fff;border-radius:26px;padding:24px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.10);border:1px solid #e3e7f2}.card h2,.step-card h2{font-size:34px;margin:0 0 16px;color:#0b1226}.grid,.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-weight:900;margin:10px 0 7px;color:#0b1226}input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none}textarea{min-height:110px}.notice{background:#fff8df;border:1px solid #f1d98a;border-radius:20px;padding:16px;line-height:1.35;font-size:18px}.okbox{background:#ecfff1;border:1px solid #b8efc4;border-radius:20px;padding:16px;line-height:1.35}.btn,button,.big-red{border:0;border-radius:20px;background:linear-gradient(135deg,#e21818,#a80d0d);color:#fff;padding:18px 24px;font-size:22px;font-weight:900;box-shadow:0 12px 25px rgba(210,0,0,.25);width:100%;margin-top:18px}.small{font-size:15px;color:#596275;font-weight:700}.upload-box{border:2px dashed #cbd5e1;border-radius:22px;padding:18px;background:#f8fafc}.upload-box label{font-size:20px}.upload-box input{font-size:18px;margin-top:12px}details.manual summary{font-size:30px;font-weight:900;cursor:pointer}.fixed-save{position:sticky;bottom:12px;z-index:9;background:rgba(255,255,255,.96);padding:12px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.16)}@media(max-width:720px){main{padding-left:14px;padding-right:14px}.grid,.upload-grid{grid-template-columns:1fr}.client-hero h1{font-size:36px}.client-hero p{font-size:20px}.card,.step-card,details.manual{padding:20px;border-radius:24px}.card h2,.step-card h2{font-size:31px}input,select,textarea{font-size:19px}}
 </style>
 <script>
-function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var t=el.value; var box=document.getElementById('aziendaBox'); if(!box) return; var isAz=t==='azienda'; box.style.display=isAz?'grid':'none'; ['ragione_sociale','partita_iva','pec','codice_sdi'].forEach(function(n){var f=document.querySelector('[name="'+n+'"]'); if(f) f.required=isAz;});}
+function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var isAz=String(el.value||'').toLowerCase()==='azienda'; document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';}); document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';}); ['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(function(n){document.querySelectorAll('[name="'+n+'"]'); document.querySelectorAll('[name="'+n+'"]').forEach(function(f){f.required=isAz;});});}
 window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head><body><main>${content}</main></body></html>`;
@@ -6583,10 +6593,6 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva)}"></label>
           <label>PEC<input name="pec" value="${esc(p.pec)}"></label>
           <label>Codice SDI<input name="codice_sdi" value="${esc(p.codice_sdi)}"></label>
-          <label>Indirizzo fatturazione azienda<input name="indirizzo_fatturazione" value="${esc(p.indirizzo_fatturazione || p.indirizzo || '')}"></label>
-          <label>Città fatturazione<input name="citta_fatturazione" value="${esc(p.citta_fatturazione || p.citta || '')}"></label>
-          <label>Provincia fatturazione<input name="provincia_fatturazione" value="${esc(p.provincia_fatturazione || p.provincia || '')}"></label>
-          <label>CAP fatturazione<input name="cap_fatturazione" value="${esc(p.cap_fatturazione || p.cap || '')}"></label>
           <label>Data inizio<input type="date" name="data_inizio" value="${esc(p.data_inizio)}"></label>
           <label>Ora inizio<input type="time" name="ora_inizio" value="${esc(p.ora_inizio)}"></label>
           <label>Data fine<input type="date" name="data_fine" value="${esc(p.data_fine)}"></label>
@@ -6647,7 +6653,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?,
         documento_tipo=?, documento_numero=?, documento_scadenza=?,
         patente_numero=?, patente_scadenza=?,
-        tipo_cliente=?, ragione_sociale=?, partita_iva=?, pec=?, codice_sdi=?, indirizzo_fatturazione=?, citta_fatturazione=?, provincia_fatturazione=?, cap_fatturazione=?,
+        tipo_cliente=?, ragione_sociale=?, partita_iva=?, pec=?, codice_sdi=?,
         data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, totale=?, stato=?,
         cauzione_richiesta=?, cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, cauzione_restituita=?, note=?
         WHERE id=?`, [
@@ -6655,7 +6661,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'),
           v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
           v62Val(b.patente_numero), v62Val(b.patente_scadenza),
-          v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva || b.piva), v62Val(b.pec), v62Val(b.codice_sdi || b.sdi), v62Val(b.indirizzo_fatturazione), v62Val(b.citta_fatturazione), v62Val(b.provincia_fatturazione), v62Val(b.cap_fatturazione),
+          v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi),
           v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Money(b.totale), v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_richiesta || 'no'), v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.cauzione_restituita || 'no'), v62Val(b.note),
           req.params.id
