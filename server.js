@@ -1274,14 +1274,28 @@ function calcolaTotale(mezzo, data_inizio, data_fine, ora_inizio, ora_fine, km_p
   const totale = imponibile + iva;
   return { giorni, kmInclusiTot, extraKm, imponibile, iva, totale, extra_fuori_orario: extra };
 }
-async function queryDisponibilita(mezzo_id, data_inizio, data_fine) {
+function dpDateTimeSafe(data, ora, fallbackOra) {
+  const d = String(data || '').trim();
+  let h = String(ora || fallbackOra || '00:00').trim();
+  if (!d) return '';
+  if (!/^\d{2}:\d{2}/.test(h)) h = fallbackOra || '00:00';
+  return `${d} ${h.slice(0,5)}:00`;
+}
+async function queryDisponibilita(mezzo_id, data_inizio, data_fine, ora_inizio='08:30', ora_fine='18:00', excludeId=0) {
+  // V141: controllo con data+ora, non solo giorno intero.
+  // Overlap vero: esistente.start < richiesta.end AND esistente.end > richiesta.start.
+  // Così un mezzo occupato il 19 non blocca automaticamente dal 20 in poi.
+  const startReq = dpDateTimeSafe(data_inizio, ora_inizio, '08:30');
+  const endReq = dpDateTimeSafe(data_fine, ora_fine, '18:00');
   return get(`
     SELECT * FROM prenotazioni
     WHERE mezzo_id = ?
-    AND stato != 'annullato'
-    AND date(data_inizio) <= date(?)
-    AND date(data_fine) >= date(?)
-  `, [mezzo_id, data_fine, data_inizio]);
+    AND COALESCE(stato,'') NOT IN ('annullato','eliminato_attesa','cancellato')
+    AND id <> COALESCE(?,0)
+    AND datetime(COALESCE(data_inizio,'') || ' ' || COALESCE(NULLIF(ora_inizio,''),'08:30') || ':00') < datetime(?)
+    AND datetime(COALESCE(data_fine,'') || ' ' || COALESCE(NULLIF(ora_fine,''),'18:00') || ':00') > datetime(?)
+    ORDER BY id DESC LIMIT 1
+  `, [mezzo_id, Number(excludeId||0), endReq, startReq]);
 }
 function fuelOptions(selected) {
   const vals = ['4/4 pieno','3/4','1/2','1/4','Riserva','Vuoto'];
@@ -3574,7 +3588,7 @@ app.post('/prenota-admin', async (req, res) => {
     if (erroreDate) return res.send(page('Errore date', `<div class="box"><h2 class="bad">${esc(erroreDate)}</h2><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
     if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi">Vai ai mezzi</a></div>`));
-    const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine);
+    const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00');
     if (occ) return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p>Contratto: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><a class="btn" href="/planning">Vai al planning</a></div>`));
 
     salvaClienteStorico({
@@ -3691,6 +3705,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
   ${categoria ? `<span class="pill">${esc(categoria)}</span>` : ''}
 </section>
 <div class="wrap">
+  ${req.query && req.query.cliente_riconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Cliente già riconosciuto</h2><p class="okbox">Abbiamo trovato la tua anagrafica. Controlla solo i dati e prosegui: non viene creato un doppione.</p></div>` : ``}
   ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : `<div class="card" style="border:3px solid #173b8f">
     <h2>📸 Prima carica documento e patente</h2>
     <p class="notice">Carica le foto qui: il sistema prova a leggere i dati automaticamente. Dopo trovi i campi già compilati e puoi correggere tutto a mano.</p>
@@ -3824,8 +3839,44 @@ async function ensureClienteWebColumnsV92(){
   for (const [c,t] of Object.entries(cols)) await run(`ALTER TABLE prenotazioni ADD COLUMN ${c} ${t}`).catch(()=>{});
 }
 
-app.get('/prenota', (req, res) => {
+async function v142FindClientePerPrenota(query){
+  const q = query || {};
+  let cliente = null;
+  let pren = null;
+  const ref = String(q.ref || '').replace(/\D/g,'');
+  if (ref) {
+    pren = await get(`SELECT * FROM prenotazioni WHERE id=?`, [ref]).catch(()=>null);
+    if (pren && pren.cliente_id) cliente = await get(`SELECT * FROM clienti WHERE id=?`, [pren.cliente_id]).catch(()=>null);
+  }
+  const tel = v137Phone(q.telefono || pren?.telefono || '');
+  const cf = v137Upper(q.codice_fiscale || pren?.codice_fiscale || '');
+  if (!cliente && cf) cliente = await get(`SELECT * FROM clienti WHERE UPPER(COALESCE(codice_fiscale,cf,''))=? ORDER BY id DESC LIMIT 1`, [cf]).catch(()=>null);
+  if (!cliente && tel) {
+    const rows = await all(`SELECT * FROM clienti WHERE COALESCE(telefono,'')<>'' ORDER BY id DESC`).catch(()=>[]);
+    cliente = (rows||[]).find(r => v137Phone(r.telefono) === tel) || null;
+  }
+  return { cliente, pren };
+}
+function v142MergeClientePrenota(query, found){
+  const out = Object.assign({}, query || {});
+  const c = found?.cliente || {};
+  const pr = found?.pren || {};
+  const fill = (k, v) => { if ((out[k] === undefined || out[k] === null || out[k] === '') && v !== undefined && v !== null && String(v) !== '') out[k] = v; };
+  // dati anagrafica esistente
+  ['nome','cognome','telefono','email','codice_fiscale','indirizzo','citta','provincia','cap','data_nascita','luogo_nascita','documento_numero','documento_scadenza','patente_numero','patente_scadenza','categoria_patente','tipo_cliente','ragione_sociale','piva','partita_iva','pec','sdi','codice_sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(k => fill(k, c[k]));
+  // dati pratica WhatsApp/restanti
+  ['categoria','data_inizio','data_fine','ora_inizio','ora_fine','km_previsti'].forEach(k => fill(k, pr[k]));
+  if (c.id) out.cliente_riconosciuto = '1';
+  if (pr.id && !out.ref) out.ref = pr.id;
+  return out;
+}
+
+app.get('/prenota', async (req, res) => {
   res.setHeader('Content-Type','text/html; charset=utf-8');
+  try {
+    const found = await v142FindClientePerPrenota(req.query || {});
+    if (found.cliente || found.pren) req.query = v142MergeClientePrenota(req.query || {}, found);
+  } catch(e) { console.log('V142 riconoscimento cliente warning:', e.message); }
   res.send(clienteWebHtml(req));
 });
 
@@ -3878,7 +3929,12 @@ app.post('/prenota-ocr', upload.fields([
     // se OCR riconosce patente con data_scadenza ma documento già pieno, non sovrascrivo. Serve comunque modifica manuale.
     if (m.numero_patente && m.data_scadenza && !q.get('patente_scadenza')) q.set('patente_scadenza', m.data_scadenza);
 
-    res.redirect('/prenota?' + q.toString());
+    const href = '/prenota?' + q.toString();
+    // V141: niente redirect automatico dopo OCR su Safari/iPhone.
+    // Mostro una pagina leggera con pulsante: evita loop "errore ripetuto" al primo invio.
+    return res.send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+      <style>body{font-family:Arial;padding:24px;background:#f4f4f4}.box{background:white;border-radius:22px;padding:24px;max-width:680px;margin:auto;box-shadow:0 10px 30px #0002}.btn{display:block;text-align:center;background:#0b8f3a;color:white;padding:20px;border-radius:18px;font-size:24px;font-weight:800;text-decoration:none;margin-top:18px}.btn2{background:#333}</style>
+      <div class="box"><h1>✅ OCR completato</h1><p>I documenti sono stati letti. Ora controlla i dati compilati e prosegui con la richiesta.</p><a class="btn" href="${esc(href)}">Continua prenotazione</a><a class="btn btn2" href="javascript:history.back()">Indietro</a></div>`);
   } catch (e) {
     res.status(500).send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Errore OCR</h1><pre>${esc(e.stack || e.message)}</pre><p>Controlla OPENAI_API_KEY su Render.</p><a href="javascript:history.back()">Torna</a>`);
   }
@@ -3938,7 +3994,7 @@ app.post('/prenota-cliente', upload.fields([
     if (!mezzo) {
       for (const m of mezzi) {
         // Se sto aggiornando la stessa pratica, ignoro la sua occupazione; altrimenti queryDisponibilita la vede occupata da se stessa.
-        const occ = await queryDisponibilita(m.id, b.data_inizio, b.data_fine);
+        const occ = await queryDisponibilita(m.id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00', existingPren?.id || 0);
         if (!occ || (existingPren && Number(occ.id) === Number(existingPren.id))) { mezzo = m; break; }
       }
     }
@@ -4015,7 +4071,7 @@ app.post('/prenota-cliente', upload.fields([
     // Notifica interna se il bot Twilio è configurato
     try {
       if (typeof dpNotify === 'function') {
-        await dpNotify(DP_STAFF_NUMBERS || [], `NUOVA RICHIESTA NOLEGGIO CLIENTE\n\nCodice: ${cod}\nCliente: ${b.nome || ''} ${b.cognome || ''}\nTel: ${b.telefono || ''}\nMezzo richiesto: ${categoriaRichiesta || ''}
+        await dpNotifyOncePren(result.lastID, 'dati_cliente_completati', DP_STAFF_NUMBERS || [], `NUOVA RICHIESTA NOLEGGIO CLIENTE\n\nCodice: ${cod}\nCliente: ${b.nome || ''} ${b.cognome || ''}\nTel: ${b.telefono || ''}\nMezzo richiesto: ${categoriaRichiesta || ''}
 Mezzo assegnato: ${(mezzo.targa || '') + ' ' + (mezzo.marca || '') + ' ' + (mezzo.modello || '')}\nPeriodo: ${b.data_inizio} - ${b.data_fine}\nTotale previsto: EUR ${euro(calc.totale)}\nAllegati: ${files.length}\n\nApri gestionale: ${(process.env.APP_BASE_URL || '').replace(/\/+$/,'')}/prenotazione/${result.lastID}`);
       }
     } catch(e) { console.log('Notifica cliente warning:', e.message); }
@@ -5668,6 +5724,12 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
       }
     }
 
+    let pdfDriveWarning = false;
+    if (!pdfLink) {
+      pdfDriveWarning = true;
+      pdfLink = absoluteUrl(req, `/contratto/${p.id}/pdf`);
+    }
+
     const firmaLink = absoluteUrl(req, `/firma/${p.id}`);
     const testo =
       `DP RENT - Contratto ${p.codice || p.id}\n` +
@@ -5677,7 +5739,7 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
       `Firma online: ${firmaLink}`;
 
     const r = await dpNotify([tel], testo);
-    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p>${pdfLink ? `<p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>` : '<p class="warn">PDF Drive non disponibile: controlla configurazione Google Drive.</p>'}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
+    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>${pdfDriveWarning ? '<p class="warn">Drive non disponibile per il PDF: inviato link PDF locale Render.</p>' : ''}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
   } catch (e) {
     res.status(500).send(page('Errore invio contratto WhatsApp', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
   }
@@ -7229,7 +7291,7 @@ async function dpFindAvailableVehicle(catInfo, startIso, endIso){
   mezzi = (mezzi || []).filter(m => dpVehicleMatchesCat(m, catInfo));
   for(const m of mezzi){
     try{
-      const occ = await queryDisponibilita(m.id, startIso, endIso);
+      const occ = await queryDisponibilita(m.id, startIso, endIso, '08:30', '18:00');
       if(!occ) return m;
     }catch(e){ return m; }
   }
@@ -7297,6 +7359,23 @@ async function dpSaveWhatsAppQuote(session, from, profileName, status){
 }
 async function dpUpdateWhatsAppQuote(session, stato){
   try{ if(session?.data?.prenotazione_id) await run(`UPDATE prenotazioni SET stato=?, note=COALESCE(note,'') || ? WHERE id=?`, [stato, '\nAggiornamento WhatsApp: '+stato, session.data.prenotazione_id]); }catch(e){ console.log('Update preventivo WhatsApp:', e.message); }
+}
+async function dpNotifyOncePren(prenId, step, recipients, message){
+  if(!prenId) return dpNotify(recipients, message);
+  const marker = `[NOTIFIED_STEP:${step}]`;
+  try {
+    const p = await get(`SELECT id,note FROM prenotazioni WHERE id=?`, [prenId]).catch(()=>null);
+    if(p && String(p.note || '').includes(marker)) {
+      console.log('Notifica già inviata, salto:', prenId, step);
+      return { ok:true, skipped:true };
+    }
+    const r = await dpNotify(recipients, message);
+    if(r && r.ok) await run(`UPDATE prenotazioni SET note=COALESCE(note,'') || ? WHERE id=?`, ['\n'+marker, prenId]).catch(()=>{});
+    return r;
+  } catch(e) {
+    console.log('dpNotifyOnce warning:', e.message);
+    return dpNotify(recipients, message);
+  }
 }
 const DP_OFFICINA_SLOTS = (process.env.OFFICINA_SLOTS || '08:30,09:30,10:30,11:30,14:30,15:30,16:30,17:30')
   .split(',')
@@ -7526,7 +7605,7 @@ async function dpHandleWhatsApp(req,res){
     const appBaseQuote = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
     const quoteAdminLink = savedQuote.ok ? `${appBaseQuote}/prenotazione/${savedQuote.id}` : `${appBaseQuote}/richieste-attesa`;
     try {
-      await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO GENERATO - IN ATTESA SI/NO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}\nTotale: EUR ${euro(calc.totale || 0)}\n\nNota interna mezzo assegnabile: ${mezzo.marca || ''} ${mezzo.modello || ''} ${mezzo.targa || ''}\n\nApri in app: ${quoteAdminLink}
+      await dpNotifyOncePren(savedQuote.id, 'preventivo_generato', DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO GENERATO - IN ATTESA SI/NO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${km}\nTotale: EUR ${euro(calc.totale || 0)}\n\nNota interna mezzo assegnabile: ${mezzo.marca || ''} ${mezzo.modello || ''} ${mezzo.targa || ''}\n\nApri in app: ${quoteAdminLink}
 
 Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
     } catch(e) { console.log('Notifica preventivo warning:', e.message); }
@@ -7552,7 +7631,7 @@ Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
     const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
     const link = `${base}/prenota?${q.toString()}`;
     await dpUpdateWhatsAppQuote(session, 'richiesta_cliente');
-    await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
+    await dpNotifyOncePren(session.data.prenotazione_id, 'preventivo_confermato', DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
     delete DP_BOT_SESSIONS[from];
     return dpTwimlResponse(res, `Perfetto ${EMJ.ok}\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verra preparato il contratto definitivo.`);
   }
