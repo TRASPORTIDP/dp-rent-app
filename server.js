@@ -2391,7 +2391,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V132 - fatturazione azienda completa e toggle privato/azienda'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V137 - archivi unici documenti e attese pulite'));
 
 
 // =========================
@@ -2425,11 +2425,12 @@ async function v123FindOrCreateClienteFromPrenotazione(prenId){
     pec:p.pec||'', sdi:p.sdi||p.codice_sdi||'', codice_sdi:p.codice_sdi||p.sdi||'',
     indirizzo_fatturazione:p.indirizzo_fatturazione||p.indirizzo||'', citta_fatturazione:p.citta_fatturazione||p.citta||'', provincia_fatturazione:p.provincia_fatturazione||p.provincia||'', cap_fatturazione:p.cap_fatturazione||p.cap||''
   };
-  if(c){ await v123UpdateExisting('clienti','id',c.id,data).catch(()=>{}); return c.id; }
+  if(c){ await v123UpdateExisting('clienti','id',c.id,data).catch(()=>{}); await run(`UPDATE prenotazioni SET cliente_id=? WHERE id=?`, [c.id, prenId]).catch(()=>{}); return c.id; }
   const cols = await v123TableColumns('clienti');
   const keys = Object.keys(data).filter(k => cols.includes(k));
   if(!keys.length) return null;
   const r = await run(`INSERT INTO clienti (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`, keys.map(k=>data[k]));
+  await run(`UPDATE prenotazioni SET cliente_id=? WHERE id=?`, [r.lastID, prenId]).catch(()=>{});
   return r.lastID;
 }
 async function v123CollegaAllegatiPrenotazioneACliente(prenId){
@@ -2491,16 +2492,103 @@ function salvaClienteStorico(dati, cb) {
   } else doInsert();
 }
 
+
+// =========================
+// V137 - ARCHIVIO UNICO REALE / ATTENE PULITE / CLIENTE UNICO
+// =========================
+try {
+  addColumn('clienti','provincia','TEXT'); addColumn('clienti','tipo_cliente','TEXT'); addColumn('clienti','ragione_sociale','TEXT');
+  addColumn('clienti','piva','TEXT'); addColumn('clienti','partita_iva','TEXT'); addColumn('clienti','pec','TEXT'); addColumn('clienti','sdi','TEXT'); addColumn('clienti','codice_sdi','TEXT');
+  addColumn('clienti','indirizzo_fatturazione','TEXT'); addColumn('clienti','citta_fatturazione','TEXT'); addColumn('clienti','provincia_fatturazione','TEXT'); addColumn('clienti','cap_fatturazione','TEXT');
+  addColumn('clienti','documento_file','TEXT'); addColumn('clienti','patente_file','TEXT');
+  addColumn('prenotazioni','cliente_id','INTEGER'); addColumn('prenotazioni','tipo_record','TEXT'); addColumn('prenotazioni','provincia','TEXT');
+  addColumn('prenotazioni','partita_iva','TEXT'); addColumn('prenotazioni','codice_sdi','TEXT'); addColumn('prenotazioni','indirizzo_fatturazione','TEXT');
+  addColumn('prenotazioni','citta_fatturazione','TEXT'); addColumn('prenotazioni','provincia_fatturazione','TEXT'); addColumn('prenotazioni','cap_fatturazione','TEXT');
+  addColumn('allegati','cliente_id','INTEGER'); addColumn('allegati','size','INTEGER');
+} catch(e) { console.log('V137 colonne skip:', e.message); }
+
+function v137Phone(v){ return String(v||'').replace('whatsapp:','').replace(/\D/g,''); }
+function v137Upper(v){ return String(v||'').trim().toUpperCase(); }
+function v137AttesaKey(p){
+  const cat = categoriaClienteNorm(p.categoria || p.tipo || p.mezzo || '');
+  return [v137Phone(p.telefono), cat, p.data_inizio||'', p.data_fine||'', String(p.km_previsti||''), Number(p.totale||0).toFixed(2)].join('|');
+}
+async function v137UpsertClienteFromData(dati){
+  const d = dati || {};
+  const cf = v137Upper(d.codice_fiscale || d.cf);
+  const tel = v137Phone(d.telefono);
+  let old = null;
+  if (cf) old = await get(`SELECT * FROM clienti WHERE UPPER(COALESCE(codice_fiscale,cf,''))=? ORDER BY id DESC LIMIT 1`, [cf]).catch(()=>null);
+  if (!old && tel) {
+    const rows = await all(`SELECT * FROM clienti WHERE telefono IS NOT NULL AND telefono<>'' ORDER BY id DESC`).catch(()=>[]);
+    old = (rows||[]).find(r => v137Phone(r.telefono) === tel) || null;
+  }
+  const data = {
+    nome:d.nome||'', cognome:d.cognome||'', telefono:d.telefono||'', email:d.email||'', codice_fiscale:cf, cf:cf,
+    indirizzo:d.indirizzo||'', citta:d.citta||'', provincia:d.provincia||'', cap:d.cap||'',
+    data_nascita:d.data_nascita||'', luogo_nascita:d.luogo_nascita||'',
+    documento_numero:d.documento_numero||d.doc_numero||'', documento_scadenza:d.documento_scadenza||'',
+    patente_numero:d.patente_numero||d.patente1||'', patente_scadenza:d.patente_scadenza||d.patente1_scadenza||'', categoria_patente:d.categoria_patente||'',
+    tipo_cliente:d.tipo_cliente||'privato', ragione_sociale:d.ragione_sociale||d.azienda||'', piva:d.piva||d.partita_iva||'', partita_iva:d.partita_iva||d.piva||'',
+    pec:d.pec||'', sdi:d.sdi||d.codice_sdi||'', codice_sdi:d.codice_sdi||d.sdi||'',
+    indirizzo_fatturazione:d.indirizzo_fatturazione||d.indirizzo_azienda||d.indirizzo||'',
+    citta_fatturazione:d.citta_fatturazione||d.citta_azienda||d.citta||'', provincia_fatturazione:d.provincia_fatturazione||d.provincia_azienda||d.provincia||'', cap_fatturazione:d.cap_fatturazione||d.cap_azienda||d.cap||'',
+    note:d.note_cliente||d.note||''
+  };
+  const cols = await v123TableColumns('clienti');
+  const keys = Object.keys(data).filter(k => cols.includes(k));
+  if (old && old.id) {
+    const updateKeys = keys.filter(k => data[k] !== '' && data[k] !== null && data[k] !== undefined);
+    if(updateKeys.length) await run(`UPDATE clienti SET ${updateKeys.map(k=>`${k}=?`).join(', ')}, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [...updateKeys.map(k=>data[k]), old.id]).catch(async()=>{
+      await run(`UPDATE clienti SET ${updateKeys.map(k=>`${k}=?`).join(', ')} WHERE id=?`, [...updateKeys.map(k=>data[k]), old.id]).catch(()=>{});
+    });
+    return old.id;
+  }
+  const r = await run(`INSERT INTO clienti (${keys.join(',')}) VALUES (${keys.map(()=>'?').join(',')})`, keys.map(k=>data[k]));
+  return r.lastID;
+}
+
+salvaClienteStorico = function(dati, cb){
+  v137UpsertClienteFromData(dati).then(id => cb && cb(null, id)).catch(err => cb && cb(err));
+};
+
+async function v137EnsurePrenCliente(prenId){
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenId]).catch(()=>null);
+  if(!p) return null;
+  const cid = await v137UpsertClienteFromData(p).catch(()=>null);
+  if(cid){
+    await run(`UPDATE prenotazioni SET cliente_id=? WHERE id=?`, [cid, prenId]).catch(()=>{});
+    await run(`UPDATE allegati SET cliente_id=? WHERE prenotazione_id=? AND (cliente_id IS NULL OR cliente_id=0 OR cliente_id='')`, [cid, prenId]).catch(()=>{});
+  }
+  return cid;
+}
+
+async function v137CleanupAtteseDuplicates(){
+  const rows = await all(`SELECT * FROM prenotazioni WHERE COALESCE(stato,'') IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') ORDER BY id DESC`).catch(()=>[]);
+  const seen = new Set(); let hidden = 0;
+  for(const r of rows||[]){
+    const key = v137AttesaKey(r);
+    if(seen.has(key)){
+      await run(`UPDATE prenotazioni SET stato='eliminato_attesa', note=COALESCE(note,'') || ? WHERE id=?`, ['\nV137 nascosta perché duplicata in attesa', r.id]).catch(()=>{});
+      hidden++;
+    } else seen.add(key);
+  }
+  return hidden;
+}
+async function v137AtteseRows(){
+  await v137CleanupAtteseDuplicates().catch(()=>{});
+  const rows = await all(`SELECT * FROM prenotazioni WHERE COALESCE(stato,'') IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') ORDER BY id DESC`).catch(()=>[]);
+  const seen = new Set(); const out=[];
+  for(const r of rows||[]){ const k=v137AttesaKey(r); if(!seen.has(k)){ seen.add(k); out.push(r); } }
+  return out;
+}
+
 app.get('/', async (req, res) => {
   try {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
     const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`);
-    const condAttesaDash = `COALESCE(stato,'') IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp')`;
-    const attesa = await get(`SELECT COUNT(*) as tot FROM (
-      SELECT MAX(id) FROM prenotazioni
-      WHERE ${condAttesaDash}
-      GROUP BY REPLACE(REPLACE(COALESCE(telefono,''),'whatsapp:',''),'+',''), CASE WHEN UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%9%' OR UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%POSTI%' THEN '9_POSTI' WHEN UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%FURG%' THEN 'FURGONE' ELSE UPPER(COALESCE(categoria,tipo,mezzo,'')) END, COALESCE(data_inizio,''), COALESCE(data_fine,''), COALESCE(km_previsti,''), ROUND(COALESCE(totale,0),2)
-    ) x`);
+    const atteseRowsV137 = await v137AtteseRows();
+    const attesa = { tot: atteseRowsV137.length };
     const allMezzi = await all(`SELECT * FROM mezzi`);
     const alerts = allMezzi.map(m => {
       const a = alertMezzo(m);
@@ -2520,7 +2608,7 @@ app.get('/', async (req, res) => {
         <a class="tile" href="/cargos"><span>&#128666;</span>Ca.R.G.O.S.</a>
       </div>
       ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a> <a class="btn btn2" href="/admin/pulisci-attese-duplicate">Pulisci doppioni</a></div>` : ``}
-      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V136 STABILE ARCHIVI + CARGOS</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
+      <div class="box" style="border:3px solid #c60000"><h2>VERSIONE ATTIVA: V137 ARCHIVIO UNICO OK</h2><p class="ok">Se vedi questo riquadro, Render ha preso la versione nuova.</p></div>
       <div class="box">
         <h2>Gestionale DP RENT attivo</h2>
         <p>Mezzi caricati: <b>${mezzi ? mezzi.tot : 0}</b></p>
@@ -2541,21 +2629,11 @@ app.get('/', async (req, res) => {
 
 app.get('/richieste-attesa', async (req, res) => {
   try {
-    const condAttesa = `COALESCE(stato,'') IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp')`;
-    const rows = await all(`SELECT * FROM prenotazioni p
-      WHERE ${condAttesa}
-        AND p.id IN (
-          SELECT MAX(id) FROM prenotazioni
-          WHERE ${condAttesa}
-          GROUP BY REPLACE(REPLACE(COALESCE(telefono,''),'whatsapp:',''),'+',''), CASE WHEN UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%9%' OR UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%POSTI%' THEN '9_POSTI' WHEN UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%FURG%' THEN 'FURGONE' ELSE UPPER(COALESCE(categoria,tipo,mezzo,'')) END, COALESCE(data_inizio,''), COALESCE(data_fine,''), COALESCE(km_previsti,''), ROUND(COALESCE(totale,0),2)
-        )
-      ORDER BY p.id DESC LIMIT 100`);
-    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi i preventivi generati dal bot WhatsApp e le richieste compilate dal cliente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a><form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Vuoi davvero eliminare questo cliente in attesa?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`}</table></div>`));
-  } catch(e) {
-    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore clienti in attesa</h2><pre>${esc(e.message)}</pre></div>`));
-  }
+    const rows = await v137AtteseRows();
+    const trs = rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a><form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Vuoi davvero eliminare questo cliente in attesa?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`;
+    res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi solo le richieste reali ancora da lavorare. I doppioni vengono nascosti automaticamente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${trs}</table></div>`));
+  } catch(e) { res.status(500).send(page('Errore attese', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
-
 
 app.post('/richieste-attesa/:id/elimina', async (req,res)=>{
   try{
@@ -3861,13 +3939,21 @@ app.post('/prenota-cliente', upload.fields([
     }
     const result = { lastID: targetId };
 
-    // Salva cliente nello storico clienti per non reinserirlo ogni volta
-    try { salvaClienteStorico({
-      nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
-      indirizzo:b.indirizzo, citta:b.citta, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
-      documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
-      patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente, tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva, pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
-    }, ()=>{}); } catch(_) {}
+    // V137: salva/aggiorna il cliente unico e collega la pratica allo stesso cliente
+    let clienteIdV137 = null;
+    try {
+      clienteIdV137 = await v137UpsertClienteFromData({
+        nome:b.nome, cognome:b.cognome, telefono:b.telefono, email:b.email, codice_fiscale:b.codice_fiscale,
+        indirizzo:b.indirizzo, citta:b.citta, provincia:b.provincia, cap:b.cap, data_nascita:b.data_nascita, luogo_nascita:b.luogo_nascita,
+        documento_numero:b.documento_numero, documento_scadenza:b.documento_scadenza,
+        patente_numero:b.patente_numero, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
+        tipo_cliente:b.tipo_cliente || 'privato', ragione_sociale:b.ragione_sociale, piva:b.partita_iva || b.piva, partita_iva:b.partita_iva || b.piva,
+        pec:b.pec, sdi:b.codice_sdi || b.sdi, codice_sdi:b.codice_sdi || b.sdi,
+        indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta,
+        provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap
+      });
+      if (clienteIdV137) await run(`UPDATE prenotazioni SET cliente_id=? WHERE id=?`, [clienteIdV137, targetId]).catch(()=>{});
+    } catch(e) { console.log('V137 cliente unico warning:', e.message); }
 
     const files = [];
     for (const [tipo, arr] of Object.entries(req.files || {})) {
@@ -3878,11 +3964,14 @@ app.post('/prenota-cliente', upload.fields([
       delete PREN_OCR_UPLOADS[b.preupload_id];
     }
     for (const item of files) {
-      await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`,
-        [result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]);
+      await run(`INSERT INTO allegati (cliente_id,prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?,?)`,
+        [clienteIdV137 || null, result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]).catch(async()=>{
+          await run(`INSERT INTO allegati (prenotazione_id,tipo,filename,originalname,path,mimetype,size) VALUES (?,?,?,?,?,?,?)`,
+            [result.lastID, item.tipo, item.f.filename, item.f.originalname, item.f.path, item.f.mimetype, item.f.size]);
+        });
     }
-    // V123: collega anche all'archivio cliente interno, non solo Drive/contratto.
-    try { await v123CollegaAllegatiPrenotazioneACliente(result.lastID); } catch(e) { console.log('V123 collega archivio cliente warning:', e.message); }
+    // V137: collega sempre anche all'archivio cliente interno, non solo Drive/contratto.
+    try { await v137EnsurePrenCliente(result.lastID); } catch(e) { console.log('V137 collega archivio cliente warning:', e.message); }
 
     try { if (typeof uploadContractAssetsToDrive === 'function') await uploadContractAssetsToDrive(result.lastID); } catch(e) { console.log('Drive cliente warning:', e.message); }
 
@@ -5751,14 +5840,7 @@ app.use((err, req, res, next) => {
 // V135 utility: pulizia doppioni clienti in attesa (mantiene solo ultimo per telefono/mezzo/date/km)
 app.get('/admin/pulisci-attese-duplicate', async (req,res)=>{
   try{
-    const cond = `COALESCE(stato,'') IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp')`;
-    const dups = await all(`SELECT GROUP_CONCAT(id) ids, MAX(id) keep_id, COUNT(*) c FROM prenotazioni WHERE ${cond} GROUP BY REPLACE(REPLACE(COALESCE(telefono,''),'whatsapp:',''),'+',''), CASE WHEN UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%9%' OR UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%POSTI%' THEN '9_POSTI' WHEN UPPER(COALESCE(categoria,'')||' '||COALESCE(tipo,'')||' '||COALESCE(mezzo,'')) LIKE '%FURG%' THEN 'FURGONE' ELSE UPPER(COALESCE(categoria,tipo,mezzo,'')) END, COALESCE(data_inizio,''), COALESCE(data_fine,''), COALESCE(km_previsti,''), ROUND(COALESCE(totale,0),2) HAVING c>1`);
-    let n=0;
-    for(const g of dups||[]){
-      const ids=String(g.ids||'').split(',').map(x=>Number(x)).filter(Boolean).filter(x=>x!==Number(g.keep_id));
-      for(const id of ids){ await run(`UPDATE prenotazioni SET stato='eliminato_attesa', note=COALESCE(note,'') || '
-V135 nascosta perché duplicata in attesa' WHERE id=?`, [id]); n++; }
-    }
+    const n = await v137CleanupAtteseDuplicates();
     res.send(page('Pulizia attese duplicate', `<div class="box"><h2 class="ok">Pulizia completata</h2><p>Doppioni nascosti: <b>${n}</b></p><a class="btn" href="/richieste-attesa">Clienti in attesa</a><a class="btn btn2" href="/">Dashboard</a></div>`));
   }catch(e){ res.status(500).send(page('Errore pulizia', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
@@ -7626,15 +7708,23 @@ app.post('/allegato/:id/elimina', async (req,res)=>{
 // V136 sincronizza allegati già caricati su pratiche verso il cliente collegato
 app.get('/admin/sincronizza-documenti-clienti', async (req,res)=>{
   try{
-    const rows = await all(`SELECT a.id aid, p.cliente_id cid FROM allegati a JOIN prenotazioni p ON p.id=a.prenotazione_id WHERE p.cliente_id IS NOT NULL AND (a.cliente_id IS NULL OR a.cliente_id=0)`).catch(()=>[]);
-    let n=0;
-    for(const r of rows||[]){ await run(`UPDATE allegati SET cliente_id=? WHERE id=?`, [r.cid, r.aid]).catch(()=>{}); n++; }
-    res.send(page('Sync documenti', `<div class="box"><h2 class="ok">Sincronizzazione completata</h2><p>Documenti collegati ai clienti: <b>${n}</b></p><a class="btn" href="/documenti-clienti">Archivio documenti</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+    const pren = await all(`SELECT * FROM prenotazioni`).catch(()=>[]);
+    let pratiche=0, allegati=0;
+    for(const p of pren||[]){
+      const cid = await v137EnsurePrenCliente(p.id).catch(()=>null);
+      if(cid) pratiche++;
+    }
+    const orphan = await all(`SELECT * FROM allegati WHERE (cliente_id IS NULL OR cliente_id=0 OR cliente_id='') AND prenotazione_id IS NOT NULL`).catch(()=>[]);
+    for(const a of orphan||[]){
+      const cid = await v137EnsurePrenCliente(a.prenotazione_id).catch(()=>null);
+      if(cid){ await run(`UPDATE allegati SET cliente_id=? WHERE id=?`, [cid, a.id]).catch(()=>{}); allegati++; }
+    }
+    res.send(page('Sync documenti', `<div class="box"><h2 class="ok">Sincronizzazione completata</h2><p>Pratiche collegate ai clienti: <b>${pratiche}</b></p><p>Documenti collegati ai clienti: <b>${allegati}</b></p><a class="btn" href="/documenti-clienti">Archivio documenti</a><a class="btn btn2" href="/">Dashboard</a></div>`));
   }catch(e){ res.status(500).send(page('Errore sync documenti', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V136 stabile porta ' + PORT);
+  console.log('DP RENT APP V137 stabile porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
 });
 
@@ -7918,16 +8008,35 @@ function v108DocRows(files){
 }
 
 app.get('/documenti-clienti', async (req,res)=>{
-  const rows = await all(`SELECT c.*, (SELECT COUNT(*) FROM allegati a WHERE a.tipo LIKE 'cliente_%' AND (a.prenotazione_id IS NULL OR a.prenotazione_id=0) AND (a.originalname LIKE '%'||c.cognome||'%' OR a.originalname LIKE '%'||c.nome||'%')) as docs FROM clienti c ORDER BY updated_at DESC, id DESC LIMIT 300`).catch(()=>[]);
-  const trs = rows.map(c=>`<tr><td><b>${esc(c.nome)} ${esc(c.cognome)}</b><br><span class="muted">${esc(c.telefono||'')} ${esc(c.email||'')}</span></td><td>${esc(c.codice_fiscale||'')}</td><td>${esc(c.documento_numero||'')}<br>${esc(c.patente_numero||'')}</td><td><a class="btn btn3" href="/cliente/${c.id}/documenti">Archivio</a> <a class="btn" href="/nuova-da-cliente/${c.id}">Contratto</a></td></tr>`).join('');
-  res.send(page('Documenti clienti', `<div class="premium-card"><h2>Archivio documenti clienti</h2><p>Carica e conserva carta identità, patente, codice fiscale e documenti azienda su disco persistente Render.</p><a class="btn" href="/clienti">Vai ai clienti</a></div><table><tr><th>Cliente</th><th>CF</th><th>Documento / Patente</th><th>Azioni</th></tr>${trs || '<tr><td colspan="4">Nessun cliente.</td></tr>'}</table>`));
+  const rows = await all(`SELECT c.*,
+    (SELECT COUNT(*) FROM allegati a WHERE a.cliente_id=c.id OR a.prenotazione_id IN (SELECT id FROM prenotazioni p WHERE p.cliente_id=c.id)) as docs
+    FROM clienti c ORDER BY updated_at DESC, id DESC LIMIT 300`).catch(()=>[]);
+  const trs = rows.map(c=>`<tr><td><b>${esc(c.nome)} ${esc(c.cognome)}</b><br><span class="muted">${esc(c.telefono||'')} ${esc(c.email||'')}</span></td><td>${esc(c.codice_fiscale||c.cf||'')}</td><td>${esc(c.documento_numero||'')}<br>${esc(c.patente_numero||'')}</td><td><b>${c.docs||0}</b> file</td><td><a class="btn btn3" href="/cliente/${c.id}/documenti">Archivio</a> <a class="btn" href="/nuova-da-cliente/${c.id}">Contratto</a></td></tr>`).join('');
+  res.send(page('Documenti clienti', `<div class="premium-card"><h2>Archivio documenti clienti</h2><p>Qui vedi i documenti veri collegati al cliente unico: upload cliente, OCR, pratica e ufficio.</p><a class="btn" href="/clienti">Vai ai clienti</a> <a class="btn btn2" href="/admin/sincronizza-documenti-clienti">Sincronizza documenti</a></div><table><tr><th>Cliente</th><th>CF</th><th>Documento / Patente</th><th>File</th><th>Azioni</th></tr>${trs || '<tr><td colspan="5">Nessun cliente.</td></tr>'}</table>`));
 });
 
 app.get('/cliente/:id/documenti', async (req,res)=>{
   const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
   if(!c) return res.redirect('/clienti');
-  const files = await all(`SELECT DISTINCT a.* FROM allegati a LEFT JOIN prenotazioni p ON p.id=a.prenotazione_id WHERE a.cliente_id=? OR p.cliente_id=? OR (COALESCE(p.telefono,'')<>'' AND REPLACE(REPLACE(p.telefono,'whatsapp:',''),'+','') = REPLACE(REPLACE(COALESCE(? ,''),'whatsapp:',''),'+','')) OR (COALESCE(p.codice_fiscale,p.cf,'')<>'' AND UPPER(COALESCE(p.codice_fiscale,p.cf,'')) = UPPER(COALESCE(? ,''))) OR (a.prenotazione_id IS NULL AND a.tipo LIKE 'cliente_%' AND a.originalname LIKE ?) ORDER BY a.id DESC`, [req.params.id, req.params.id, c.telefono||'', c.codice_fiscale||c.cf||'', `%${c.cognome||''}%`]).catch(()=>[]);
-  res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identità / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri</th></tr>${v108DocRows(files)}</table>`));
+  const tel = v137Phone(c.telefono||'');
+  const cf = v137Upper(c.codice_fiscale||c.cf||'');
+  const pratiche = await all(`SELECT id FROM prenotazioni WHERE cliente_id=? OR REPLACE(REPLACE(COALESCE(telefono,''),'whatsapp:',''),'+','')=? OR UPPER(COALESCE(codice_fiscale,cf,''))=?`, [c.id, tel, cf]).catch(()=>[]);
+  const ids = (pratiche||[]).map(x=>Number(x.id)).filter(Boolean);
+  let files = [];
+  if(ids.length){
+    const marks = ids.map(()=>'?').join(',');
+    files = await all(`SELECT * FROM allegati WHERE cliente_id=? OR prenotazione_id IN (${marks}) ORDER BY id DESC`, [c.id, ...ids]).catch(()=>[]);
+    await run(`UPDATE allegati SET cliente_id=? WHERE prenotazione_id IN (${marks}) AND (cliente_id IS NULL OR cliente_id=0 OR cliente_id='')`, [c.id, ...ids]).catch(()=>{});
+  } else {
+    files = await all(`SELECT * FROM allegati WHERE cliente_id=? ORDER BY id DESC`, [c.id]).catch(()=>[]);
+  }
+  const seen = new Set();
+  files = (files||[]).filter(a=>{ const k=[a.tipo,a.filename,a.originalname,a.size].join('|'); if(seen.has(k)) return false; seen.add(k); return true; });
+  const rows = files.map(a=>{
+    const href = a.drive_web_link || ('/uploads/' + encodeURIComponent(path.basename(a.path||a.filename||'')));
+    return `<tr><td>${esc(a.tipo||'documento')}</td><td>${esc(a.originalname||a.filename||'file')}</td><td>${esc(a.created_at||'')}</td><td><a class="btn btn2" target="_blank" href="${esc(href)}">Apri</a><form method="POST" action="/allegato/${a.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare documento?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`;
+  }).join('') || '<tr><td colspan="4">Nessun documento caricato.</td></tr>';
+  res.send(page('Archivio documenti cliente', `<div class="premium-card"><h2>Documenti: ${esc(c.nome)} ${esc(c.cognome)}</h2><p><b>CF:</b> ${esc(c.codice_fiscale||c.cf||'')} | <b>Tel:</b> ${esc(c.telefono||'')}</p><form method="POST" action="/cliente/${c.id}/documenti" enctype="multipart/form-data"><div class="grid"><div><label>Tipo documento</label><select name="tipo"><option value="cliente_documento">Carta identità / documento</option><option value="cliente_patente">Patente</option><option value="cliente_cf">Codice fiscale</option><option value="cliente_azienda">Documento azienda</option><option value="cliente_altro">Altro</option></select></div><div><label>File</label><input type="file" name="file" accept="image/*,.pdf" required></div></div><button>Carica documento</button></form><div class="big-actions"><a class="btn" href="/nuova-da-cliente/${c.id}">Crea contratto con dati auto-compilati</a><a class="btn btn2" href="/cliente/${c.id}">Scheda cliente</a></div></div><table><tr><th>Tipo</th><th>Nome file</th><th>Data</th><th>Apri / elimina</th></tr>${rows}</table>`));
 });
 
 app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
