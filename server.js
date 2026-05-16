@@ -92,24 +92,24 @@ function v63ContractButtons(p){
   if (!id) return '';
   const tipo = String((p && (p.tipo_record || p.stato)) || '').toLowerCase();
   const converti = (tipo.includes('preventivo') || tipo === 'bozza')
-    ? `<a class="btn btn2" href="/prenotazione/${id}/converti-contratto">🔁 Trasforma in contratto</a>`
+    ? `<a class="btn dp-dark" href="/prenotazione/${id}/converti-contratto">🔁 Trasforma in contratto</a>`
     : '';
   return `
-    <div class="dp-action-grid contract-main-actions">
+    <div class="dp-actions contract-main-actions">
+      <a class="btn dp-danger" href="/prenotazione/${id}/modifica">✏️ Modifica</a>
+      ${converti}
+      <a class="btn dp-dark" href="/firma/${id}">✍️ Firma sul dispositivo</a>
+      <a class="btn dp-green" href="/firma-whatsapp/${id}">📲 Invia firma WhatsApp</a>
+      <a class="btn dp-green" href="/contratto/${id}/invia-whatsapp">📤 Invia contratto WhatsApp</a>
+      <a class="btn dp-dark" href="/contratto/${id}/email">📧 Invia email</a>
+      <a class="btn dp-dark" href="/documenti/${id}">📸 Foto/documenti</a>
+      <a class="btn dp-primary" href="/checkout/${id}">📤 Check-out</a>
+      <a class="btn dp-green" href="/checkin/${id}">📥 Check-in</a>
       <a class="btn dp-primary" href="/contratto/${id}">👁 Vedi contratto</a>
       <a class="btn dp-danger" href="/pdf-view/${id}">📄 PDF</a>
       <a class="btn dp-dark" href="/cargos/check/${id}">🚚 Ca.R.G.O.S.</a>
       <a class="btn dp-green" href="/nexi/${id}">💳 Nexi</a>
-      <a class="btn" href="/prenotazione/${id}/modifica">✏️ Modifica</a>
-      ${converti}
-      <a class="btn btn2" href="/firma/${id}">✍️ Firma sul dispositivo</a>
-      <a class="btn dp-primary" href="/checkout/${id}">📤 Check-out</a>
-      <a class="btn dp-green" href="/checkin/${id}">📥 Check-in</a>
-      <a class="btn btn3" href="/firma-whatsapp/${id}">📲 Invia firma WhatsApp</a>
-      <a class="btn btn3" href="/contratto/${id}/invia-whatsapp">📩 Invia contratto WhatsApp</a>
-      <a class="btn btn2" href="/contratto/${id}/email">✉️ Invia email</a>
-      <a class="btn btn2" href="/documenti/${id}">📸 Foto/documenti</a>
-      <a class="btn btn2" href="/preventivo/nuovo">➕ Nuovo preventivo</a>
+      <a class="btn dp-dark" href="/preventivo/nuovo">➕ Nuovo preventivo</a>
       <a class="btn bad" href="/prenotazione/${id}/elimina">🗑 Elimina</a>
     </div>
   `;
@@ -1137,6 +1137,9 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 .dp-contract-hero h2{font-size:clamp(30px,4vw,52px);margin:6px 0;font-weight:950;letter-spacing:.5px}.dp-kicker{font-weight:900;color:#ffdede;letter-spacing:2px;text-transform:uppercase}.dp-amount{background:white;color:#111;border-radius:22px;padding:18px 22px;font-size:clamp(26px,4vw,42px);font-weight:950;box-shadow:0 8px 25px rgba(0,0,0,.25);white-space:nowrap}.dp-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:20px}.dp-info-card{background:white;border-radius:24px;padding:22px;border:1px solid #eee;box-shadow:0 12px 30px rgba(0,0,0,.10)}.dp-info-card h3{font-size:24px;margin:0 0 12px}.dp-info-card p{font-size:17px;line-height:1.35}.dp-actions-box{border:2px solid #f0f0f0}.dp-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.dp-action-grid .btn{margin:0;text-align:center;border-radius:18px}.dp-primary{background:#1457d9!important;color:#fff!important}.dp-danger{background:#d70000!important;color:#fff!important}.dp-dark{background:#111!important;color:#fff!important}.dp-green{background:#10883b!important;color:#fff!important}.dp-mini-actions{display:grid;grid-template-columns:1fr;gap:6px}.dp-mini{display:block;text-decoration:none;color:#fff!important;border-radius:12px;padding:8px 10px;font-weight:900;text-align:center;font-size:13px}.storico-premium table{border-collapse:separate;border-spacing:0 8px;background:transparent}.storico-premium tr{background:white}.storico-premium td,.storico-premium th{border:0;border-bottom:1px solid #eee}.storico-premium th{background:#111}.storico-premium td:first-child,.storico-premium th:first-child{border-radius:14px 0 0 14px}.storico-premium td:last-child,.storico-premium th:last-child{border-radius:0 14px 14px 0}
 @media(max-width:700px){.dp-contract-hero{display:block;padding:22px}.dp-amount{display:inline-block;margin-top:14px}.dp-card-grid{grid-template-columns:1fr}.dp-action-grid{grid-template-columns:1fr}.dp-mini{font-size:15px;padding:12px}.storico-premium{overflow-x:auto}.storico-premium table{min-width:850px}}
 
+
+/* V140 gestione contratto: un solo blocco pulsanti, mobile premium */
+.dp-actions{display:flex;flex-direction:column;gap:14px;margin-top:20px}.dp-actions .btn{display:block;text-align:center;padding:22px!important;border-radius:22px!important;font-size:28px!important;font-weight:900!important;color:#fff!important;text-decoration:none!important;box-shadow:0 6px 18px rgba(0,0,0,.18)!important}.dp-actions .dp-danger,.dp-actions .bad{background:#d90000!important}.dp-actions .dp-green{background:#11963d!important}.dp-actions .dp-primary{background:#2459d3!important}.dp-actions .dp-dark{background:#2e2e32!important}.contract-secondary-actions{margin-top:16px}.contract-secondary-actions .btn{font-size:22px!important;padding:16px 20px!important}
 </style>
 <script>
 function toggleAzienda(){
@@ -6743,11 +6746,7 @@ app.get('/contratto/:id/gestisci', async (req,res)=>{
     ${v63ContractButtons(p)}
     <hr>
     <div class="actions contract-secondary-actions">
-      <a class="btn dp-primary" href="/contratto/${p.id}">👁 Vedi contratto</a>
-      <a class="btn dp-danger" href="/pdf-view/${p.id}">📄 PDF</a>
-      <a class="btn dp-green" href="/checkout/${p.id}">📤 Check-out</a>
-      <a class="btn dp-green" href="/checkin/${p.id}">📥 Check-in</a>
-      <a class="btn dp-dark" href="/cargos/check/${p.id}">🚚 Ca.R.G.O.S.</a>
+      <a class="btn btn2" href="/prenotazioni">⬅️ Storico</a>
       <a class="btn btn2" href="/">Dashboard</a>
     </div>
   </div>`));
