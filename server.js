@@ -92,19 +92,23 @@ function v63ContractButtons(p){
   if (!id) return '';
   const tipo = String((p && (p.tipo_record || p.stato)) || '').toLowerCase();
   const converti = (tipo.includes('preventivo') || tipo === 'bozza')
-    ? `<a class="btn btn2" href="/prenotazione/${id}/converti-contratto">Trasforma in contratto</a>`
+    ? `<a class="btn btn2" href="/prenotazione/${id}/converti-contratto">🔁 Trasforma in contratto</a>`
     : '';
   return `
-    <div class="actions contract-main-actions">
-      <a class="btn" href="/prenotazione/${id}/modifica">Modifica</a>
+    <div class="dp-action-grid contract-main-actions">
+      <a class="btn dp-primary" href="/contratto/${id}">👁 Vedi contratto</a>
+      <a class="btn dp-danger" href="/pdf/${id}" target="_blank">📄 PDF</a>
+      <a class="btn dp-dark" href="/cargos/check/${id}">🚚 Ca.R.G.O.S.</a>
+      <a class="btn dp-green" href="/nexi/${id}">💳 Nexi</a>
+      <a class="btn" href="/prenotazione/${id}/modifica">✏️ Modifica</a>
       ${converti}
-      <a class="btn btn2" href="/firma/${id}">Firma sul dispositivo</a>
-      <a class="btn btn3" href="/firma-whatsapp/${id}">Invia firma WhatsApp</a>
-      <a class="btn btn3" href="/contratto/${id}/invia-whatsapp">Invia contratto WhatsApp</a>
-      <a class="btn btn2" href="/contratto/${id}/email">Invia email</a>
-      <a class="btn btn2" href="/documenti/${id}">Foto/documenti</a>
-      <a class="btn btn2" href="/preventivo/nuovo">Nuovo preventivo</a>
-      <a class="btn bad" href="/prenotazione/${id}/elimina">Elimina</a>
+      <a class="btn btn2" href="/firma/${id}">✍️ Firma sul dispositivo</a>
+      <a class="btn btn3" href="/firma-whatsapp/${id}">📲 Invia firma WhatsApp</a>
+      <a class="btn btn3" href="/contratto/${id}/invia-whatsapp">📩 Invia contratto WhatsApp</a>
+      <a class="btn btn2" href="/contratto/${id}/email">✉️ Invia email</a>
+      <a class="btn btn2" href="/documenti/${id}">📸 Foto/documenti</a>
+      <a class="btn btn2" href="/preventivo/nuovo">➕ Nuovo preventivo</a>
+      <a class="btn bad" href="/prenotazione/${id}/elimina">🗑 Elimina</a>
     </div>
   `;
 }
@@ -1124,6 +1128,12 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .top-actions .back-btn,.top-actions a{min-width:0!important;width:calc(50% - 5px)!important;flex:1 1 calc(50% - 5px)!important;padding:14px 8px!important;}
   .contract-main-actions .btn{width:100%!important;}
 }
+
+
+/* V138 grafica premium e separazione PDF / CARGOS */
+.dp-contract-hero{display:flex;justify-content:space-between;gap:18px;align-items:center;background:linear-gradient(135deg,#090909,#1b1b1b 55%,#d70000);color:white;border-radius:28px;padding:28px;margin-bottom:22px;box-shadow:0 18px 45px rgba(0,0,0,.22)}
+.dp-contract-hero h2{font-size:clamp(30px,4vw,52px);margin:6px 0;font-weight:950;letter-spacing:.5px}.dp-kicker{font-weight:900;color:#ffdede;letter-spacing:2px;text-transform:uppercase}.dp-amount{background:white;color:#111;border-radius:22px;padding:18px 22px;font-size:clamp(26px,4vw,42px);font-weight:950;box-shadow:0 8px 25px rgba(0,0,0,.25);white-space:nowrap}.dp-card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:20px}.dp-info-card{background:white;border-radius:24px;padding:22px;border:1px solid #eee;box-shadow:0 12px 30px rgba(0,0,0,.10)}.dp-info-card h3{font-size:24px;margin:0 0 12px}.dp-info-card p{font-size:17px;line-height:1.35}.dp-actions-box{border:2px solid #f0f0f0}.dp-action-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:12px}.dp-action-grid .btn{margin:0;text-align:center;border-radius:18px}.dp-primary{background:#1457d9!important;color:#fff!important}.dp-danger{background:#d70000!important;color:#fff!important}.dp-dark{background:#111!important;color:#fff!important}.dp-green{background:#10883b!important;color:#fff!important}.dp-mini-actions{display:grid;grid-template-columns:1fr;gap:6px}.dp-mini{display:block;text-decoration:none;color:#fff!important;border-radius:12px;padding:8px 10px;font-weight:900;text-align:center;font-size:13px}.storico-premium table{border-collapse:separate;border-spacing:0 8px;background:transparent}.storico-premium tr{background:white}.storico-premium td,.storico-premium th{border:0;border-bottom:1px solid #eee}.storico-premium th{background:#111}.storico-premium td:first-child,.storico-premium th:first-child{border-radius:14px 0 0 14px}.storico-premium td:last-child,.storico-premium th:last-child{border-radius:0 14px 14px 0}
+@media(max-width:700px){.dp-contract-hero{display:block;padding:22px}.dp-amount{display:inline-block;margin-top:14px}.dp-card-grid{grid-template-columns:1fr}.dp-action-grid{grid-template-columns:1fr}.dp-mini{font-size:15px;padding:12px}.storico-premium{overflow-x:auto}.storico-premium table{min-width:850px}}
 
 </style>
 <script>
@@ -4726,7 +4736,8 @@ app.get('/prenotazione/:id', async (req, res) => {
       ${p.pdf_drive_web_link ? `<p><b>PDF Drive:</b> <a target="_blank" href="${esc(p.pdf_drive_web_link)}">Apri su Drive</a></p>` : ''}
       ${p.nexi_link ? `<p><b>Link Nexi:</b> <a target="_blank" href="${esc(p.nexi_link)}">${esc(p.nexi_link)}</a></p>` : ''}
       <div class="actions">
-        <a class="btn" href="/contratto/${p.id}">PDF</a>
+        <a class="btn dp-primary" href="/contratto/${p.id}">👁 Vedi contratto</a>
+        <a class="btn dp-danger" href="/pdf/${p.id}" target="_blank">📄 PDF</a>
         <a class="btn btn2" href="/firma/${p.id}">Firma</a>
         <a class="btn btn2" href="/email/${p.id}">Email</a>
         <a class="btn btn3" href="/documenti/${p.id}">Foto/documenti</a>
@@ -4754,8 +4765,8 @@ app.get('/prenotazioni', async (req, res) => {
   if (al) { sql += ` AND date(p.data_fine)<=date(?)`; params.push(al); }
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
-  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} - ${esc(p.data_fine)}</td><td>&euro; ${euro(p.totale)}</td><td><span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span><br><span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firma ok':'firma no'}</span></td><td><span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span></td><td><a href="/contratto/${p.id}/gestisci">Apri</a><br><a href="/contratto/${p.id}">PDF</a><br><a href="/nexi/${p.id}">Nexi</a></td></tr>`).join('');
-  res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>CaRGOS</th><th>Azioni</th></tr>${trs}</table>`));
+  const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(p.data_inizio)} - ${esc(p.data_fine)}</td><td>&euro; ${euro(p.totale)}</td><td><span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span><br><span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firma ok':'firma no'}</span></td><td><span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span></td><td><div class="dp-mini-actions"><a class="dp-mini dp-primary" href="/contratto/${p.id}">👁 Vedi</a><a class="dp-mini dp-danger" href="/pdf/${p.id}" target="_blank">📄 PDF</a><a class="dp-mini dp-dark" href="/cargos/check/${p.id}">🚚 CaRGOS</a><a class="dp-mini dp-green" href="/nexi/${p.id}">💳 Nexi</a><a class="dp-mini" href="/contratto/${p.id}/gestisci">⚙️ Gestisci</a></div></td></tr>`).join('');
+  res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><div class="storico-premium"><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>CaRGOS</th><th>Azioni</th></tr>${trs}</table></div>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
   await run(`UPDATE prenotazioni SET stato=? WHERE id=?`, [req.params.stato, req.params.id]);
@@ -5400,13 +5411,38 @@ app.post('/checkin/:id', async (req, res) => {
   res.send(actionScreen(req.params.id, 'Check-in salvato', 'Contratto aggiornato in stato rientrato.'));
 });
 
-app.get('/contratto/:id', async (req, res) => {
+app.get('/pdf/:id', async (req, res) => {
   try {
     const file = await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
-    res.send(page('File pronto', `<div class="box"><h2 class="ok">File pronto</h2><p>File generato. Non scarico automaticamente.</p><a class="btn" href="/cargos">Ca.R.G.O.S.</a></div>`));
+    if (!file || !fs.existsSync(file)) throw new Error('PDF non generato');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'inline; filename="contratto-dp-rent.pdf"');
+    return res.sendFile(path.resolve(file));
   } catch (e) {
-    res.status(500).send(page('Errore PDF', `<div class="box"><h2 class="bad">Errore PDF</h2><pre>${esc(e.message)}</pre></div>`));
+    res.status(500).send(page('Errore PDF', `<div class="box"><h2 class="bad">Errore PDF</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/prenotazioni">Storico</a></div>`));
   }
+});
+
+app.get('/contratto/:id/pdf', (req, res) => res.redirect('/pdf/' + req.params.id));
+
+app.get('/contratto/:id', async (req, res) => {
+  const p = await get(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria, m.descrizione_pubblica FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
+  if (!p) return res.status(404).send(page('Contratto non trovato', `<div class="box"><h2 class="bad">Contratto non trovato</h2><a class="btn btn2" href="/prenotazioni">Storico</a></div>`));
+  res.send(page('Vedi contratto', `<div class="dp-contract-hero">
+    <div>
+      <div class="dp-kicker">DP RENT • Contratto</div>
+      <h2>${esc(p.codice || ('DPR-' + p.id))}</h2>
+      <p>${esc((p.nome||'')+' '+(p.cognome||''))} • ${esc(p.telefono||'')}</p>
+    </div>
+    <div class="dp-amount">€ ${euro(p.totale||0)}</div>
+  </div>
+  <div class="dp-card-grid">
+    <div class="dp-info-card"><h3>👤 Cliente</h3><p><b>Nome:</b> ${esc((p.nome||'')+' '+(p.cognome||''))}</p><p><b>Telefono:</b> ${esc(p.telefono||'')}</p><p><b>Email:</b> ${esc(p.email||'')}</p><p><b>CF:</b> ${esc(p.codice_fiscale||'')}</p></div>
+    <div class="dp-info-card"><h3>🚗 Mezzo</h3><p><b>Mezzo:</b> ${esc((p.targa||'')+' '+descrizionePubblica(p))}</p><p><b>Periodo:</b> ${esc(dpDateTimeLabel(p.data_inizio,p.ora_inizio))} → ${esc(dpDateTimeLabel(p.data_fine,p.ora_fine))}</p><p><b>Km previsti:</b> ${esc(p.km_previsti||'')}</p></div>
+    <div class="dp-info-card"><h3>💳 Pagamenti</h3><p><b>Totale:</b> € ${euro(p.totale||0)}</p>${cauzioneHtml(p)}<p><b>Nexi:</b> <span class="badge ${p.nexi_stato==='pagato'?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.nexi_stato||'non pagato'))}</span></p></div>
+    <div class="dp-info-card"><h3>✅ Stato</h3><p><b>Contratto:</b> <span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.stato||'bozza'))}</span></p><p><b>Firma:</b> <span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'Firmato':'Manca firma'}</span></p><p><b>Ca.R.G.O.S.:</b> <span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare')))}</span></p></div>
+  </div>
+  <div class="box dp-actions-box"><h2>Azioni contratto</h2>${v63ContractButtons(p)}<div class="dp-action-grid"><a class="btn btn2" href="/prenotazioni">📚 Storico</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⚙️ Gestisci</a></div></div>`));
 });
 
 
@@ -6656,7 +6692,7 @@ app.get('/contratto/:id/gestisci', async (req,res)=>{
     <hr>
     <div class="actions contract-secondary-actions">
       <a class="btn btn2" href="/contratto/${p.id}">Apri riepilogo/PDF</a>
-      <a class="btn btn2" href="/cargos/check/${p.id}">Ca.R.G.O.S.</a>
+      <a class="btn dp-dark" href="/cargos/check/${p.id}">🚚 Ca.R.G.O.S.</a>
       <a class="btn btn2" href="/">Dashboard</a>
     </div>
   </div>`));
