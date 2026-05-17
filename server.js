@@ -7327,6 +7327,41 @@ function dpCategoryFromChoice(txt){
   if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', categoria:'ESCAVATORE', cats:['ESCAVATORE','SEMOVENTE','X-ESC'] };
   return null;
 }
+
+// V145 - riconoscimento frasi naturali WhatsApp: non rimanda il menu se il cliente scrive "volevo noleggiare" ecc.
+function dpServiceIntentFromText(text){
+  const t = dpNorm(text).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if(!t) return '';
+
+  const has = (words) => words.some(w => t.includes(w));
+
+  // Noleggio: include anche frasi generiche senza categoria precisa.
+  if(has([
+    'noleggio','noleggiare','noleggia','noleggiare','affitto','affittare','rent','prenotare','prenotazione',
+    'mi serve un mezzo','mi serve mezzo','mi serve auto','mi serve macchina','mi serve furgone',
+    'furgone','pulmino','9 posti','nove posti','dacia','golf','escavatore','mezzo speciale'
+  ])) return 'noleggio';
+
+  if(has(['officina','tagliando','diagnosi','guasto','riparazione','riparare','gomme','convergenza','revisione','spia','motore','elettrauto'])) return 'officina';
+  if(has(['vendita','comprare','acquistare','auto usata','macchina usata','permuta','finanziamento','vendo','prezzo auto'])) return 'vendita';
+  if(has(['trasporto','trasportare','bisarca','ritiro auto','consegna auto','portare auto','trasporta veicolo','trasporto veicolo'])) return 'trasporto';
+  if(has(['operatore','persona','parlare con qualcuno','chiamatemi','richiesta'])) return 'altro';
+  return '';
+}
+
+function dpPromptNoleggioCategorie(){
+  return `${EMJ.van} *DP RENT - Noleggio*
+
+Che mezzo ti serve?
+
+${EMJ.one} Furgone cargo/merci
+${EMJ.two} Pulmino 8/9 posti
+${EMJ.three} Auto economica tipo Dacia
+${EMJ.four} Auto categoria Golf
+${EMJ.five} Escavatore / mezzo speciale
+
+Scrivi il numero oppure il tipo di mezzo.`;
+}
 function dpVehicleMatchesCat(m, catInfo){
   // V123: filtro categoria secco. Non prende più il primo mezzo libero di altra categoria.
   try { return v123MezzoCompatibile(m, catInfo); } catch(e) {}
@@ -7595,9 +7630,11 @@ async function dpHandleWhatsApp(req,res){
   }
 
   if(session.state === 'menu'){
+    const known = await dpFindClienteWhatsApp(from).catch(()=>null);
     const natural = dpNaturalRentalRequest(body);
+    const serviceIntent = dpServiceIntentFromText(body);
+
     if(natural && natural.cat){
-      const known = await dpFindClienteWhatsApp(from).catch(()=>null);
       session.data = session.data || {};
       session.data.cat = natural.cat;
       session.ts = Date.now();
@@ -7614,14 +7651,29 @@ async function dpHandleWhatsApp(req,res){
       session.data.km = natural.km;
       session.state = 'noleggio_km';
       body = String(natural.km);
+    } else if(serviceIntent === 'noleggio'){
+      session.state = 'noleggio_model';
+      session.data = session.data || {};
+      session.ts = Date.now();
+      return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Perfetto, iniziamo il noleggio.\n\n` + dpPromptNoleggioCategorie());
+    } else if(serviceIntent === 'officina'){
+      session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
+    } else if(serviceIntent === 'vendita'){
+      session.state = 'vendita'; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.auto} *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi modello, budget, permuta o finanziamento.`);
+    } else if(serviceIntent === 'trasporto'){
+      session.state = 'trasporto'; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.truck} *Trasporto veicoli*\n\nScrivi marca/modello, ritiro, consegna e periodo desiderato.`);
     }
+
     if(body === '1'){
       session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
     }
     if(body === '2'){
       session.state = 'noleggio_model'; session.ts = Date.now();
-      return dpTwimlResponse(res, `${EMJ.van} *DP RENT - Noleggio*\n\nChe mezzo ti serve?\n\n${EMJ.one} Furgone cargo/merci\n${EMJ.two} Pulmino 8/9 posti\n${EMJ.three} Auto economica tipo Dacia\n${EMJ.four} Auto categoria Golf\n${EMJ.five} Escavatore / mezzo speciale\n\nScrivi il numero.`);
+      return dpTwimlResponse(res, dpPromptNoleggioCategorie());
     }
     if(body === '3'){
       session.state = 'vendita'; session.ts = Date.now();
