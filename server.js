@@ -8321,4 +8321,32 @@ app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
     const safeName = `cliente_${req.params.id}_${Date.now()}_${String(req.body.tipo||'documento').replace(/[^a-z0-9_-]/gi,'')}${ext}`;
     const finalPath = path.join(uploadDir, safeName);
     fs.renameSync(req.file.path, finalPath);
-    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalna
+    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]).catch(async ()=>{
+      await run(`INSERT INTO allegati (prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?)`, [null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]);
+    });
+    if(req.body.tipo === 'cliente_documento') await run(`UPDATE clienti SET documento_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
+    if(req.body.tipo === 'cliente_patente') await run(`UPDATE clienti SET patente_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
+    res.redirect(`/cliente/${req.params.id}/documenti`);
+  } catch(e){ res.status(500).send(page('Errore documento', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
+app.get('/contratto/:id/firmato', async (req,res)=>{
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if(!p) return res.send('Contratto non trovato');
+  try { await generaPdfContratto(req.params.id, { forceDrive:false }); } catch(e) {}
+  const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]).catch(()=>p);
+  const pdfLink = fresh?.pdf_drive_web_link || fresh?.pdf_drive_link || p.pdf_drive_web_link || p.pdf_drive_link || '';
+  res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} &egrave; stato firmato e registrato da DP RENT.</p>${pdfLink ? `<a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a>` : '<p class="muted">Puoi chiudere questa pagina.</p>'}`));
+});
+
+
+// V109 alias route robuste per WhatsApp/firma
+app.get('/contratto/:id/invia-firma-whatsapp', (req,res)=>res.redirect('/firma-whatsapp/' + req.params.id));
+app.get('/prenotazione/:id/invia-whatsapp', (req,res)=>res.redirect('/contratto/' + req.params.id + '/invia-whatsapp'));
+app.get('/prenotazione/:id/invia-firma-whatsapp', (req,res)=>res.redirect('/firma-whatsapp/' + req.params.id));
+
+app.get('/v108-check', async (req,res)=>{
+  const dbOk = fs.existsSync(DB_PATH);
+  const dirs = [DATA_DIR, uploadDir, contractsDir, firmeDir].map(d=>`${d}: ${fs.existsSync(d) ? 'OK' : 'NO'}`).join('\n');
+  res.type('text/plain').send(`DP RENT V109 OK\nDB: ${dbOk ? DB_PATH : 'NO'}\n${dirs}`);
+});
