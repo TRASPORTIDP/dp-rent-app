@@ -1651,94 +1651,224 @@ async function generaPdfContratto(id, opts = {}) {
   if (!p) throw new Error('Contratto non trovato');
 
   const file = path.join(contractsDir, pdfFileNameForContract(p));
-  const doc = new PDFDocument({ margin: 28, size:'A4' });
+  const doc = new PDFDocument({ margin: 34, size:'A4', bufferPages:true });
   const stream = fs.createWriteStream(file);
   doc.pipe(stream);
 
-  drawHeader(doc);
-  doc.fontSize(20).fillColor('#111').text('CONTRATTO DI NOLEGGIO', 40, 150, {align:'center', width:515});
-  doc.moveTo(40,180).lineTo(555,180).strokeColor('#d90000').lineWidth(1).stroke();
+  const PAGE_W = doc.page.width;
+  const PAGE_H = doc.page.height;
+  const LEFT = 42;
+  const RIGHT = 42;
+  const CONTENT_W = PAGE_W - LEFT - RIGHT;
+  const GAP = 18;
+  const COL_W = (CONTENT_W - GAP) / 2;
+  const RED = '#d90000';
+  const BLACK = '#111111';
+  const DARK = '#1b1b1d';
+  const GRAY = '#f3f4f7';
+  const LINE = '#d7dbe3';
 
-  let y = 205;
-  y = section(doc, 'DATI CONTRATTO', 45, y, 510);
-  row(doc, 'Numero contratto', p.codice, 55, y, 460); y += 18;
-  row(doc, 'Stato', p.stato || 'bozza', 55, y, 460); y += 18;
-  row(doc, 'Data creazione', p.created_at || '', 55, y, 460); y += 30;
+  function ensureSpace(h) {
+    if (doc.y + h > PAGE_H - 86) {
+      doc.addPage();
+      drawSmallHeader();
+      doc.y = 88;
+    }
+  }
 
-  let yLeft = y, yRight = y;
-  yLeft = section(doc, 'ANAGRAFICA CLIENTE', 45, yLeft, 245);
-  const nomeClientePdf = `${p.nome || ''} ${p.cognome || ''}`.trim();
+  function drawSmallHeader() {
+    doc.rect(0,0,PAGE_W,50).fill(BLACK);
+    doc.fillColor('white').fontSize(10).font('Helvetica-Bold').text('DP RENT - CONTRATTO DI NOLEGGIO', LEFT, 18, {width:CONTENT_W});
+    doc.rect(0,50,PAGE_W,4).fill(RED);
+    doc.fillColor(BLACK).font('Helvetica');
+  }
+
+  function drawProHeader() {
+    doc.rect(0,0,PAGE_W,112).fill(BLACK);
+    try {
+      const logoPath = path.join(publicDir, 'logo.png');
+      if (fs.existsSync(logoPath)) doc.image(logoPath, LEFT, 22, {fit:[74,62]});
+      else doc.fillColor('white').fontSize(26).font('Helvetica-Bold').text('DP', LEFT, 32);
+    } catch(e) { doc.fillColor('white').fontSize(26).font('Helvetica-Bold').text('DP', LEFT, 32); }
+    doc.fillColor('white').fontSize(11).font('Helvetica').text(AZIENDA.nome, 315, 20, { align:'right', width:235 });
+    doc.text(AZIENDA.indirizzo, 315, 38, { align:'right', width:235 });
+    doc.text(`P.IVA / CF ${AZIENDA.piva}`, 315, 56, { align:'right', width:235 });
+    doc.text(`Tel. ${AZIENDA.telefono}`, 315, 74, { align:'right', width:235 });
+    doc.text(AZIENDA.email, 315, 92, { align:'right', width:235 });
+    doc.rect(0,112,PAGE_W,6).fill(RED);
+    doc.fillColor(BLACK).font('Helvetica');
+  }
+
+  function textHeight(text, w, size=9, bold=false) {
+    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size);
+    return doc.heightOfString(String(text || ' '), {width:w, lineGap:2});
+  }
+
+  function rowHeight(label, value, w) {
+    const labelW = 92;
+    const valueW = w - labelW - 8;
+    return Math.max(18, Math.ceil(Math.max(textHeight(label, labelW, 8), textHeight(value, valueW, 9))) + 7);
+  }
+
+  function cardHeight(rows, w) {
+    let h = 34;
+    for (const r of rows) h += rowHeight(r[0], r[1], w-22);
+    return h + 10;
+  }
+
+  function drawCard(title, rows, x, y, w, color = DARK) {
+    const h = cardHeight(rows, w);
+    ensureSpace(h + 8);
+    y = doc.y > y ? doc.y : y;
+    doc.roundedRect(x, y, w, h, 12).fillAndStroke(GRAY, LINE);
+    doc.roundedRect(x, y, w, 26, 12).fill(color);
+    doc.fillColor('white').fontSize(10).font('Helvetica-Bold').text(title, x+12, y+8, {width:w-24});
+    let cy = y + 36;
+    for (const [label, value] of rows) {
+      const rh = rowHeight(label, value, w-22);
+      doc.fillColor('#69707d').fontSize(8).font('Helvetica-Bold').text(String(label || ''), x+12, cy, {width:92});
+      doc.fillColor(BLACK).fontSize(9).font('Helvetica').text(String(value || '/'), x+112, cy, {width:w-124, lineGap:2});
+      cy += rh;
+    }
+    doc.fillColor(BLACK).font('Helvetica');
+    return y + h;
+  }
+
+  function drawFullCard(title, text, x, y, w, color = DARK) {
+    const bodyH = Math.ceil(textHeight(text, w-24, 8)) + 20;
+    const h = 30 + bodyH;
+    ensureSpace(h + 8);
+    y = doc.y > y ? doc.y : y;
+    doc.roundedRect(x, y, w, h, 12).fillAndStroke(GRAY, LINE);
+    doc.roundedRect(x, y, w, 26, 12).fill(color);
+    doc.fillColor('white').fontSize(10).font('Helvetica-Bold').text(title, x+12, y+8, {width:w-24});
+    doc.fillColor(BLACK).fontSize(8).font('Helvetica').text(text, x+12, y+36, {width:w-24, lineGap:2});
+    return y + h;
+  }
+
+  const nomeClientePdf = `${p.nome || ''} ${p.cognome || ''}`.replace(/\s+/g,' ').trim();
   const indirizzoPrivatoPdf = `${p.indirizzo || ''} ${p.cap || ''} ${p.citta || ''} ${p.provincia || ''}`.replace(/\s+/g,' ').trim();
   const tipoFattPdf = String(p.tipo_cliente || p.fatturazione || '').trim();
   const isAzPdf = tipoFattPdf.toLowerCase().includes('azienda');
   const indirizzoAzPdf = `${p.fatt_indirizzo || p.indirizzo_fatturazione || p.azienda_indirizzo || ''} ${p.fatt_cap || p.cap_fatturazione || p.azienda_cap || ''} ${p.fatt_citta || p.citta_fatturazione || p.azienda_citta || ''} ${p.fatt_provincia || p.provincia_fatturazione || p.azienda_provincia || ''}`.replace(/\s+/g,' ').trim();
-  yLeft = rowStep(doc, 'Cliente', nomeClientePdf, 55, yLeft, 220);
-  yLeft = rowStep(doc, 'Telefono', p.telefono || '', 55, yLeft, 220);
-  yLeft = rowStep(doc, 'Email', p.email || '', 55, yLeft, 220);
-  yLeft = rowStep(doc, 'Codice fiscale', p.codice_fiscale || p.cf || '', 55, yLeft, 220);
-  yLeft = rowStep(doc, 'Indirizzo', indirizzoPrivatoPdf, 55, yLeft, 220);
-  yLeft = rowStep(doc, 'Fatturazione', isAzPdf ? 'Azienda' : (tipoFattPdf || 'Privato'), 55, yLeft, 220);
+
+  drawProHeader();
+  doc.y = 142;
+  doc.fillColor(BLACK).font('Helvetica-Bold').fontSize(21).text('CONTRATTO DI NOLEGGIO', LEFT, doc.y, {align:'center', width:CONTENT_W});
+  doc.moveTo(LEFT+45, doc.y+8).lineTo(PAGE_W-LEFT-45, doc.y+8).strokeColor(RED).lineWidth(1.3).stroke();
+  doc.y += 30;
+
+  const statoBadge = (p.stato || 'bozza').toUpperCase();
+  doc.roundedRect(LEFT, doc.y, CONTENT_W, 48, 13).fillAndStroke('#fff7f7', '#f0c4c4');
+  doc.fillColor(RED).fontSize(10).font('Helvetica-Bold').text('NUMERO CONTRATTO', LEFT+16, doc.y+12);
+  doc.fillColor(BLACK).fontSize(15).font('Helvetica-Bold').text(p.codice || String(p.id), LEFT+16, doc.y+26);
+  doc.roundedRect(PAGE_W-LEFT-128, doc.y+12, 112, 24, 12).fill(statoBadge.includes('FIRM') ? '#11883a' : '#d38a00');
+  doc.fillColor('white').fontSize(9).font('Helvetica-Bold').text(statoBadge, PAGE_W-LEFT-122, doc.y+20, {width:100, align:'center'});
+  doc.y += 66;
+
+  const datiContratto = [
+    ['Data creazione', p.created_at || ''],
+    ['Periodo', `${p.data_inizio || ''} ${p.ora_inizio || ''} / ${p.data_fine || ''} ${p.ora_fine || ''}`.trim()],
+    ['Totale', `€ ${euro(p.totale)}`],
+    ['Cauzione', `€ ${euro(p.cauzione || CAUZIONE)}`]
+  ];
+  drawCard('DATI CONTRATTO', datiContratto, LEFT, doc.y, CONTENT_W, BLACK);
+  doc.y += 14;
+
+  let leftY = doc.y;
+  let rightY = doc.y;
+  const anagRows = [
+    ['Cliente', nomeClientePdf],
+    ['Telefono', p.telefono || ''],
+    ['Email', p.email || ''],
+    ['Codice fiscale', p.codice_fiscale || p.cf || ''],
+    ['Indirizzo', indirizzoPrivatoPdf]
+  ];
+  leftY = drawCard('ANAGRAFICA CLIENTE', anagRows, LEFT, leftY, COL_W, BLACK);
+
+  const driverRows = [
+    ['Conducente 1', p.conducente1 || nomeClientePdf],
+    ['Patente 1', `${p.patente1 || ''} ${p.patente1_scadenza ? 'scad. '+p.patente1_scadenza : ''}`.trim()],
+    ['Conducente 2', p.conducente2 || ''],
+    ['Patente 2', `${p.patente2 || ''} ${p.patente2_scadenza ? 'scad. '+p.patente2_scadenza : ''}`.trim()]
+  ];
+  rightY = drawCard('CONDUCENTI', driverRows, LEFT + COL_W + GAP, rightY, COL_W, BLACK);
+  doc.y = Math.max(leftY, rightY) + 14;
+
   if (isAzPdf) {
-    yLeft = rowStep(doc, 'Ragione sociale', p.ragione_sociale || p.azienda || '', 55, yLeft, 220);
-    yLeft = rowStep(doc, 'P.IVA', p.piva || '', 55, yLeft, 220);
-    yLeft = rowStep(doc, 'Indirizzo fatt.', indirizzoAzPdf, 55, yLeft, 220);
-    yLeft = rowStep(doc, 'PEC / SDI', `${p.pec || ''} ${p.sdi || ''}`.trim(), 55, yLeft, 220);
+    const fattRows = [
+      ['Tipo', 'Azienda'],
+      ['Ragione sociale', p.ragione_sociale || p.azienda || ''],
+      ['P.IVA', p.piva || ''],
+      ['Indirizzo fatt.', indirizzoAzPdf],
+      ['PEC', p.pec || ''],
+      ['SDI', p.sdi || '']
+    ];
+    drawCard('FATTURAZIONE AZIENDA', fattRows, LEFT, doc.y, CONTENT_W, RED);
+    doc.y += 14;
   } else {
-    yLeft = rowStep(doc, 'PEC / SDI', `${p.pec || ''} ${p.sdi || ''}`.trim(), 55, yLeft, 220);
+    const fattRows = [
+      ['Tipo', tipoFattPdf || 'Privato'],
+      ['Codice fiscale', p.codice_fiscale || p.cf || ''],
+      ['Indirizzo', indirizzoPrivatoPdf]
+    ];
+    drawCard('FATTURAZIONE PRIVATO', fattRows, LEFT, doc.y, CONTENT_W, RED);
+    doc.y += 14;
   }
 
-  yRight = section(doc, 'CONDUCENTI', 310, yRight, 245);
-  row(doc, 'Conducente 1', p.conducente1 || `${p.nome || ''} ${p.cognome || ''}`, 320, yRight, 220); yRight += 18;
-  row(doc, 'Patente 1', `${p.patente1 || ''} scad. ${p.patente1_scadenza || ''}`, 320, yRight, 220); yRight += 18;
-  row(doc, 'Conducente 2', p.conducente2 || '', 320, yRight, 220); yRight += 18;
-  row(doc, 'Patente 2', `${p.patente2 || ''} scad. ${p.patente2_scadenza || ''}`, 320, yRight, 220); yRight += 18;
+  leftY = doc.y; rightY = doc.y;
+  const mezzoRows = [
+    ['Targa', p.targa || ''],
+    ['Mezzo', p.descrizione_pubblica || `${p.marca || ''} ${p.modello || ''}`.trim()],
+    ['Categoria', p.categoria || ''],
+    ['Giorni', String(p.giorni || '')],
+    ['Km incl./prev.', `${Number(p.km_inclusi || 0) * Number(p.giorni || 0)} / ${p.km_previsti || 0}`],
+    ['Km uscita/rientro', `${p.km_uscita || ''} / ${p.km_rientro || ''}`],
+    ['Carburante', `${p.carburante_uscita || ''} / ${p.carburante_rientro || ''}`]
+  ];
+  leftY = drawCard('VEICOLO E NOLEGGIO', mezzoRows, LEFT, leftY, COL_W, BLACK);
+  const ecoRows = [
+    ['Extra orario', `€ ${euro(p.extra_fuori_orario)} + IVA`],
+    ['Extra km', `€ ${euro(p.extra_km)} + IVA`],
+    ['Imponibile', `€ ${euro(p.imponibile)}`],
+    ['IVA 22%', `€ ${euro(p.iva)}`],
+    ['Totale IVA inclusa', `€ ${euro(p.totale)}`],
+    ['Deposito cauzionale', `€ ${euro(p.cauzione || CAUZIONE)}`]
+  ];
+  rightY = drawCard('RIEPILOGO ECONOMICO', ecoRows, LEFT + COL_W + GAP, rightY, COL_W, BLACK);
+  doc.y = Math.max(leftY, rightY) + 14;
 
-  y = Math.max(yLeft, yRight) + 10;
-  let yVeh = y, yCost = y;
-  yVeh = section(doc, 'VEICOLO E NOLEGGIO', 45, yVeh, 245);
-  row(doc, 'Targa', p.targa || '', 55, yVeh, 220); yVeh += 18;
-  row(doc, 'Mezzo', p.descrizione_pubblica || `${p.marca || ''} ${p.modello || ''}`, 55, yVeh, 220); yVeh += 18;
-  row(doc, 'Periodo', `${p.data_inizio} ${p.ora_inizio || ''} / ${p.data_fine} ${p.ora_fine || ''}`, 55, yVeh, 220); yVeh += 18;
-  row(doc, 'Giorni', String(p.giorni || ''), 55, yVeh, 220); yVeh += 18;
-  row(doc, 'Km inclusi / previsti', `${Number(p.km_inclusi || 0) * Number(p.giorni || 0)} / ${p.km_previsti || 0}`, 55, yVeh, 220); yVeh += 18;
-  row(doc, 'Km uscita/rientro', `${p.km_uscita || ''} / ${p.km_rientro || ''}`, 55, yVeh, 220); yVeh += 18;
-  row(doc, 'Carburante', `${p.carburante_uscita || ''} / ${p.carburante_rientro || ''}`, 55, yVeh, 220); yVeh += 18;
+  const condText = 'Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio e l’informativa privacy DP RENT / Trasporti DP S.R.L. Il mezzo deve essere riconsegnato nelle stesse condizioni, con carburante equivalente. Danni, multe, pedaggi, franchigie, ritardi, smarrimenti e costi accessori restano a carico del cliente.';
+  drawFullCard('CONDIZIONI GENERALI E PRIVACY', condText, LEFT, doc.y, CONTENT_W, BLACK);
+  doc.y += 18;
 
-  yCost = section(doc, 'RIEPILOGO ECONOMICO', 310, yCost, 245);
-  row(doc, 'Extra orario', `euro ${euro(p.extra_fuori_orario)} + IVA`, 320, yCost, 220); yCost += 18;
-  row(doc, 'Extra km', `euro ${euro(p.extra_km)} + IVA`, 320, yCost, 220); yCost += 18;
-  row(doc, 'Imponibile', `euro ${euro(p.imponibile)}`, 320, yCost, 220); yCost += 18;
-  row(doc, 'IVA 22%', `euro ${euro(p.iva)}`, 320, yCost, 220); yCost += 18;
-  row(doc, 'Totale IVA inclusa', `euro ${euro(p.totale)}`, 320, yCost, 220); yCost += 18;
-  row(doc, 'Deposito cauzionale', `euro ${euro(p.cauzione || CAUZIONE)}`, 320, yCost, 220); yCost += 18;
-
-  y = Math.max(yVeh, yCost) + 10;
-  y = section(doc, 'CONDIZIONI GENERALI E PRIVACY', 45, y, 510);
-  doc.fontSize(8).fillColor('#111').text('Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio e l’informativa privacy DP RENT / Trasporti DP S.R.L. Il mezzo deve essere riconsegnato nelle stesse condizioni, con carburante equivalente. Danni, multe, pedaggi, franchigie, ritardi, smarrimenti e costi accessori restano a carico del cliente.', 55, y, {width:490});
-  y += 50;
-  if (TERMS_URL) { doc.fontSize(7).text(`Condizioni generali: ${TERMS_URL}`, 55, y, {width:490}); y += 12; }
-  if (PRIVACY_URL) { doc.fontSize(7).text(`Informativa privacy: ${PRIVACY_URL}`, 55, y, {width:490}); y += 12; }
-  y += 20;
-
-  doc.fontSize(10).fillColor('#111').text('Firma cliente:', 55, y);
+  ensureSpace(130);
+  const sigY = Math.max(doc.y, PAGE_H - 185);
+  doc.roundedRect(LEFT, sigY, CONTENT_W, 124, 12).fillAndStroke('#ffffff', LINE);
+  doc.fillColor(BLACK).font('Helvetica-Bold').fontSize(10).text('FIRME', LEFT+14, sigY+12);
+  doc.font('Helvetica').fontSize(10).text('Firma cliente:', LEFT+14, sigY+38);
   if (p.firma_path && fs.existsSync(p.firma_path)) {
-    try { doc.image(p.firma_path, 55, y+15, { fit: [220, 70] }); }
-    catch { doc.text('______________________________', 55, y+25); }
+    try { doc.image(p.firma_path, LEFT+14, sigY+55, { fit: [210, 55] }); }
+    catch { doc.text('______________________________', LEFT+14, sigY+68); }
   } else {
-    doc.text('______________________________', 55, y+25);
+    doc.text('______________________________', LEFT+14, sigY+68);
   }
-  doc.text('Firma DP RENT:', 330, y);
-  doc.text('______________________________', 330, y+25);
-  
+  doc.text('Firma DP RENT:', LEFT+300, sigY+38);
+  doc.text('______________________________', LEFT+300, sigY+68);
   const baseUrl = process.env.APP_BASE_URL || process.env.PUBLIC_URL || '';
-  doc.moveDown(0.8);
-  doc.fontSize(10).fillColor('blue')
-    .text('Privacy Policy', { link: baseUrl ? `${baseUrl}/privacy.pdf` : '/privacy.pdf', underline: true });
-  doc.moveDown(0.3);
-  doc.text('Condizioni Generali di Noleggio', { link: baseUrl ? `${baseUrl}/clausole.pdf` : '/clausole.pdf', underline: true });
-  doc.fillColor('black');
+  doc.fillColor('#1455cc').fontSize(8)
+    .text('Privacy Policy', LEFT+300, sigY+92, { link: baseUrl ? `${baseUrl}/privacy.pdf` : '/privacy.pdf', underline:true })
+    .text('Condizioni Generali di Noleggio', LEFT+300, sigY+106, { link: baseUrl ? `${baseUrl}/clausole.pdf` : '/clausole.pdf', underline:true });
+  doc.fillColor(BLACK);
 
-doc.end();
+  // Footer pagine
+  const range = doc.bufferedPageRange();
+  for (let i = range.start; i < range.start + range.count; i++) {
+    doc.switchToPage(i);
+    doc.fillColor('#999').fontSize(7).text(`DP RENT - ${p.codice || p.id} - Pagina ${i+1-range.start}/${range.count}`, LEFT, PAGE_H-32, {width:CONTENT_W, align:'center'});
+  }
+
+  doc.end();
 
   await new Promise((resolve, reject) => {
     stream.on('finish', resolve);
@@ -1765,7 +1895,6 @@ doc.end();
   if (driveRes) {
     await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_file_id=?, pdf_drive_web_link=? WHERE id=?`,
       [file, driveRes.id, driveRes.webViewLink, id]);
-    // V151: copia PDF su Drive e libera spazio Render. Se vuoi mantenere anche il file locale, imposta KEEP_LOCAL_FILES=true.
     if (String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(file);
   } else {
     await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [file, id]);
@@ -4024,6 +4153,40 @@ function v148GoogleCalendarLink(p){
     + '&details=' + encodeURIComponent(details);
 }
 
+function v153CalendarLinks(req, p) {
+  const base = (process.env.APP_BASE_URL || absoluteUrl(req, '')).replace(/\/+$/,'');
+  return {
+    ics: `${base}/prenotazione/${p.id}/calendario.ics`,
+    google: v148GoogleCalendarLink(p)
+  };
+}
+
+function v153IcsContent(p) {
+  const start = v148DateTimeLocalToIcs(p.data_inizio, p.ora_inizio || '08:30');
+  const end = v148DateTimeLocalToIcs(p.data_fine, p.ora_fine || '18:00');
+  const uid = `dprent-${p.id}-${p.codice || ''}@trasportidp.com`;
+  const title = `DP RENT - ${p.categoria || p.tipo || 'Noleggio'} ${p.targa || p.mezzo_targa || ''}`.trim();
+  const desc = `Codice pratica: ${p.codice || p.id}\nCliente: ${p.nome||''} ${p.cognome||''}\nMezzo: ${p.targa || p.mezzo_targa || ''} ${p.marca || p.mezzo_marca || ''} ${p.modello || p.mezzo_modello || ''}\nTelefono DP RENT: 0744817108`;
+  return [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//DP RENT//Prenotazioni//IT','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+    `UID:${uid}`,`DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z')}`,
+    `DTSTART;TZID=Europe/Rome:${start}`,`DTEND;TZID=Europe/Rome:${end}`,
+    `SUMMARY:${v148IcsEscape(title)}`,
+    `LOCATION:${v148IcsEscape('Via Tuderte 466, Narni (TR)')}`,
+    `DESCRIPTION:${v148IcsEscape(desc)}`,
+    'BEGIN:VALARM','TRIGGER:-PT2H','ACTION:DISPLAY',`DESCRIPTION:${v148IcsEscape('Promemoria ritiro DP RENT')}`,'END:VALARM',
+    'END:VEVENT','END:VCALENDAR'
+  ].join('\r\n');
+}
+
+async function v153IcsFileForPrenotazione(p) {
+  const safe = String(p.codice || p.id || Date.now()).replace(/[^a-zA-Z0-9_-]/g, '');
+  const file = path.join(contractsDir, `calendario_${safe}.ics`);
+  fs.writeFileSync(file, v153IcsContent(p));
+  return file;
+}
+
+
 app.post('/prenota-cliente', upload.fields([
   {name:'documento_fronte', maxCount:1}, {name:'documento_retro', maxCount:1},
   {name:'patente_fronte', maxCount:1}, {name:'patente_retro', maxCount:1},
@@ -5865,15 +6028,18 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
     }
 
     const firmaLink = absoluteUrl(req, `/firma/${p.id}`);
+    const calLinks = v153CalendarLinks(req, p);
     const testo =
       `DP RENT - Contratto ${p.codice || p.id}\n` +
       `Cliente: ${p.nome || ''} ${p.cognome || ''}\n` +
       `Totale: Euro ${Number(p.totale || 0).toFixed(2)}\n\n` +
       (pdfLink ? `PDF contratto: ${pdfLink}\n\n` : '') +
-      `Firma online: ${firmaLink}`;
+      `Firma online: ${firmaLink}\n\n` +
+      `Aggiungi al calendario iPhone/Android: ${calLinks.ics}\n` +
+      `Google Calendar: ${calLinks.google}`;
 
     const r = await dpNotify([tel], testo);
-    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>${pdfDriveWarning ? '<p class="warn">Drive non disponibile per il PDF: inviato link PDF locale Render.</p>' : ''}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
+    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>${pdfDriveWarning ? '<p class="warn">Drive non disponibile per il PDF: inviato link PDF locale Render.</p>' : ''}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><p><b>Calendario:</b> <a target="_blank" href="${esc(calLinks.ics)}">iPhone/Android</a> | <a target="_blank" href="${esc(calLinks.google)}">Google Calendar</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
   } catch (e) {
     res.status(500).send(page('Errore invio contratto WhatsApp', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
   }
@@ -5889,8 +6055,19 @@ app.get('/email/:id', async (req,res)=>{
 });
 app.post('/email/:id', async (req,res)=>{
   try {
+    const p = await get(`SELECT p.*, m.targa, m.marca, m.modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
     const file = await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
-    await sendEmail(req.body.email, 'Contratto DP RENT', req.body.messaggio || 'In allegato contratto DP RENT.', [{filename:path.basename(file),path:file}]);
+    const icsFile = await v153IcsFileForPrenotazione(p || {id:req.params.id});
+    const calLinks = v153CalendarLinks(req, p || {id:req.params.id});
+    const bodyEmail = (req.body.messaggio || 'In allegato contratto DP RENT.') + `
+
+Aggiungi al calendario:
+- iPhone/Android: ${calLinks.ics}
+- Google Calendar: ${calLinks.google}`;
+    await sendEmail(req.body.email, 'Contratto DP RENT', bodyEmail, [
+      {filename:path.basename(file),path:file},
+      {filename:path.basename(icsFile),path:icsFile, contentType:'text/calendar'}
+    ]);
     await run(`UPDATE prenotazioni SET stato='inviato_email' WHERE id=?`,[req.params.id]);
     res.send(actionScreen(req.params.id,'Email inviata','Contratto inviato correttamente.'));
   } catch(e) {
