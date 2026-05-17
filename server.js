@@ -2449,7 +2449,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V137 - archivi unici documenti e attese pulite'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V148 - cliente riconosciuto no upload + calendario'));
 
 
 // =========================
@@ -3713,7 +3713,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </section>
 <div class="wrap">
   ${req.query && req.query.cliente_riconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Cliente già riconosciuto</h2><p class="okbox">Abbiamo trovato la tua anagrafica. Controlla solo i dati e prosegui: non viene creato un doppione.</p></div>` : ``}
-  ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : `<div class="card" style="border:3px solid #173b8f">
+  ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : (req.query && req.query.cliente_riconosciuto && req.query.documenti_presenti ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti già presenti</h2><p class="okbox">Cliente riconosciuto: documento e patente risultano già archiviati. Non ricaricarli per evitare doppioni.</p><p><a class="btn" style="background:#333;text-decoration:none;display:block;text-align:center" href="/cliente/${clienteWebVal(req,'cliente_id') || clienteWebVal(req,'ref') || '0'}/documenti">🔄 Aggiorna documenti solo se cambiati</a></p></div>` : `<div class="card" style="border:3px solid #173b8f">
     <h2>📸 Prima carica documento e patente</h2>
     <p class="notice">Carica le foto qui: il sistema prova a leggere i dati automaticamente. Dopo trovi i campi già compilati e puoi correggere tutto a mano.</p>
     ${req.query && req.query.ocr_done ? `<p class="okbox"><b>✅ OCR eseguito.</b><br>Controlla i campi sotto e completa quelli mancanti.</p>` : ``}
@@ -3735,7 +3735,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
       <button class="btn" type="submit">Leggi dati automaticamente</button>
     </form>
     <p class="small">Se l'OCR non legge tutto, puoi comunque compilare manualmente sotto.</p>
-  </div>`}
+  </div>`)}
 
 <form method="POST" action="/prenota-cliente" enctype="multipart/form-data">
   <input type="hidden" name="ref" value="${clienteWebVal(req,'ref')}">
@@ -3812,7 +3812,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
     <p class="small azienda-only">Se scegli Privato questi campi azienda vengono nascosti e non sono obbligatori.</p>
   </div>
 
-  ${req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
+  ${req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : (req.query && req.query.cliente_riconosciuto && req.query.documenti_presenti ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">✅ Documenti già presenti in archivio. Non serve ricaricarli.</p><div class="grid"><div class="full"><label>Carica solo eventuali documenti aggiornati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
     <h2>Foto documento / patente</h2>
     <div class="grid">
       <div><label>Documento fronte</label><input class="file" type="file" name="documento_fronte" accept="image/*,application/pdf" capture="environment"></div>
@@ -3821,7 +3821,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
       <div><label>Patente retro</label><input class="file" type="file" name="patente_retro" accept="image/*,application/pdf" capture="environment"></div>
       <div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div>
     </div>
-  </div>`}
+  </div>`)}
 
   <div class="card">
     <h2>Note</h2>
@@ -3873,7 +3873,7 @@ function v142MergeClientePrenota(query, found){
   ['nome','cognome','telefono','email','codice_fiscale','indirizzo','citta','provincia','cap','data_nascita','luogo_nascita','documento_numero','documento_scadenza','patente_numero','patente_scadenza','categoria_patente','tipo_cliente','ragione_sociale','piva','partita_iva','pec','sdi','codice_sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(k => fill(k, c[k]));
   // dati pratica WhatsApp/restanti
   ['categoria','data_inizio','data_fine','ora_inizio','ora_fine','km_previsti'].forEach(k => fill(k, pr[k]));
-  if (c.id) out.cliente_riconosciuto = '1';
+  if (c.id) { out.cliente_riconosciuto = '1'; out.cliente_id = c.id; }
   if (pr.id && !out.ref) out.ref = pr.id;
   return out;
 }
@@ -3882,8 +3882,16 @@ app.get('/prenota', async (req, res) => {
   res.setHeader('Content-Type','text/html; charset=utf-8');
   try {
     const found = await v142FindClientePerPrenota(req.query || {});
-    if (found.cliente || found.pren) req.query = v142MergeClientePrenota(req.query || {}, found);
-  } catch(e) { console.log('V142 riconoscimento cliente warning:', e.message); }
+    if (found.cliente || found.pren) {
+      req.query = v142MergeClientePrenota(req.query || {}, found);
+      // V148: se il cliente e' gia riconosciuto e ha documenti in archivio, non mostro upload obbligatorio.
+      const cid = found.cliente?.id || found.pren?.cliente_id || 0;
+      if (cid) {
+        const row = await get(`SELECT COUNT(*) AS n FROM allegati WHERE cliente_id=?`, [cid]).catch(()=>({n:0}));
+        if (Number(row?.n || 0) > 0) req.query.documenti_presenti = '1';
+      }
+    }
+  } catch(e) { console.log('V148 riconoscimento cliente/docs warning:', e.message); }
   res.send(clienteWebHtml(req));
 });
 
@@ -3946,6 +3954,54 @@ app.post('/prenota-ocr', upload.fields([
     res.status(500).send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Errore OCR</h1><pre>${esc(e.stack || e.message)}</pre><p>Controlla OPENAI_API_KEY su Render.</p><a href="javascript:history.back()">Torna</a>`);
   }
 });
+
+
+function v148DateTimeLocalToIcs(dateStr, timeStr){
+  const d = String(dateStr || '').trim();
+  const t = String(timeStr || '08:30').trim();
+  const m = d.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const tm = t.match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return '';
+  const hh = tm ? String(tm[1]).padStart(2,'0') : '08';
+  const mm = tm ? tm[2] : '30';
+  return `${m[1]}${m[2]}${m[3]}T${hh}${mm}00`;
+}
+function v148IcsEscape(v){ return String(v||'').replace(/\\/g,'\\\\').replace(/\n/g,'\\n').replace(/,/g,'\\,').replace(/;/g,'\\;'); }
+app.get('/prenotazione/:id/calendario.ics', async (req,res)=>{
+  try{
+    const p = await get(`SELECT p.*, m.targa AS mezzo_targa, m.marca AS mezzo_marca, m.modello AS mezzo_modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
+    if(!p) return res.status(404).send('Prenotazione non trovata');
+    const start = v148DateTimeLocalToIcs(p.data_inizio, p.ora_inizio || '08:30');
+    const end = v148DateTimeLocalToIcs(p.data_fine, p.ora_fine || '18:00');
+    const uid = `dprent-${p.id}@trasportidp.com`;
+    const title = `DP RENT - ${p.categoria || p.tipo || 'Noleggio'} ${p.mezzo_targa || p.targa || ''}`.trim();
+    const base = (process.env.APP_BASE_URL || '').replace(/\/+$/,'');
+    const desc = `Codice pratica: ${p.codice || p.id}\nCliente: ${p.nome||''} ${p.cognome||''}\nMezzo: ${p.mezzo_targa || p.targa || ''} ${p.mezzo_marca || p.marca || ''} ${p.mezzo_modello || p.modello || ''}\nTelefono DP RENT: 0744817108\n${base ? 'Contratto: '+base+'/prenotazione/'+p.id : ''}`;
+    const ics = [
+      'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//DP RENT//Prenotazioni//IT','CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+      `UID:${uid}`,`DTSTAMP:${new Date().toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z')}`,
+      `DTSTART;TZID=Europe/Rome:${start}`,`DTEND;TZID=Europe/Rome:${end}`,
+      `SUMMARY:${v148IcsEscape(title)}`,
+      `LOCATION:${v148IcsEscape('Via Tuderte 466, Narni (TR)')}`,
+      `DESCRIPTION:${v148IcsEscape(desc)}`,
+      'END:VEVENT','END:VCALENDAR'
+    ].join('\r\n');
+    res.setHeader('Content-Type','text/calendar; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="DPRENT-${p.codice || p.id}.ics"`);
+    res.send(ics);
+  }catch(e){ res.status(500).send('Errore calendario: '+(e.message||e)); }
+});
+function v148GoogleCalendarLink(p){
+  const baseText = `DP RENT - ${p.categoria || p.tipo || 'Noleggio'} ${p.targa || ''}`.trim();
+  const s = v148DateTimeLocalToIcs(p.data_inizio, p.ora_inizio || '08:30');
+  const e = v148DateTimeLocalToIcs(p.data_fine, p.ora_fine || '18:00');
+  const details = `Codice pratica: ${p.codice || p.id}\nTelefono DP RENT: 0744817108`;
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE'
+    + '&text=' + encodeURIComponent(baseText)
+    + '&dates=' + encodeURIComponent(`${s}/${e}`)
+    + '&location=' + encodeURIComponent('Via Tuderte 466, Narni (TR)')
+    + '&details=' + encodeURIComponent(details);
+}
 
 app.post('/prenota-cliente', upload.fields([
   {name:'documento_fronte', maxCount:1}, {name:'documento_retro', maxCount:1},
@@ -4104,7 +4160,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .contract-main-actions .btn{width:100%!important;}
 }
 
-</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerà i dati e ti confermerà contratto e disponibilità.</p><p>Foto ricevute: <b>${files.length}</b></p></div></body></html>`);
+</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerà i dati e ti confermerà contratto e disponibilità.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a><a class="btn" style="background:#1a73e8;margin-left:8px" target="_blank" href="${v148GoogleCalendarLink(Object.assign({}, data, {id: result.lastID, codice: cod}))}">📅 Google Calendar</a></div></div></body></html>`);
   } catch (e) {
     res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore invio dati</h1><pre>${esc(e.stack || e.message)}</pre><a href="javascript:history.back()">Torna</a>`);
   }
