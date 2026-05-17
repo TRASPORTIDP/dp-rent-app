@@ -7345,7 +7345,12 @@ function dpServiceIntentFromText(text){
   if(has(['officina','tagliando','diagnosi','guasto','riparazione','riparare','gomme','convergenza','revisione','spia','motore','elettrauto'])) return 'officina';
   if(has(['vendita','comprare','acquistare','auto usata','macchina usata','permuta','finanziamento','vendo','prezzo auto'])) return 'vendita';
   if(has(['trasporto','trasportare','bisarca','ritiro auto','consegna auto','portare auto','trasporta veicolo','trasporto veicolo'])) return 'trasporto';
-  if(has(['operatore','persona','parlare con qualcuno','chiamatemi','richiesta'])) return 'altro';
+  // Richieste generiche: non resettare il menu, apri una conversazione libera.
+  if(has([
+    'informazione','informazioni','info','domanda','chiedere','sapere','vorrei sapere','volevo sapere',
+    'aiuto','supporto','assistenza','operatore','persona','parlare con qualcuno','chiamatemi','richiesta',
+    'volevo un informazione','volevo informazioni','mi serve un informazione'
+  ])) return 'altro';
   return '';
 }
 
@@ -7665,6 +7670,9 @@ async function dpHandleWhatsApp(req,res){
     } else if(serviceIntent === 'trasporto'){
       session.state = 'trasporto'; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.truck} *Trasporto veicoli*\n\nScrivi marca/modello, ritiro, consegna e periodo desiderato.`);
+    } else if(serviceIntent === 'altro'){
+      session.state = 'altro'; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.chat} Certo 👍\n\nScrivi pure la tua richiesta o domanda. Se serve la giro subito allo staff DP e ti rispondiamo appena possibile.`);
     }
 
     if(body === '1'){
