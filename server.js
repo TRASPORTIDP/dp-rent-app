@@ -2449,7 +2449,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V148 - cliente riconosciuto no upload + calendario'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V149 - cliente conosciuto no upload + calendario OK'));
 
 
 // =========================
@@ -3713,7 +3713,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </section>
 <div class="wrap">
   ${req.query && req.query.cliente_riconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Cliente già riconosciuto</h2><p class="okbox">Abbiamo trovato la tua anagrafica. Controlla solo i dati e prosegui: non viene creato un doppione.</p></div>` : ``}
-  ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : (req.query && req.query.cliente_riconosciuto && req.query.documenti_presenti ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti già presenti</h2><p class="okbox">Cliente riconosciuto: documento e patente risultano già archiviati. Non ricaricarli per evitare doppioni.</p><p><a class="btn" style="background:#333;text-decoration:none;display:block;text-align:center" href="/cliente/${clienteWebVal(req,'cliente_id') || clienteWebVal(req,'ref') || '0'}/documenti">🔄 Aggiorna documenti solo se cambiati</a></p></div>` : `<div class="card" style="border:3px solid #173b8f">
+  ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : (req.query && req.query.cliente_riconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Cliente già conosciuto</h2><p class="okbox">Abbiamo già trovato la tua anagrafica e i documenti collegati. Non ricaricare foto di patente o documento per evitare doppioni.</p><p><a class="btn" style="background:#333;text-decoration:none;display:block;text-align:center" href="/cliente/${clienteWebVal(req,'cliente_id') || clienteWebVal(req,'ref') || '0'}/documenti">🔄 Aggiorna documenti solo se scaduti o cambiati</a></p></div>` : `<div class="card" style="border:3px solid #173b8f">
     <h2>📸 Prima carica documento e patente</h2>
     <p class="notice">Carica le foto qui: il sistema prova a leggere i dati automaticamente. Dopo trovi i campi già compilati e puoi correggere tutto a mano.</p>
     ${req.query && req.query.ocr_done ? `<p class="okbox"><b>✅ OCR eseguito.</b><br>Controlla i campi sotto e completa quelli mancanti.</p>` : ``}
