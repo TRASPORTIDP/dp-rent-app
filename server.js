@@ -3651,6 +3651,9 @@ function clienteWebHtml(req) {
   const dataInizio = (req.query && req.query.data_inizio) || '';
   const dataFine = (req.query && req.query.data_fine) || '';
   const km = (req.query && req.query.km_previsti) || '150';
+  const clienteRiconosciuto = !!(req.query && req.query.cliente_riconosciuto);
+  const docsGiaPresenti = !!(req.query && (req.query.documenti_presenti || req.query.ocr_done || req.query.preupload_id));
+  const clienteDocId = clienteWebVal(req,'cliente_id') || clienteWebVal(req,'ref') || '0';
   return `<!doctype html>
 <html lang="it">
 <head>
@@ -3664,8 +3667,8 @@ function clienteWebHtml(req) {
 .client-nav a,.client-nav button{appearance:none;border:0;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border-radius:16px;padding:13px 16px;font-size:17px;font-weight:900;color:#fff;background:#24242b;cursor:pointer;box-shadow:0 8px 18px rgba(0,0,0,.18)}
 .client-nav .dash{background:#d70000}.client-nav .wait{background:#173b8f}.client-nav .back{background:#333}
 @media(max-width:720px){.client-nav a,.client-nav button{flex:1 1 calc(50% - 6px);font-size:16px;padding:13px 8px}.client-nav .wide{flex-basis:100%}}
-.hero{background:linear-gradient(135deg,#07111f,#163d91);color:#fff;padding:28px 22px 30px;border-radius:0 0 28px 28px;box-shadow:0 12px 35px rgba(0,0,0,.18)}
-.hero h1{margin:0;font-size:38px;letter-spacing:.5px}.hero p{font-size:20px;line-height:1.35;margin:12px 0 0;opacity:.95}.pill{display:inline-block;background:#fff;color:#163d91;font-weight:900;border-radius:999px;padding:10px 16px;margin:14px 8px 0 0}
+.hero{background:linear-gradient(135deg,#07111f,#163d91);color:#fff;padding:24px 22px 28px;border-radius:0 0 28px 28px;box-shadow:0 12px 35px rgba(0,0,0,.18)}
+.hero-logo{display:flex;align-items:center;gap:18px;flex-wrap:wrap}.hero-logo img{width:120px;max-width:34vw;border-radius:22px;background:#fff;padding:8px;box-shadow:0 10px 24px rgba(0,0,0,.28)}.hero-title{font-size:34px;font-weight:1000;letter-spacing:2px}.hero-sub{font-size:18px;font-weight:800;opacity:.92;margin-top:6px}.hero h1{margin:0;font-size:38px;letter-spacing:.5px}.hero p{font-size:20px;line-height:1.35;margin:12px 0 0;opacity:.95}.pill{display:inline-block;background:#fff;color:#163d91;font-weight:900;border-radius:999px;padding:10px 16px;margin:14px 8px 0 0}
 .wrap{max-width:900px;margin:20px auto;padding:0 14px 36px}.card{background:var(--card);border:1px solid #e3e7f2;border-radius:24px;padding:22px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.08)}
 h2{font-size:30px;margin:0 0 16px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} label{display:block;font-weight:900;margin:10px 0 7px;font-size:17px;color:#111827}
 input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none} input:focus,select:focus,textarea:focus{border-color:#3159c7;box-shadow:0 0 0 4px rgba(49,89,199,.12)}
@@ -3706,17 +3709,21 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </head>
 <body>
 <section class="hero">
-  <h1>DP RENT</h1>
-  <p>Preventivo confermato. Compila tutti i dati per preparare pratica interna, contratto e controlli Ca.R.G.O.S.</p>
+  <div class="hero-logo">
+    <img src="/logo-dp-rent-premium.jpg" onerror="this.src='/logo.png'" alt="DP RENT">
+    <div>
+      <div class="hero-title">DP RENT</div>
+      <div class="hero-sub">La tua pratica di noleggio</div>
+    </div>
+  </div>
   <span class="pill">${clienteWebVal(req,'ref','Pratica cliente')}</span>
   ${categoria ? `<span class="pill">${esc(categoria)}</span>` : ''}
 </section>
 <div class="wrap">
-  ${req.query && req.query.cliente_riconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Cliente già riconosciuto</h2><p class="okbox">Abbiamo trovato la tua anagrafica. Controlla solo i dati e prosegui: non viene creato un doppione.</p></div>` : ``}
-  ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : (req.query && req.query.cliente_riconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Cliente già conosciuto</h2><p class="okbox">Abbiamo già trovato la tua anagrafica e i documenti collegati. Non ricaricare foto di patente o documento per evitare doppioni.</p><p><a class="btn" style="background:#333;text-decoration:none;display:block;text-align:center" href="/cliente/${clienteWebVal(req,'cliente_id') || clienteWebVal(req,'ref') || '0'}/documenti">🔄 Aggiorna documenti solo se scaduti o cambiati</a></p></div>` : `<div class="card" style="border:3px solid #173b8f">
+  ${req.query && req.query.ocr_done ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti caricati e OCR eseguito</h2><p class="okbox">Non devi ricaricare documento e patente: i file sono già collegati alla pratica. Controlla i dati sotto e completa mezzo, date, km e fatturazione.</p></div>` : ``}
+  ${clienteRiconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Cliente già riconosciuto</h2><p class="okbox">Abbiamo trovato la tua anagrafica${docsGiaPresenti ? ' e i documenti collegati' : ''}. Controlla i dati e prosegui: non viene creato un doppione.</p><p><a class="btn" style="background:#333;text-decoration:none;display:block;text-align:center" href="/cliente/${clienteDocId}/documenti">🔄 Aggiorna documenti solo se scaduti o cambiati</a></p></div>` : `<div class="card" style="border:3px solid #173b8f">
     <h2>📸 Prima carica documento e patente</h2>
     <p class="notice">Carica le foto qui: il sistema prova a leggere i dati automaticamente. Dopo trovi i campi già compilati e puoi correggere tutto a mano.</p>
-    ${req.query && req.query.ocr_done ? `<p class="okbox"><b>✅ OCR eseguito.</b><br>Controlla i campi sotto e completa quelli mancanti.</p>` : ``}
     <form method="POST" action="/prenota-ocr" enctype="multipart/form-data">
       <input type="hidden" name="ref" value="${clienteWebVal(req,'ref')}">
       <input type="hidden" name="categoria" value="${esc(categoria)}">
@@ -3735,8 +3742,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
       <button class="btn" type="submit">Leggi dati automaticamente</button>
     </form>
     <p class="small">Se l'OCR non legge tutto, puoi comunque compilare manualmente sotto.</p>
-  </div>`)}
-
+  </div>`}
 <form method="POST" action="/prenota-cliente" enctype="multipart/form-data">
   <input type="hidden" name="ref" value="${clienteWebVal(req,'ref')}">
   <input type="hidden" name="preupload_id" value="${clienteWebVal(req,'preupload_id')}">
@@ -3812,7 +3818,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
     <p class="small azienda-only">Se scegli Privato questi campi azienda vengono nascosti e non sono obbligatori.</p>
   </div>
 
-  ${req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : (req.query && req.query.cliente_riconosciuto && req.query.documenti_presenti ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">✅ Documenti già presenti in archivio. Non serve ricaricarli.</p><div class="grid"><div class="full"><label>Carica solo eventuali documenti aggiornati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
+  ${clienteRiconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti già gestiti</h2><p class="okbox">Per evitare doppioni non ti chiediamo di ricaricare documento o patente. Carica nuovi file solo se sono scaduti o cambiati.</p><p><a class="btn" style="background:#333;text-decoration:none;display:block;text-align:center" href="/cliente/${clienteDocId}/documenti">🔄 Aggiorna documenti</a></p></div>` : (req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
     <h2>Foto documento / patente</h2>
     <div class="grid">
       <div><label>Documento fronte</label><input class="file" type="file" name="documento_fronte" accept="image/*,application/pdf" capture="environment"></div>
