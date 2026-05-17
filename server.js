@@ -7308,9 +7308,35 @@ function dpExtractDate(text){
 }
 function dpDateIso(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
 function dpDateIt(d){ return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
+function dpMonthFromWord(w){
+  const t = dpNorm(w);
+  const map = {
+    gennaio:1, gen:1, febbraio:2, feb:2, marzo:3, mar:3, aprile:4, apr:4, maggio:5, mag:5,
+    giugno:6, giu:6, luglio:7, lug:7, agosto:8, ago:8, settembre:9, set:9, ottobre:10, ott:10,
+    novembre:11, nov:11, dicembre:12, dic:12
+  };
+  if(/^\d{1,2}$/.test(t)) return Number(t);
+  return map[t] || null;
+}
 function dpExtractRange(text){
-  const m = dpClean(text).match(/(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?).*?(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?)/);
-  if(!m){ const one = dpExtractDate(text); return one ? { start: one, end: one } : null; }
+  const raw = dpClean(text);
+  const norm = dpNorm(raw);
+
+  // Formati naturali: "dal 18 al 19 maggio", "18 e 19 maggio", "18-19/05"
+  let nat = norm.match(/(?:dal\s+)?(\d{1,2})\s*(?:al|a|e|-)\s*(\d{1,2})\s*(?:di\s+)?([a-z]+|\d{1,2})(?:\s+(\d{4}))?/i);
+  if(nat){
+    const now = new Date();
+    const month = dpMonthFromWord(nat[3]);
+    const year = nat[4] ? Number(nat[4]) : now.getFullYear();
+    if(month){
+      const s = new Date(year, month-1, Number(nat[1]), 9, 0, 0);
+      const e = new Date(year, month-1, Number(nat[2]), 18, 0, 0);
+      if(!isNaN(s.getTime()) && !isNaN(e.getTime()) && e >= s) return { start:s, end:e };
+    }
+  }
+
+  const m = raw.match(/(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?).*?(\d{1,2}[\/\-.]\d{1,2}(?:[\/\-.]\d{2,4})?)/);
+  if(!m){ const one = dpExtractDate(raw); return one ? { start: one, end: one } : null; }
   const s = dpExtractDate(m[1]);
   const e = dpExtractDate(m[2]);
   if(!s || !e || e < s) return null;
@@ -7595,7 +7621,6 @@ async function dpFindClienteWhatsApp(from, cf){
 function dpNaturalRentalRequest(text){
   const t = dpNorm(text);
   const cat = dpCategoryFromChoice(t);
-  if(!cat) return null;
   let range = dpExtractRange(text);
   const now = new Date();
   if(!range){
@@ -7604,7 +7629,28 @@ function dpNaturalRentalRequest(text){
     else if(/oggi/.test(t)){ const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0); range={start:d,end:d}; }
     else if(/weekend|fine settimana/.test(t)){ const d = new Date(now); const add = (6 - d.getDay() + 7) % 7 || 7; const s = new Date(d.getFullYear(),d.getMonth(),d.getDate()+add,9,0,0); const e = new Date(s.getFullYear(),s.getMonth(),s.getDate()+1,18,0,0); range={start:s,end:e}; }
   }
+  const hasRentalWord = dpServiceIntentFromText(text) === 'noleggio';
+  if(!cat && !range && !hasRentalWord) return null;
   return { cat, range, km: dpExtractKm(text) };
+}
+function dpAskNextRental(session, profileName, known){
+  const data = session.data || {};
+  const hello = known ? `Bentornato ${known.nome || profileName} 👋\n` : '';
+  if(!data.cat){
+    session.state = 'noleggio_model';
+    return hello + 'Perfetto, proseguiamo con il noleggio.\n\n' + dpPromptNoleggioCategorie();
+  }
+  if(!data.start || !data.end){
+    session.state = 'noleggio_dates';
+    return hello + `Hai scelto: *${data.cat.label}*\n\nIndicami le date noleggio.\nEsempio: 20/05 - 22/05`;
+  }
+  session.state = 'noleggio_km';
+  return hello + `Ho segnato: *${data.cat.label}* dal ${dpDateIt(data.start)} al ${dpDateIt(data.end)}.\n\nQuanti km prevedi di fare?\nEsempio: 400`;
+}
+function dpMergeRentalData(session, natural){
+  session.data = session.data || {};
+  if(natural?.cat) session.data.cat = natural.cat;
+  if(natural?.range){ session.data.start = natural.range.start; session.data.end = natural.range.end; }
 }
 function dpMissingRentalParts(n){
   const miss=[]; if(!n.cat) miss.push('mezzo'); if(!n.range) miss.push('date'); return miss;
@@ -7639,23 +7685,10 @@ async function dpHandleWhatsApp(req,res){
     const natural = dpNaturalRentalRequest(body);
     const serviceIntent = dpServiceIntentFromText(body);
 
-    if(natural && natural.cat){
-      session.data = session.data || {};
-      session.data.cat = natural.cat;
+    if(natural){
+      dpMergeRentalData(session, natural);
       session.ts = Date.now();
-      if(!natural.range){
-        session.state = 'noleggio_dates';
-        return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Ho capito che ti serve: *${natural.cat.label}*.\n\nIndicami le date noleggio. Esempio: 20/05 - 22/05`);
-      }
-      session.data.start = natural.range.start;
-      session.data.end = natural.range.end;
-      if(!natural.km || natural.km === 150){
-        session.state = 'noleggio_km';
-        return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Ho capito: *${natural.cat.label}* dal ${dpDateIt(natural.range.start)} al ${dpDateIt(natural.range.end)}.\n\nQuanti km prevedi di fare?`);
-      }
-      session.data.km = natural.km;
-      session.state = 'noleggio_km';
-      body = String(natural.km);
+      return dpTwimlResponse(res, dpAskNextRental(session, profileName, known));
     } else if(serviceIntent === 'noleggio'){
       session.state = 'noleggio_model';
       session.data = session.data || {};
@@ -7740,15 +7773,30 @@ async function dpHandleWhatsApp(req,res){
 
 
   if(session.state === 'noleggio_model'){
-    const cat = dpCategoryFromChoice(body);
-    if(!cat) return dpTwimlResponse(res, 'Scelta non valida. Scrivi 1, 2, 3, 4 oppure 5.');
-    session.data.cat = cat; session.state = 'noleggio_dates'; session.ts = Date.now();
-    return dpTwimlResponse(res, `Hai scelto: *${cat.label}*\n\nIndica le date noleggio.\nEsempio: 20/05 - 22/05`);
+    const natural = dpNaturalRentalRequest(body);
+    if(natural) dpMergeRentalData(session, natural);
+    const cat = session.data.cat || dpCategoryFromChoice(body);
+    if(cat) session.data.cat = cat;
+    session.ts = Date.now();
+    if(session.data.cat && session.data.start && session.data.end){
+      session.state = 'noleggio_km';
+      return dpTwimlResponse(res, `Ho segnato: *${session.data.cat.label}* dal ${dpDateIt(session.data.start)} al ${dpDateIt(session.data.end)}.\n\nQuanti km prevedi di fare?\nEsempio: 400`);
+    }
+    if(session.data.cat){
+      session.state = 'noleggio_dates';
+      return dpTwimlResponse(res, `Hai scelto: *${session.data.cat.label}*\n\nIndica le date noleggio.\nEsempio: 20/05 - 22/05`);
+    }
+    if(session.data.start && session.data.end){
+      return dpTwimlResponse(res, `Ho segnato le date: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}.\n\nOra dimmi il mezzo: furgone, 9 posti, Dacia, Golf o escavatore.`);
+    }
+    return dpTwimlResponse(res, 'Scelta non valida. Scrivi 1, 2, 3, 4 oppure 5 oppure il tipo di mezzo.');
   }
 
   if(session.state === 'noleggio_dates'){
-    const range = dpExtractRange(body);
-    if(!range) return dpTwimlResponse(res, 'Non riesco a leggere le date. Scrivile cosi: 20/05 - 22/05');
+    const natural = dpNaturalRentalRequest(body);
+    if(natural?.cat && !session.data.cat) session.data.cat = natural.cat;
+    const range = natural?.range || dpExtractRange(body);
+    if(!range) return dpTwimlResponse(res, 'Non riesco a leggere le date. Scrivile cosi: 20/05 - 22/05 oppure dal 18 al 19 maggio');
     session.data.start = range.start; session.data.end = range.end; session.state = 'noleggio_km'; session.ts = Date.now();
     return dpTwimlResponse(res, 'Quanti km prevedi di fare?\nEsempio: 400');
   }
@@ -7814,6 +7862,14 @@ Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
   }
 
   if(session.state === 'altro'){
+    const natural = dpNaturalRentalRequest(body);
+    const serviceIntent = dpServiceIntentFromText(body);
+    const known = await dpFindClienteWhatsApp(from).catch(()=>null);
+    if(natural || serviceIntent === 'noleggio'){
+      dpMergeRentalData(session, natural || {});
+      session.ts = Date.now();
+      return dpTwimlResponse(res, dpAskNextRental(session, profileName, known));
+    }
     const answer = await dpChatGPTAnswer(body);
     await dpNotify(DP_STAFF_NUMBERS, `${EMJ.chat} ALTRA RICHIESTA / CHATGPT\n\nCliente: ${profileName}\nWhatsApp: ${from}\n\nMessaggio cliente:\n${body}\n\nRisposta bot:\n${answer}`);
     return dpTwimlResponse(res, answer + '\n\nScrivi MENU per tornare al menu principale.');
