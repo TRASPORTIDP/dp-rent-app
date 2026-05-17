@@ -556,6 +556,9 @@ app.use('/public', express.static(publicDir));
 app.use('/uploads', express.static(uploadDir));
 app.use('/contracts', express.static(contractsDir));
 
+app.get('/logo.png', (req,res)=>res.sendFile(path.join(publicDir,'logo.png')));
+app.get('/logo-dp-rent-premium.jpg', (req,res)=>res.sendFile(path.join(publicDir,'logo-dp-rent-premium.jpg')));
+
 const upload = multer({ dest: uploadDir });
 const db = new sqlite3.Database(DB_PATH);
 
@@ -1037,7 +1040,7 @@ function publicBaseUrl(req) {
 function page(title, content) {
   const logoPath = path.join(publicDir, 'logo.png');
   const logoHtml = fs.existsSync(logoPath)
-    ? `<img src="/public/logo.png" style="height:48px;max-width:180px;object-fit:contain;background:white;border-radius:8px;padding:4px;">`
+    ? `<img src="/public/logo.png" onerror="this.style.display=\'none\';this.insertAdjacentHTML(\'afterend\',\'<span class=&quot;brandText&quot;>DP RENT</span>\')" style="height:48px;max-width:180px;object-fit:contain;background:white;border-radius:8px;padding:4px;">`
     : `<span class="brandText">DP RENT</span>`;
 
   return `<!doctype html>
@@ -1417,6 +1420,16 @@ async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
   };
 }
 
+function cleanupLocalAfterDriveV151(localPath){
+  try {
+    if (!localPath) return;
+    const full = path.resolve(String(localPath));
+    const allowed = [path.resolve(uploadDir), path.resolve(tempDir), path.resolve(contractsDir)];
+    if (!allowed.some(d => full.startsWith(d + path.sep) || full === d)) return;
+    if (fs.existsSync(full)) fs.unlinkSync(full);
+  } catch(e) { console.log('V151 cleanup locale skip:', e.message); }
+}
+
 async function sendEmail(to, subject, text, attachments) {
   if (!process.env.SMTP_HOST) throw new Error('SMTP non configurato');
   const transporter = nodemailer.createTransport({
@@ -1752,6 +1765,8 @@ doc.end();
   if (driveRes) {
     await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_file_id=?, pdf_drive_web_link=? WHERE id=?`,
       [file, driveRes.id, driveRes.webViewLink, id]);
+    // V151: copia PDF su Drive e libera spazio Render. Se vuoi mantenere anche il file locale, imposta KEEP_LOCAL_FILES=true.
+    if (String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(file);
   } else {
     await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [file, id]);
   }
@@ -2449,7 +2464,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V149 - cliente conosciuto no upload + calendario OK'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V151 - logo cliente + Drive archivio OK'));
 
 
 // =========================
@@ -3710,7 +3725,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 <body>
 <section class="hero">
   <div class="hero-logo">
-    <img src="/logo-dp-rent-premium.jpg" onerror="this.src='/logo.png'" alt="DP RENT">
+    <img src="/public/logo-dp-rent-premium.jpg" onerror="this.onerror=null;this.src='/public/logo.png'" alt="DP RENT">
     <div>
       <div class="hero-title">DP RENT</div>
       <div class="hero-sub">La tua pratica di noleggio</div>
@@ -3818,7 +3833,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
     <p class="small azienda-only">Se scegli Privato questi campi azienda vengono nascosti e non sono obbligatori.</p>
   </div>
 
-  ${clienteRiconosciuto ? `<div class="card" style="border:3px solid #1f7a36"><h2>✅ Documenti già gestiti</h2><p class="okbox">Per evitare doppioni non ti chiediamo di ricaricare documento o patente. Carica nuovi file solo se sono scaduti o cambiati.</p><p><a class="btn" style="background:#333;text-decoration:none;display:block;text-align:center" href="/cliente/${clienteDocId}/documenti">🔄 Aggiorna documenti</a></p></div>` : (req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
+  ${clienteRiconosciuto ? `` : (req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
     <h2>Foto documento / patente</h2>
     <div class="grid">
       <div><label>Documento fronte</label><input class="file" type="file" name="documento_fronte" accept="image/*,application/pdf" capture="environment"></div>
@@ -4319,7 +4334,10 @@ async function uploadContractAssetsToDrive(prenotazioneId) {
               if (!f.path || !fs.existsSync(f.path)) continue;
               const cleanName = safeFileName(`${f.tipo || 'allegato'}_${f.originalname || f.filename}`);
               const dr = await uploadFileToDrive(f.path, cleanName, f.mimetype || 'application/octet-stream', folderName);
-              if (dr) db.run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [dr.id, dr.webViewLink, f.id]);
+              if (dr) {
+                await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [dr.id, dr.webViewLink, f.id]).catch(()=>{});
+                if (String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(f.path);
+              }
             } catch (e) { console.log('Drive allegato KO:', e.message); }
           }
           resolve(true);
@@ -8499,9 +8517,14 @@ app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
     const safeName = `cliente_${req.params.id}_${Date.now()}_${String(req.body.tipo||'documento').replace(/[^a-z0-9_-]/gi,'')}${ext}`;
     const finalPath = path.join(uploadDir, safeName);
     fs.renameSync(req.file.path, finalPath);
-    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]).catch(async ()=>{
+    let driveRes = null;
+    try {
+      driveRes = await uploadFileToDrive(finalPath, safeName, req.file.mimetype || 'application/octet-stream', `CLIENTE ${c.nome || ''} ${c.cognome || ''}`.trim() || `CLIENTE_${req.params.id}`);
+    } catch(e) { console.log('V151 upload documento cliente Drive:', e.message); }
+    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size, drive_file_id, drive_web_link) VALUES (?,?,?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0, driveRes?.id || null, driveRes?.webViewLink || null]).catch(async ()=>{
       await run(`INSERT INTO allegati (prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?)`, [null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]);
     });
+    if (driveRes && String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(finalPath);
     if(req.body.tipo === 'cliente_documento') await run(`UPDATE clienti SET documento_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
     if(req.body.tipo === 'cliente_patente') await run(`UPDATE clienti SET patente_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
     res.redirect(`/cliente/${req.params.id}/documenti`);
