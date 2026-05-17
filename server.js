@@ -1140,6 +1140,13 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 
 /* V140 gestione contratto: un solo blocco pulsanti, mobile premium */
 .dp-actions{display:flex;flex-direction:column;gap:14px;margin-top:20px}.dp-actions .btn{display:block;text-align:center;padding:22px!important;border-radius:22px!important;font-size:28px!important;font-weight:900!important;color:#fff!important;text-decoration:none!important;box-shadow:0 6px 18px rgba(0,0,0,.18)!important}.dp-actions .dp-danger,.dp-actions .bad{background:#d90000!important}.dp-actions .dp-green{background:#11963d!important}.dp-actions .dp-primary{background:#2459d3!important}.dp-actions .dp-dark{background:#2e2e32!important}.contract-secondary-actions{margin-top:16px}.contract-secondary-actions .btn{font-size:22px!important;padding:16px 20px!important}
+
+
+/* V143 Planning PRO + WhatsApp PRO */
+.planning-pro-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(135deg,#050505,#222 55%,#d70000);color:#fff;border-radius:26px;padding:22px;margin-bottom:18px;box-shadow:0 18px 45px rgba(0,0,0,.22)}
+.planning-pro-head h2{margin:0;font-size:clamp(28px,4vw,48px);font-weight:950}.planning-pro-tools{display:flex;gap:10px;flex-wrap:wrap}.planning-pro-tools a,.planning-pro-tools select{background:#fff;color:#111;border:0;border-radius:14px;padding:12px 16px;text-decoration:none;font-weight:900;width:auto}.planning-legend{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.planning-legend span{border-radius:999px;padding:8px 12px;font-weight:900}.pl-free{background:#1fae4b;color:#fff}.pl-booked{background:#ffb000;color:#111}.pl-out{background:#1457d9;color:#fff}.pl-late{background:#d70000;color:#fff}.pl-off{background:#111;color:#fff}.planning-pro-wrap{overflow:auto;border-radius:22px;box-shadow:0 15px 35px rgba(0,0,0,.12);border:1px solid #ddd;background:#fff}.planning-pro{border-collapse:separate;border-spacing:0;min-width:980px}.planning-pro th{position:sticky;top:0;z-index:3;background:#111;color:#fff}.planning-pro .sticky-col{position:sticky;left:0;z-index:4;background:#fff;color:#111;min-width:230px;box-shadow:6px 0 12px rgba(0,0,0,.06)}.planning-pro th.sticky-col{background:#111;color:#fff}.planning-cell{min-width:48px;height:46px;text-align:center;font-weight:950;border:2px solid #fff!important;cursor:pointer;border-radius:10px}.planning-cell small{display:block;font-size:10px;font-weight:800}.planning-cell:hover{outline:3px solid #111}.pl-card{padding:6px}.pl-targa{font-size:18px;font-weight:950}.pl-desc{font-size:12px;color:#555}.pl-filter-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.pl-filter-form select,.pl-filter-form input{width:auto;min-width:160px}.wa-pro-note{background:#eaf4ff;border:1px solid #9cc8ff;border-radius:18px;padding:16px;margin:10px 0;color:#123;font-weight:800}
+@media(max-width:700px){.planning-pro-head{display:block}.planning-pro-tools a,.planning-pro-tools select,.pl-filter-form select,.pl-filter-form input,.pl-filter-form button{width:100%}.planning-pro-wrap{max-height:72vh}.planning-pro .sticky-col{min-width:190px}.planning-cell{min-width:42px;height:42px}}
+
 </style>
 <script>
 function toggleAzienda(){
@@ -1155,7 +1162,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V122 AREA CLIENTE OK</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V143 PLANNING + WHATSAPP PRO</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -4858,24 +4865,71 @@ app.get('/stato/:id/:stato', async (req, res) => {
 
 app.get('/planning', async (req, res) => {
   const mese = req.query.mese || moment().format('YYYY-MM');
-  const start = moment(mese + '-01'), days = start.daysInMonth();
-  const mezzi = await all(`SELECT * FROM mezzi ORDER BY targa`);
-  const pren = await all(`SELECT p.*, m.targa, m.marca, m.modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.stato!='annullato'`);
+  const categoriaFiltro = String(req.query.categoria || '').trim();
+  const vista = String(req.query.vista || 'mese');
+  const start = moment(mese + '-01');
+  const days = start.daysInMonth();
+  const prec = start.clone().subtract(1,'month').format('YYYY-MM');
+  const succ = start.clone().add(1,'month').format('YYYY-MM');
+
+  let mezziSql = `SELECT * FROM mezzi`;
+  let mezziParams = [];
+  if(categoriaFiltro){ mezziSql += ` WHERE categoria=?`; mezziParams.push(categoriaFiltro); }
+  mezziSql += ` ORDER BY categoria, targa`;
+  const mezzi = await all(mezziSql, mezziParams).catch(()=>[]);
+  const pren = await all(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria AS mezzo_categoria
+    FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id
+    WHERE COALESCE(p.stato,'') NOT IN ('annullato','eliminato_attesa')
+      AND COALESCE(p.data_fine,'') >= ? AND COALESCE(p.data_inizio,'') <= ?`,
+    [start.format('YYYY-MM-DD'), start.clone().date(days).format('YYYY-MM-DD')]).catch(()=>[]);
+  const categorie = await all(`SELECT DISTINCT categoria FROM mezzi WHERE categoria IS NOT NULL AND categoria<>'' ORDER BY categoria`).catch(()=>[]);
+
+  function statoCell(occ, day){
+    if(!occ) return { cls:'pl-free', label:'L', text:'Libero' };
+    const st = String(occ.stato || '').toLowerCase();
+    if(st.includes('rientro') || st.includes('ritardo')) return { cls:'pl-late', label:'R', text:'Ritardo' };
+    if(st.includes('corso') || st.includes('checkout') || st.includes('check-out')) return { cls:'pl-out', label:'OUT', text:'Check-out' };
+    if(st.includes('officina') || st.includes('fermo')) return { cls:'pl-off', label:'OFF', text:'Fermo' };
+    return { cls:'pl-booked', label:'P', text:'Prenotato' };
+  }
+
   let header = '<th class="sticky-col">Mezzo</th>';
-  for (let d=1; d<=days; d++) header += `<th>${d}</th>`;
+  for (let d=1; d<=days; d++) {
+    const mm = start.clone().date(d);
+    header += `<th>${d}<br><small>${mm.format('dd')}</small></th>`;
+  }
   let rows = '';
   mezzi.forEach(m => {
-    rows += `<tr><td class="sticky-col"><a href="/mezzo/${m.id}"><b>${esc(m.targa)}</b></a><br>${esc(descrizionePubblica(m))}</td>`;
+    rows += `<tr><td class="sticky-col"><div class="pl-card"><div class="pl-targa">${esc(m.targa || '')}</div><div class="pl-desc">${esc(descrizionePubblica(m))}</div><span class="badge badge-blue">${esc(m.categoria || '')}</span></div></td>`;
     for (let d=1; d<=days; d++) {
       const day = start.clone().date(d).format('YYYY-MM-DD');
-      const occ = pren.find(p => p.mezzo_id == m.id && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
-      if (occ) rows += `<td class="occupato" title="${esc(occ.codice)} ${esc(occ.nome)} ${esc(occ.cognome)}" onclick="window.location='/prenotazione/${occ.id}'">O</td>`;
-      else rows += `<td class="libero" title="Libero ${esc(m.targa)} ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'">L</td>`;
+      const occ = pren.find(p => String(p.mezzo_id || '') === String(m.id || '') && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
+      const st = statoCell(occ, day);
+      if (occ) {
+        const cliente = `${occ.nome || ''} ${occ.cognome || ''}`.trim() || 'Cliente';
+        rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='/contratto/${occ.id}/gestisci'">${st.label}<small>${esc((cliente||'').slice(0,8))}</small></td>`;
+      } else {
+        rows += `<td class="planning-cell ${st.cls}" title="Libero ${esc(m.targa || '')} ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'">L</td>`;
+      }
     }
     rows += '</tr>';
   });
-  const prec = start.clone().subtract(1,'month').format('YYYY-MM'), succ = start.clone().add(1,'month').format('YYYY-MM');
-  res.send(page('Planning', `<h2>Planning ${start.format('MM/YYYY')}</h2><p><a href="/planning?mese=${prec}">← Mese precedente</a> | <a href="/planning?mese=${succ}">Mese successivo -</a></p><p><span class="libero" style="padding:6px;">Libero: clic per prenotare</span> <span class="occupato" style="padding:6px;">Occupato: clic per aprire contratto</span></p><div class="sticky-table"><table><tr>${header}</tr>${rows}</table></div>`));
+
+  const catOptions = `<option value="">Tutte le categorie</option>` + categorie.map(c=>`<option value="${esc(c.categoria)}" ${categoriaFiltro===c.categoria?'selected':''}>${esc(c.categoria)}</option>`).join('');
+  res.send(page('Planning PRO', `
+    <div class="planning-pro-head">
+      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${start.format('MM/YYYY')}</h2><p style="margin:8px 0 0">Clic su una prenotazione per aprire gestione contratto. Clic su verde per creare prenotazione.</p></div>
+      <div class="planning-pro-tools"><a href="/planning?mese=${prec}&categoria=${encodeURIComponent(categoriaFiltro)}">← Mese prima</a><a href="/planning?mese=${succ}&categoria=${encodeURIComponent(categoriaFiltro)}">Mese dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
+    </div>
+    <form class="box pl-filter-form" method="GET" action="/planning">
+      <input type="month" name="mese" value="${esc(mese)}">
+      <select name="categoria">${catOptions}</select>
+      <select name="vista"><option ${vista==='mese'?'selected':''} value="mese">Vista mese</option><option ${vista==='settimana'?'selected':''} value="settimana">Vista settimana</option><option ${vista==='giorno'?'selected':''} value="giorno">Vista giorno</option></select>
+      <button>Filtra</button>
+    </form>
+    <div class="planning-legend"><span class="pl-free">Verde libero</span><span class="pl-booked">Giallo prenotato</span><span class="pl-out">Blu check-out</span><span class="pl-late">Rosso ritardo</span><span class="pl-off">Nero fermo/officina</span></div>
+    <div class="planning-pro-wrap"><table class="planning-pro"><tr>${header}</tr>${rows || '<tr><td>Nessun mezzo trovato.</td></tr>'}</table></div>
+  `));
 });
 
 
@@ -7487,9 +7541,38 @@ function dpTwimlResponse(res, text){
   return res.end(xml);
 }
 
+
+async function dpFindClienteWhatsApp(from, cf){
+  const tel = String(from||'').replace('whatsapp:','').replace(/\D/g,'');
+  if(cf){
+    const c = await get(`SELECT * FROM clienti WHERE UPPER(COALESCE(codice_fiscale,cf,''))=? ORDER BY id DESC LIMIT 1`, [String(cf).toUpperCase()]).catch(()=>null);
+    if(c) return c;
+  }
+  if(!tel) return null;
+  const rows = await all(`SELECT * FROM clienti WHERE telefono IS NOT NULL AND telefono<>'' ORDER BY id DESC`).catch(()=>[]);
+  return (rows||[]).find(c => String(c.telefono||'').replace(/\D/g,'').endsWith(tel.slice(-9)) || tel.endsWith(String(c.telefono||'').replace(/\D/g,'').slice(-9))) || null;
+}
+function dpNaturalRentalRequest(text){
+  const t = dpNorm(text);
+  const cat = dpCategoryFromChoice(t);
+  if(!cat) return null;
+  let range = dpExtractRange(text);
+  const now = new Date();
+  if(!range){
+    if(/domani/.test(t)){ const d = new Date(now.getFullYear(), now.getMonth(), now.getDate()+1, 9, 0, 0); range={start:d,end:d}; }
+    else if(/dopodomani/.test(t)){ const d = new Date(now.getFullYear(), now.getMonth(), now.getDate()+2, 9, 0, 0); range={start:d,end:d}; }
+    else if(/oggi/.test(t)){ const d = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 0, 0); range={start:d,end:d}; }
+    else if(/weekend|fine settimana/.test(t)){ const d = new Date(now); const add = (6 - d.getDay() + 7) % 7 || 7; const s = new Date(d.getFullYear(),d.getMonth(),d.getDate()+add,9,0,0); const e = new Date(s.getFullYear(),s.getMonth(),s.getDate()+1,18,0,0); range={start:s,end:e}; }
+  }
+  return { cat, range, km: dpExtractKm(text) };
+}
+function dpMissingRentalParts(n){
+  const miss=[]; if(!n.cat) miss.push('mezzo'); if(!n.range) miss.push('date'); return miss;
+}
+
 async function dpHandleWhatsApp(req,res){
   const from = dpClean(req.body.From || '').toLowerCase();
-  const body = dpClean(req.body.Body || '');
+  let body = dpClean(req.body.Body || '');
   const profileName = req.body.ProfileName || 'Cliente';
   const sid = dpClean(req.body.MessageSid || req.body.SmsSid || '');
   console.log('DP BOT IN:', { from, body, profileName, sid, state: DP_BOT_SESSIONS[from]?.state });
@@ -7506,10 +7589,32 @@ async function dpHandleWhatsApp(req,res){
 
   if(dpIsMenuKeyword(body) || body === ''){
     dpReset(from, profileName);
-    return dpTwimlResponse(res, dpMenu(profileName));
+    const known = await dpFindClienteWhatsApp(from).catch(()=>null);
+    const hello = known ? `Bentornato ${known.nome || profileName} 👋\nHo riconosciuto il tuo numero, userò i dati già presenti quando confermi una prenotazione.\n\n` : '';
+    return dpTwimlResponse(res, hello + dpMenu(profileName));
   }
 
   if(session.state === 'menu'){
+    const natural = dpNaturalRentalRequest(body);
+    if(natural && natural.cat){
+      const known = await dpFindClienteWhatsApp(from).catch(()=>null);
+      session.data = session.data || {};
+      session.data.cat = natural.cat;
+      session.ts = Date.now();
+      if(!natural.range){
+        session.state = 'noleggio_dates';
+        return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Ho capito che ti serve: *${natural.cat.label}*.\n\nIndicami le date noleggio. Esempio: 20/05 - 22/05`);
+      }
+      session.data.start = natural.range.start;
+      session.data.end = natural.range.end;
+      if(!natural.km || natural.km === 150){
+        session.state = 'noleggio_km';
+        return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Ho capito: *${natural.cat.label}* dal ${dpDateIt(natural.range.start)} al ${dpDateIt(natural.range.end)}.\n\nQuanti km prevedi di fare?`);
+      }
+      session.data.km = natural.km;
+      session.state = 'noleggio_km';
+      body = String(natural.km);
+    }
     if(body === '1'){
       session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
@@ -8216,32 +8321,4 @@ app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
     const safeName = `cliente_${req.params.id}_${Date.now()}_${String(req.body.tipo||'documento').replace(/[^a-z0-9_-]/gi,'')}${ext}`;
     const finalPath = path.join(uploadDir, safeName);
     fs.renameSync(req.file.path, finalPath);
-    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]).catch(async ()=>{
-      await run(`INSERT INTO allegati (prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?)`, [null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]);
-    });
-    if(req.body.tipo === 'cliente_documento') await run(`UPDATE clienti SET documento_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
-    if(req.body.tipo === 'cliente_patente') await run(`UPDATE clienti SET patente_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
-    res.redirect(`/cliente/${req.params.id}/documenti`);
-  } catch(e){ res.status(500).send(page('Errore documento', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
-});
-
-app.get('/contratto/:id/firmato', async (req,res)=>{
-  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
-  if(!p) return res.send('Contratto non trovato');
-  try { await generaPdfContratto(req.params.id, { forceDrive:false }); } catch(e) {}
-  const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]).catch(()=>p);
-  const pdfLink = fresh?.pdf_drive_web_link || fresh?.pdf_drive_link || p.pdf_drive_web_link || p.pdf_drive_link || '';
-  res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} &egrave; stato firmato e registrato da DP RENT.</p>${pdfLink ? `<a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a>` : '<p class="muted">Puoi chiudere questa pagina.</p>'}`));
-});
-
-
-// V109 alias route robuste per WhatsApp/firma
-app.get('/contratto/:id/invia-firma-whatsapp', (req,res)=>res.redirect('/firma-whatsapp/' + req.params.id));
-app.get('/prenotazione/:id/invia-whatsapp', (req,res)=>res.redirect('/contratto/' + req.params.id + '/invia-whatsapp'));
-app.get('/prenotazione/:id/invia-firma-whatsapp', (req,res)=>res.redirect('/firma-whatsapp/' + req.params.id));
-
-app.get('/v108-check', async (req,res)=>{
-  const dbOk = fs.existsSync(DB_PATH);
-  const dirs = [DATA_DIR, uploadDir, contractsDir, firmeDir].map(d=>`${d}: ${fs.existsSync(d) ? 'OK' : 'NO'}`).join('\n');
-  res.type('text/plain').send(`DP RENT V109 OK\nDB: ${dbOk ? DB_PATH : 'NO'}\n${dirs}`);
-});
+    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalna
