@@ -1171,7 +1171,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V143 PLANNING + WHATSAPP PRO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V169 DB FIX + DRIVE</small></h1></header>
 <nav>
 <a href="/">Dashboard</a>
 <a href="/mezzi-web">Mezzi</a>
@@ -9160,3 +9160,73 @@ app.get('/admin/drive-sync-documenti-tutti', async (req,res)=>{
 });
 
 console.log('DP RENT V167: WhatsApp smart ripristinato + sync documenti Drive forzabile');
+
+// =========================
+// V169 - MIGRAZIONE DB AUTOMATICA + ROUTE FIX
+// Serve per database vecchi: aggiunge colonne mancanti (es. conducente2_cf)
+// =========================
+async function v169AddColSafe(table, column, type){
+  try{
+    if (typeof run !== 'function') return { table, column, ok:false, error:'run non disponibile' };
+    await run(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    return { table, column, ok:true, added:true };
+  }catch(e){
+    const msg = String(e && e.message || e || '');
+    if (msg.toLowerCase().includes('duplicate column') || msg.toLowerCase().includes('already exists')) {
+      return { table, column, ok:true, added:false, exists:true };
+    }
+    return { table, column, ok:false, error:msg };
+  }
+}
+
+async function v169EnsureDbColumns(){
+  const prenotazioni = {
+    conducente2_nome:'TEXT', conducente2_cognome:'TEXT', conducente2:'TEXT', conducente2_cf:'TEXT',
+    conducente2_doc_numero:'TEXT', conducente2_doc_scadenza:'TEXT',
+    conducente2_patente_numero:'TEXT', conducente2_patente:'TEXT', conducente2_patente_scadenza:'TEXT',
+    conducente2_categoria_patente:'TEXT', conducente2_recapito:'TEXT',
+    ora_inizio:'TEXT', ora_fine:'TEXT', orario_checkin:'TEXT', orario_checkout:'TEXT',
+    km_checkout:'REAL', km_checkin:'REAL', pdf_path:'TEXT', pdf_drive_file_id:'TEXT', pdf_drive_link:'TEXT', pdf_drive_web_link:'TEXT',
+    drive_folder_id:'TEXT', drive_folder_link:'TEXT', cliente_id:'INTEGER', tipo_record:'TEXT',
+    tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT',
+    indirizzo_fatturazione:'TEXT', citta_fatturazione:'TEXT', provincia_fatturazione:'TEXT', cap_fatturazione:'TEXT'
+  };
+  const clienti = {
+    documento_numero:'TEXT', documento_scadenza:'TEXT', documento_tipo:'TEXT', patente_numero:'TEXT', patente_scadenza:'TEXT', categoria_patente:'TEXT',
+    conducente2_nome:'TEXT', conducente2_cognome:'TEXT', conducente2:'TEXT', conducente2_cf:'TEXT', conducente2_doc_numero:'TEXT',
+    conducente2_doc_scadenza:'TEXT', conducente2_patente_numero:'TEXT', conducente2_patente:'TEXT', conducente2_patente_scadenza:'TEXT',
+    conducente2_categoria_patente:'TEXT', tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT',
+    indirizzo_fatturazione:'TEXT', citta_fatturazione:'TEXT', provincia_fatturazione:'TEXT', cap_fatturazione:'TEXT',
+    drive_folder_id:'TEXT', drive_folder_link:'TEXT'
+  };
+  const allegati = {
+    cliente_id:'INTEGER', prenotazione_id:'INTEGER', path:'TEXT', filename:'TEXT', originalname:'TEXT', mimetype:'TEXT', tipo:'TEXT',
+    drive_file_id:'TEXT', drive_web_link:'TEXT', drive_link:'TEXT', drive_folder_id:'TEXT', created_at:'TEXT'
+  };
+  const mezzi = { km_attuali:'REAL', km_ultimo_tagliando:'REAL', km_prossimo_tagliando:'REAL', tagliando_ogni_km:'REAL' };
+
+  const results = [];
+  for (const [c,t] of Object.entries(prenotazioni)) results.push(await v169AddColSafe('prenotazioni', c, t));
+  for (const [c,t] of Object.entries(clienti)) results.push(await v169AddColSafe('clienti', c, t));
+  for (const [c,t] of Object.entries(allegati)) results.push(await v169AddColSafe('allegati', c, t));
+  for (const [c,t] of Object.entries(mezzi)) results.push(await v169AddColSafe('mezzi', c, t));
+  return results;
+}
+
+async function v169DbFixPage(req,res){
+  try{
+    const results = await v169EnsureDbColumns();
+    const added = results.filter(r=>r.added).length;
+    const ok = results.filter(r=>r.ok).length;
+    const errors = results.filter(r=>!r.ok);
+    res.send(page('Aggiornamento DB', `<div class="box"><h2 class="${errors.length?'bad':'ok'}">Database aggiornato</h2><p>Colonne controllate: <b>${results.length}</b></p><p>Colonne nuove aggiunte: <b>${added}</b></p><p>OK: <b>${ok}</b></p>${errors.length?`<h3>Errori</h3><pre>${esc(JSON.stringify(errors,null,2))}</pre>`:''}<a class="btn" href="/">Dashboard</a><a class="btn btn2" href="javascript:history.back()">Indietro</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore aggiornamento DB', `<div class="box"><h2 class="bad">Errore aggiornamento DB</h2><pre>${esc(e.message)}</pre><a class="btn" href="/">Dashboard</a></div>`)); }
+}
+
+app.get('/admin/update-db', v169DbFixPage);
+app.get('/admin/fix-db', v169DbFixPage);
+app.get('/admin/migra-db', v169DbFixPage);
+
+// Lo faccio anche all'avvio, cosi non devi aprire nulla a mano dopo il deploy.
+setTimeout(()=>{ v169EnsureDbColumns().then(r=>console.log('DP RENT V169 migrazione DB OK:', r.filter(x=>x.added).length, 'colonne aggiunte')).catch(e=>console.log('DP RENT V169 migrazione DB errore:', e.message)); }, 2500);
+console.log('DP RENT V169: route /admin/update-db /admin/fix-db aggiunte + migrazione automatica colonne secondo conducente');
