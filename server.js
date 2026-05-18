@@ -1449,15 +1449,26 @@ async function uploadFileToDriveFolderV63(localPath, fileName, mimeType, folderI
   ensureDriveClientV172();
   if (!drive || !folderId) return null;
   const size = await assertFileReadyV173(localPath, 'Upload Drive');
-  console.log('V173 Drive upload diretto:', fileName, size, 'bytes', 'folder', folderId);
-  const media = { mimeType: mimeType || 'application/octet-stream', body: fs.createReadStream(localPath) };
-  const created = await drive.files.create({
-    requestBody:{ name:fileName, parents:[folderId] },
-    media,
-    fields:'id,name,webViewLink',
-    supportsAllDrives:true
-  });
-  return created.data;
+  console.log('V175 Drive upload diretto:', fileName, size, 'bytes', 'folder', folderId);
+  try {
+    const media = { mimeType: mimeType || 'application/octet-stream', body: fs.createReadStream(localPath) };
+    const created = await drive.files.create({
+      requestBody:{ name:fileName, parents:[folderId] },
+      media,
+      fields:'id,name,webViewLink',
+      supportsAllDrives:true
+    });
+    return created.data;
+  } catch(e) {
+    const msg = e && e.message ? String(e.message) : String(e);
+    // Se Google blocca il Service Account per quota, NON fermiamo il gestionale:
+    // torniamo null così parte il vecchio sistema Apps Script, che stamattina funzionava.
+    if (msg.includes('Service Accounts do not have storage quota') || msg.includes('storage quota')) {
+      console.log('V175 Drive diretto saltato: Service Account senza quota, uso Apps Script fallback');
+      return null;
+    }
+    throw e;
+  }
 }
 
 async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
@@ -9544,9 +9555,14 @@ uploadLocalAllegatiToDriveV63 = async function uploadLocalAllegatiToDriveCliente
       const localPath = a.path || (a.filename ? path.join(uploadDir, path.basename(a.filename)) : '');
       if (!localPath || !fs.existsSync(localPath)) continue;
       const fileName = safeFileName(a.originalname || a.filename || path.basename(localPath));
-      const up = await uploadFileToDriveFolderV63(localPath, fileName, a.mimetype || 'application/octet-stream', folderId);
-      if (up && up.id) {
-        await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [up.id, up.webViewLink || null, a.id]).catch(()=>{});
+      let up = await uploadFileToDriveFolderV63(localPath, fileName, a.mimetype || 'application/octet-stream', folderId);
+      if (!up) {
+        const folderName = (typeof v164ClienteFolderName === 'function' && p) ? v164ClienteFolderName(p) : 'DP RENT';
+        try { up = await uploadFileToDrive(localPath, fileName, a.mimetype || 'application/octet-stream', folderName); }
+        catch(e){ console.log('V175 allegato Apps Script warning:', e.message); }
+      }
+      if (up && (up.id || up.webViewLink || up.link)) {
+        await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [up.id || '', up.webViewLink || up.link || null, a.id]).catch(()=>{});
       }
     }
   } catch(e) {
@@ -9621,4 +9637,4 @@ app.get('/admin/drive-cliente-unica/:id', async (req,res)=>{
   }catch(e){ res.status(500).send(page('Errore Drive cliente unica', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna</a></div>`)); }
 });
 
-console.log('DP RENT V174: Drive cartella cliente unica DEFINITIVA - ogni noleggio stesso cliente scrive lì dentro');
+console.log('DP RENT V175: Drive torna Apps Script fallback + cartella cliente unica');
