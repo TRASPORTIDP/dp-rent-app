@@ -7324,7 +7324,8 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Ora fine<input type="time" name="ora_fine" value="${esc(p.ora_fine)}"></label>
           <label>Orario check-out<input type="time" name="check_out_orario" value="${esc(p.check_out_orario || '')}"></label>
           <label>Orario check-in<input type="time" name="check_in_orario" value="${esc(p.check_in_orario || '')}"></label>
-          <label>Totale<input name="totale" value="${esc(p.totale)}"></label>
+          <label>Km previsti<input type="number" name="km_previsti" value="${esc(p.km_previsti || 150)}"></label>
+          <label>Totale attuale<input name="totale" value="${esc(p.totale)}" readonly></label>
           <label>Stato<select name="stato"><option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option><option value="bozza" ${p.stato==='bozza'?'selected':''}>Bozza</option><option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option><option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option><option value="in_corso" ${p.stato==='in_corso'?'selected':''}>In corso/check-out</option><option value="rientrato" ${p.stato==='rientrato'?'selected':''}>Rientrato/check-in</option><option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option></select></label>
           <label>Cauzione ricevuta<select name="cauzione_ricevuta"><option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option></select></label>
           <label>Importo cauzione<input name="cauzione_importo" value="${esc(p.cauzione_importo || p.cauzione || 0)}"></label>
@@ -7342,23 +7343,52 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
   v67EnsureCriticalColumns(async ()=>{
     try{
       const b = req.body || {};
-      const mezzo = b.mezzo_id ? await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]).catch(()=>null) : null;
+      const oldP = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+      if(!oldP) return res.status(404).send(page('Non trovato', `<div class="box"><h2>Contratto non trovato</h2></div>`));
+
+      // V170 FIX: se in modifica cambio mezzo/date/orari/km, il contratto deve comportarsi come un nuovo preventivo:
+      // ricalcola prezzo, km inclusi, extra km, IVA, cauzione e poi rigenera PDF + Drive.
+      const selectedMezzoId = v62Val(b.mezzo_id || oldP.mezzo_id || '');
+      const mezzoDb = selectedMezzoId ? await get(`SELECT * FROM mezzi WHERE id=?`, [selectedMezzoId]).catch(()=>null) : null;
+      const mezzo = mezzoDb || {
+        id: oldP.mezzo_id || null,
+        targa: oldP.targa || '',
+        marca: oldP.marca || '',
+        modello: oldP.modello || '',
+        tipo: oldP.tipo || '',
+        categoria: oldP.categoria || '',
+        prezzo_giorno: oldP.prezzo_giorno || prezzoCategoria(oldP.categoria || oldP.tipo),
+        km_inclusi: oldP.km_inclusi || kmCategoria(oldP.categoria || oldP.tipo),
+        cauzione: oldP.cauzione || oldP.cauzione_importo || CAUZIONE
+      };
+
+      const dataInizio = v62Val(b.data_inizio || oldP.data_inizio);
+      const dataFine = v62Val(b.data_fine || oldP.data_fine);
+      const oraInizio = v62Val(b.ora_inizio || oldP.ora_inizio || '08:30');
+      const oraFine = v62Val(b.ora_fine || oldP.ora_fine || '18:00');
+      const kmPrevisti = Number(b.km_previsti || oldP.km_previsti || 0);
+      const calc = calcolaTotale(mezzo, dataInizio, dataFine, oraInizio, oraFine, kmPrevisti);
+      const cauzioneStd = v62Money(mezzo.cauzione || oldP.cauzione || oldP.cauzione_importo || CAUZIONE);
+      const cauzioneImporto = (String(b.cauzione_importo || '').trim() !== '') ? v62Money(b.cauzione_importo) : cauzioneStd;
+
       await run(`UPDATE prenotazioni SET
-        mezzo_id=COALESCE(?,mezzo_id), targa=COALESCE(?,targa), marca=COALESCE(?,marca), modello=COALESCE(?,modello), categoria=COALESCE(?,categoria),
+        mezzo_id=COALESCE(?,mezzo_id), targa=COALESCE(?,targa), marca=COALESCE(?,marca), modello=COALESCE(?,modello), tipo=COALESCE(?,tipo), categoria=COALESCE(?,categoria),
         nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?,
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?, documento_tipo=?, documento_numero=?, documento_scadenza=?,
         patente_numero=?, patente_scadenza=?, conducente2_nome=?, conducente2_cognome=?, conducente2=?, conducente2_cf=?, conducente2_doc_numero=?, conducente2_doc_scadenza=?, conducente2_patente_numero=?, conducente2_patente=?, conducente2_patente_scadenza=?, conducente2_categoria_patente=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
-        data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?, totale=?, stato=?,
+        data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?,
+        giorni=?, km_previsti=?, km_inclusi=?, extra_fuori_orario=?, extra_km=?, imponibile=?, iva=?, totale=?, cauzione=?, stato=?,
         cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, note=?
         WHERE id=?`, [
-          b.mezzo_id || null, mezzo?.targa || null, mezzo?.marca || null, mezzo?.modello || null, mezzo?.categoria || null,
+          mezzoDb?.id || null, mezzoDb?.targa || null, mezzoDb?.marca || null, mezzoDb?.modello || null, mezzoDb?.tipo || null, mezzoDb?.categoria || mezzoDb?.tipo || null,
           v62Val(b.nome), v62Val(b.cognome), v62Val(b.telefono), v62Val(b.email), v62Val(b.codice_fiscale),
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
           v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
-          v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Val(b.check_out_orario), v62Val(b.check_in_orario), v62Money(b.totale), v62Val(b.stato || 'contratto'),
-          v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
+          dataInizio, oraInizio, dataFine, oraFine, v62Val(b.check_out_orario), v62Val(b.check_in_orario),
+          calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, cauzioneStd, v62Val(b.stato || 'contratto'),
+          v62Val(b.cauzione_ricevuta || 'no'), cauzioneImporto, v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
       ]);
-      try{ if (typeof v163AfterContractChange === 'function') { await v163AfterContractChange(req.params.id); } else { await syncContrattoDriveV63(req.params.id); } }catch(e){ console.log('V163 sync dopo modifica warning:', e.message); }
+      try{ if (typeof v163AfterContractChange === 'function') { await v163AfterContractChange(req.params.id); } else { await syncContrattoDriveV63(req.params.id); } }catch(e){ console.log('V170 sync dopo modifica warning:', e.message); }
       res.redirect(`/contratto/${req.params.id}/gestisci`);
     } catch(e){
       res.status(500).send(page('Errore salvataggio', `<div class="box"><h2 class="bad">Errore salvataggio</h2><pre>${esc(e.message)}</pre><a class="btn" href="/prenotazione/${req.params.id}/modifica">Torna modifica</a></div>`));
@@ -9230,3 +9260,82 @@ app.get('/admin/migra-db', v169DbFixPage);
 // Lo faccio anche all'avvio, cosi non devi aprire nulla a mano dopo il deploy.
 setTimeout(()=>{ v169EnsureDbColumns().then(r=>console.log('DP RENT V169 migrazione DB OK:', r.filter(x=>x.added).length, 'colonne aggiunte')).catch(e=>console.log('DP RENT V169 migrazione DB errore:', e.message)); }, 2500);
 console.log('DP RENT V169: route /admin/update-db /admin/fix-db aggiunte + migrazione automatica colonne secondo conducente');
+
+
+// =========================
+// V170 - FIX MODIFICA CONTRATTO: ricalcolo automatico + Drive PDF sempre aggiornato
+// =========================
+async function v170DriveUploadOrUpdatePdf(prenotazioneId){
+  const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+  if (!p) throw new Error('Contratto non trovato');
+  const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:true, skipDrive:true });
+  const pdfName = (typeof v164ContrattoPdfName === 'function') ? v164ContrattoPdfName(p) : `contratto_${p.codice || prenotazioneId}.pdf`;
+  let folder = null;
+  let uploaded = null;
+
+  if (drive) {
+    folder = await getOrCreateDriveContractFolderV63(p);
+    if (folder && folder.id) {
+      const media = { mimeType:'application/pdf', body: fs.createReadStream(pdf) };
+      const oldId = String(p.pdf_drive_file_id || '').trim();
+      if (oldId) {
+        try {
+          uploaded = (await drive.files.update({
+            fileId: oldId,
+            requestBody:{ name: pdfName },
+            media,
+            fields:'id,name,webViewLink',
+            supportsAllDrives:true
+          })).data;
+        } catch(e) { console.log('V170 update PDF Drive warning:', e.message); }
+      }
+      if (!uploaded) {
+        if (typeof v164DeleteOldSameContractPdf === 'function') await v164DeleteOldSameContractPdf(folder.id, p);
+        uploaded = await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
+      }
+    }
+  }
+
+  if (!uploaded) {
+    uploaded = await uploadFileToDrive(pdf, pdfName, 'application/pdf', (typeof v164ClienteFolderName === 'function') ? v164ClienteFolderName(p) : 'DP RENT');
+  }
+
+  if (uploaded && (uploaded.webViewLink || uploaded.link || uploaded.id)) {
+    const link = uploaded.webViewLink || uploaded.link || '';
+    await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_web_link=?, pdf_drive_file_id=?, drive_folder_id=COALESCE(?,drive_folder_id), drive_folder_link=COALESCE(?,drive_folder_link) WHERE id=?`,
+      [pdf, link, link, uploaded.id || p.pdf_drive_file_id || '', folder?.id || null, folder?.webViewLink || null, prenotazioneId]);
+    if (String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
+    return { ok:true, pdf, link, fileId:uploaded.id || '', folder };
+  }
+  await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+  return { ok:false, pdf, error:'PDF generato locale ma non caricato su Drive' };
+}
+
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V170(prenotazioneId){
+  const pdfRes = await v170DriveUploadOrUpdatePdf(prenotazioneId).catch(e => ({ ok:false, error:e.message }));
+  try {
+    const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+    const folder = pdfRes?.folder || (drive ? await getOrCreateDriveContractFolderV63(p) : null);
+    if (folder && folder.id) {
+      await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
+      if (typeof uploadLocalAllegatiToDriveV63 === 'function') await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
+    }
+  } catch(e) { console.log('V170 sync allegati warning:', e.message); }
+  return pdfRes;
+};
+
+v163AfterContractChange = async function v170AfterContractChange(prenotazioneId){
+  const id = String(prenotazioneId || '').trim();
+  if(!id) return null;
+  const driveSync = await syncContrattoDriveV63(id);
+  try {
+    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
+    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
+      const ics = await v153IcsFileForPrenotazione(fresh);
+      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
+    }
+  } catch(e) { console.log('V170 calendario dopo modifica warning:', e.message); }
+  return { ok:true, driveSync };
+};
+
+console.log('DP RENT V170: modifica contratto ricalcola importi/km e aggiorna PDF Drive');
