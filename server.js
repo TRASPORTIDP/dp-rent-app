@@ -1355,9 +1355,19 @@ function googleDriveConfigured() {
   return !!(process.env.DRIVE_WEBAPP_URL && process.env.GOOGLE_DRIVE_FOLDER_ID);
 }
 
+// V168: una sola cartella Drive per cliente, contratti e documenti stanno insieme.
+function driveClienteFolderNameV168(p){
+  const nome = `${p?.nome || ''} ${p?.cognome || ''}`.trim() || 'CLIENTE';
+  const key = (p?.codice_fiscale || p?.cf || p?.telefono || p?.cliente_id || '').toString().replace(/[^a-zA-Z0-9+_-]/g,'');
+  return safeFileName(`${nome}${key ? ' - ' + key : ''}`.toUpperCase());
+}
+function driveContractPdfNameV168(p){
+  return safeFileName(`contratto_${p?.codice || ('DPR-'+(p?.id||Date.now()))}.pdf`);
+}
+
 async function getOrCreateDriveContractFolderV63(p) {
   if (!drive) return null;
-  const folderName = `${p?.codice || 'CONTRATTO'} - ${p?.nome || ''} ${p?.cognome || ''}`.trim();
+  const folderName = driveClienteFolderNameV168(p);
   const parent = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || null;
   const safeName = folderName.replace(/'/g, "\'");
   let q = `mimeType='application/vnd.google-apps.folder' and name='${safeName}' and trashed=false`;
@@ -1816,8 +1826,11 @@ async function generaPdfContratto(id, opts = {}) {
     ['Documento', `${docNumPdf}${docScadPdf !== '/' ? ' scad. ' + docScadPdf : ''}`],
     ['Patente 1', `${patenteNumPdf}${patenteScadPdf !== '/' ? ' scad. ' + patenteScadPdf : ''}`],
     ['Categoria', categoriaPatentePdf],
-    ['Conducente 2', p.conducente2 || ''],
-    ['Patente 2', `${safe(p.patente2, '')}${p.patente2_scadenza ? ' scad. ' + p.patente2_scadenza : ''}`]
+    ['Conducente 2', p.conducente2 || `${safe(p.conducente2_nome,'')} ${safe(p.conducente2_cognome,'')}`.trim()],
+    ['CF 2', safe(p.conducente2_cf, '')],
+    ['Documento 2', `${safe(p.conducente2_doc_numero, '')}${p.conducente2_doc_scadenza ? ' scad. ' + p.conducente2_doc_scadenza : ''}`],
+    ['Patente 2', `${safe(p.conducente2_patente_numero || p.conducente2_patente || p.patente2, '')}${(p.conducente2_patente_scadenza || p.patente2_scadenza) ? ' scad. ' + (p.conducente2_patente_scadenza || p.patente2_scadenza) : ''}`],
+    ['Cat. 2', safe(p.conducente2_categoria_patente, '')]
   ], M + COL_W + GAP, startCols, COL_W, BLACK);
   y = Math.max(leftBottom, rightBottom);
 
@@ -1888,7 +1901,7 @@ async function generaPdfContratto(id, opts = {}) {
   const forceDrive = !!opts.forceDrive;
   const skipDrive = !!opts.skipDrive;
   if (!skipDrive && shouldUploadPdfToDrive(p, forceDrive)) {
-    try { driveRes = await uploadFileToDrive(file, path.basename(file), 'application/pdf', `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`); }
+    try { driveRes = await uploadFileToDrive(file, driveContractPdfNameV168(p), 'application/pdf', driveClienteFolderNameV168(p)); }
     catch (e) { console.log('Errore upload PDF Google Drive:', e.message); }
   }
   if (driveRes) {
@@ -2590,7 +2603,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V151 - logo cliente + Drive archivio OK'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V168 - cliente nuovo, 2 autista, planning fix, Drive cliente'));
 
 
 // =========================
@@ -3849,6 +3862,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
+<nav class="client-nav"><button type="button" class="back" onclick="history.back()">← Indietro</button><a class="dash wide" href="/">DP RENT</a></nav>
 <section class="hero">
   <div class="hero-logo">
     <img src="/public/logo-dp-rent-premium.jpg" onerror="this.onerror=null;this.src='/public/logo.png'" alt="DP RENT">
@@ -3959,7 +3973,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
     <p class="small azienda-only">Se scegli Privato questi campi azienda vengono nascosti e non sono obbligatori.</p>
   </div>
 
-  ${clienteRiconosciuto ? `` : (req.query && req.query.preupload_id ? `<div class="card"><h2>Foto documento / patente</h2><p class="okbox">Foto già ricevute con OCR. Qui puoi aggiungere solo altri allegati se servono.</p><div class="grid"><div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div></div></div>` : `<div class="card">
+  ${(clienteRiconosciuto || (req.query && (req.query.preupload_id || req.query.ocr_done))) ? `<div class="card"><h2>✅ Documenti già caricati</h2><p class="okbox">Documento e patente risultano già collegati alla pratica. Non ricaricare le foto: completa i dati sotto e invia.</p></div>` : `<div class="card">
     <h2>Foto documento / patente</h2>
     <div class="grid">
       <div><label>Documento fronte</label><input class="file" type="file" name="documento_fronte" accept="image/*,application/pdf" capture="environment"></div>
@@ -3968,7 +3982,23 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
       <div><label>Patente retro</label><input class="file" type="file" name="patente_retro" accept="image/*,application/pdf" capture="environment"></div>
       <div class="full"><label>Altri allegati</label><input class="file" type="file" name="altri_allegati" accept="image/*,application/pdf" multiple></div>
     </div>
-  </div>`)}
+  </div>`}
+
+  <div class="card">
+    <h2>Secondo autista (opzionale)</h2>
+    <p class="small">Compila solo se il mezzo sarà guidato anche da un secondo conducente.</p>
+    <div class="grid">
+      <div><label>Nome 2° autista</label><input name="conducente2_nome" value="${clienteWebVal(req,'conducente2_nome')}"></div>
+      <div><label>Cognome 2° autista</label><input name="conducente2_cognome" value="${clienteWebVal(req,'conducente2_cognome')}"></div>
+      <div><label>Codice fiscale 2° autista</label><input name="conducente2_cf" value="${clienteWebVal(req,'conducente2_cf')}"></div>
+      <div><label>Telefono 2° autista</label><input name="conducente2_recapito" value="${clienteWebVal(req,'conducente2_recapito')}"></div>
+      <div><label>Documento 2° autista</label><input name="conducente2_doc_numero" value="${clienteWebVal(req,'conducente2_doc_numero')}"></div>
+      <div><label>Scadenza documento 2</label><input type="date" name="conducente2_doc_scadenza" value="${clienteWebVal(req,'conducente2_doc_scadenza')}"></div>
+      <div><label>Patente 2° autista</label><input name="conducente2_patente_numero" value="${clienteWebVal(req,'conducente2_patente_numero') || clienteWebVal(req,'conducente2_patente')}"></div>
+      <div><label>Scadenza patente 2</label><input type="date" name="conducente2_patente_scadenza" value="${clienteWebVal(req,'conducente2_patente_scadenza')}"></div>
+      <div><label>Categoria patente 2</label><input name="conducente2_categoria_patente" value="${clienteWebVal(req,'conducente2_categoria_patente')}"></div>
+    </div>
+  </div>
 
   <div class="card">
     <h2>Note</h2>
@@ -3987,7 +4017,7 @@ async function ensureClienteWebColumnsV92(){
     documento_tipo:'TEXT', documento_numero:'TEXT', documento_scadenza:'TEXT', documento_rilascio:'TEXT',
     record_cargos_doc_luogoril_cod:'TEXT', record_cargos_patente_luogoril_cod:'TEXT',
     patente_numero:'TEXT', patente_scadenza:'TEXT', patente_rilascio:'TEXT', categoria_patente:'TEXT',
-    tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT', indirizzo_fatturazione:'TEXT', citta_fatturazione:'TEXT', provincia_fatturazione:'TEXT', cap_fatturazione:'TEXT',
+    conducente2_cf:'TEXT', conducente2_doc_scadenza:'TEXT', conducente2_patente_scadenza:'TEXT', conducente2_categoria_patente:'TEXT', tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT', indirizzo_fatturazione:'TEXT', citta_fatturazione:'TEXT', provincia_fatturazione:'TEXT', cap_fatturazione:'TEXT',
     provincia:'TEXT', citta:'TEXT', cap:'TEXT', giorni:'INTEGER', km_previsti:'TEXT', extra_fuori_orario:'REAL', extra_km:'REAL', imponibile:'REAL', iva:'REAL', cauzione:'REAL', tipo_record:'TEXT', note:'TEXT'
   };
   for (const [c,t] of Object.entries(cols)) await run(`ALTER TABLE prenotazioni ADD COLUMN ${c} ${t}`).catch(()=>{});
@@ -4203,13 +4233,13 @@ async function v159SyncPdfDrive(prenotazioneId){
       folder = await getOrCreateDriveContractFolderV63(p).catch(()=>null);
       if(folder && folder.id){
         try { await deleteAllContractPdfsInDriveV63(folder.id); } catch(e) {}
-        uploadedPdf = await uploadFileToDriveFolderV63(pdf, path.basename(pdf), 'application/pdf', folder.id);
+        uploadedPdf = await uploadFileToDriveFolderV63(pdf, driveContractPdfNameV168(p), 'application/pdf', folder.id);
       }
     }
   }catch(e){ console.log('V159 Drive diretto PDF KO:', e.message); }
   if(!uploadedPdf){
     try{
-      uploadedPdf = await uploadFileToDrive(pdf, path.basename(pdf), 'application/pdf', `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`);
+      uploadedPdf = await uploadFileToDrive(pdf, driveContractPdfNameV168(p), 'application/pdf', driveClienteFolderNameV168(p));
     }catch(e){ console.log('V159 Drive Apps Script PDF KO:', e.message); }
   }
   if(uploadedPdf && (uploadedPdf.webViewLink || uploadedPdf.link)){
@@ -4302,6 +4332,7 @@ app.post('/prenota-cliente', upload.fields([
       documento_tipo:b.documento_tipo || 'IDENT', documento_numero:b.documento_numero, documento_rilascio:b.documento_rilascio, documento_scadenza:b.documento_scadenza,
       record_cargos_doc_luogoril_cod:b.record_cargos_doc_luogoril_cod, record_cargos_patente_luogoril_cod:b.record_cargos_patente_luogoril_cod,
       patente_numero:b.patente_numero, patente_rilascio:b.patente_rilascio, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
+      conducente2_nome:b.conducente2_nome, conducente2_cognome:b.conducente2_cognome, conducente2: [b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' '), conducente2_cf:b.conducente2_cf, conducente2_doc_numero:b.conducente2_doc_numero, conducente2_doc_scadenza:b.conducente2_doc_scadenza, conducente2_patente_numero:b.conducente2_patente_numero || b.conducente2_patente, conducente2_patente:b.conducente2_patente_numero || b.conducente2_patente, conducente2_patente_scadenza:b.conducente2_patente_scadenza, conducente2_categoria_patente:b.conducente2_categoria_patente, conducente2_recapito:b.conducente2_recapito,
       tipo_cliente:b.tipo_cliente || 'privato', partita_iva:b.partita_iva || b.piva, piva:b.partita_iva || b.piva, ragione_sociale:b.ragione_sociale, pec:b.pec, codice_sdi:b.codice_sdi || b.sdi, sdi:b.codice_sdi || b.sdi, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap,
       mezzo_id:mezzo.id, targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '', tipo:mezzo.tipo || '', categoria:categoriaRichiesta || mezzo.categoria || mezzo.tipo || '',
       data_inizio:b.data_inizio, data_fine:b.data_fine, ora_inizio:b.ora_inizio || '08:30', ora_fine:b.ora_fine || '18:00', giorni:calc.giorni,
@@ -4537,7 +4568,7 @@ async function uploadContractAssetsToDrive(prenotazioneId) {
     getPrenotazioneCompleta(prenotazioneId, async (err, p) => {
       if (err || !p || !googleDriveConfigured()) return resolve(null);
       try {
-        const folderName = `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`.trim();
+        const folderName = driveClienteFolderNameV168(p);
         db.all(`SELECT * FROM allegati WHERE prenotazione_id=? AND (drive_file_id IS NULL OR drive_file_id='')`, [prenotazioneId], async (e2, files) => {
           for (const f of (files || [])) {
             try {
@@ -5144,13 +5175,22 @@ app.get('/stato/:id/:stato', async (req, res) => {
 });
 
 app.get('/planning', async (req, res) => {
-  const mese = req.query.mese || moment().format('YYYY-MM');
-  const categoriaFiltro = String(req.query.categoria || '').trim();
   const vista = String(req.query.vista || 'mese');
-  const start = moment(mese + '-01');
-  const days = start.daysInMonth();
-  const prec = start.clone().subtract(1,'month').format('YYYY-MM');
-  const succ = start.clone().add(1,'month').format('YYYY-MM');
+  const categoriaFiltro = String(req.query.categoria || '').trim();
+  const rawMese = req.query.mese || moment().format('YYYY-MM');
+  const rawData = req.query.data || '';
+  let start;
+  if (vista === 'giorno') start = moment(rawData || (rawMese + '-01'));
+  else if (vista === 'settimana') start = moment(rawData || (rawMese + '-01')).startOf('isoWeek');
+  else start = moment(rawMese + '-01');
+  if (!start.isValid()) start = moment();
+  const endDate = vista === 'giorno' ? start.clone() : (vista === 'settimana' ? start.clone().add(6,'days') : start.clone().endOf('month'));
+  const mese = start.format('YYYY-MM');
+  const prec = vista === 'giorno' ? start.clone().subtract(1,'day') : (vista === 'settimana' ? start.clone().subtract(1,'week') : start.clone().subtract(1,'month'));
+  const succ = vista === 'giorno' ? start.clone().add(1,'day') : (vista === 'settimana' ? start.clone().add(1,'week') : start.clone().add(1,'month'));
+  const navParam = vista === 'mese' ? `mese=${prec.format('YYYY-MM')}` : `data=${prec.format('YYYY-MM-DD')}&mese=${prec.format('YYYY-MM')}`;
+  const navParam2 = vista === 'mese' ? `mese=${succ.format('YYYY-MM')}` : `data=${succ.format('YYYY-MM-DD')}&mese=${succ.format('YYYY-MM')}`;
+  const titleRange = vista === 'mese' ? start.format('MM/YYYY') : `${start.format('DD/MM/YYYY')} - ${endDate.format('DD/MM/YYYY')}`;
 
   let mezziSql = `SELECT * FROM mezzi`;
   let mezziParams = [];
@@ -5161,53 +5201,55 @@ app.get('/planning', async (req, res) => {
     FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id
     WHERE COALESCE(p.stato,'') NOT IN ('annullato','eliminato_attesa')
       AND COALESCE(p.data_fine,'') >= ? AND COALESCE(p.data_inizio,'') <= ?`,
-    [start.format('YYYY-MM-DD'), start.clone().date(days).format('YYYY-MM-DD')]).catch(()=>[]);
+    [start.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')]).catch(()=>[]);
   const categorie = await all(`SELECT DISTINCT categoria FROM mezzi WHERE categoria IS NOT NULL AND categoria<>'' ORDER BY categoria`).catch(()=>[]);
 
-  function statoCell(occ, day){
+  function statoCell(occ){
     if(!occ) return { cls:'pl-free', label:'L', text:'Libero' };
     const st = String(occ.stato || '').toLowerCase();
     if(st.includes('rientro') || st.includes('ritardo')) return { cls:'pl-late', label:'R', text:'Ritardo' };
     if(st.includes('corso') || st.includes('checkout') || st.includes('check-out')) return { cls:'pl-out', label:'OUT', text:'Check-out' };
     if(st.includes('officina') || st.includes('fermo')) return { cls:'pl-off', label:'OFF', text:'Fermo' };
+    if(st.includes('preventivo') || st.includes('richiesta')) return { cls:'pl-booked', label:'PREV', text:'Preventivo' };
     return { cls:'pl-booked', label:'P', text:'Prenotato' };
   }
 
+  let giorni = [];
+  for(let d=start.clone(); d.isSameOrBefore(endDate,'day'); d.add(1,'day')) giorni.push(d.clone());
   let header = '<th class="sticky-col">Mezzo</th>';
-  for (let d=1; d<=days; d++) {
-    const mm = start.clone().date(d);
-    header += `<th>${d}<br><small>${mm.format('dd')}</small></th>`;
-  }
+  giorni.forEach(mm => header += `<th>${mm.format('D')}<br><small>${mm.format('dd')}</small></th>`);
   let rows = '';
   mezzi.forEach(m => {
     rows += `<tr><td class="sticky-col"><div class="pl-card"><div class="pl-targa">${esc(m.targa || '')}</div><div class="pl-desc">${esc(descrizionePubblica(m))}</div><span class="badge badge-blue">${esc(m.categoria || '')}</span></div></td>`;
-    for (let d=1; d<=days; d++) {
-      const day = start.clone().date(d).format('YYYY-MM-DD');
+    giorni.forEach(mm => {
+      const day = mm.format('YYYY-MM-DD');
       const occ = pren.find(p => String(p.mezzo_id || '') === String(m.id || '') && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
-      const st = statoCell(occ, day);
+      const st = statoCell(occ);
       if (occ) {
         const cliente = `${occ.nome || ''} ${occ.cognome || ''}`.trim() || 'Cliente';
         rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='/contratto/${occ.id}/gestisci'">${st.label}<small>${esc((cliente||'').slice(0,8))}</small></td>`;
       } else {
         rows += `<td class="planning-cell ${st.cls}" title="Libero ${esc(m.targa || '')} ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'">L</td>`;
       }
-    }
+    });
     rows += '</tr>';
   });
 
   const catOptions = `<option value="">Tutte le categorie</option>` + categorie.map(c=>`<option value="${esc(c.categoria)}" ${categoriaFiltro===c.categoria?'selected':''}>${esc(c.categoria)}</option>`).join('');
+  const keepCat = `categoria=${encodeURIComponent(categoriaFiltro)}&vista=${encodeURIComponent(vista)}`;
   res.send(page('Planning PRO', `
     <div class="planning-pro-head">
-      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${start.format('MM/YYYY')}</h2><p style="margin:8px 0 0">Clic su una prenotazione per aprire gestione contratto. Clic su verde per creare prenotazione.</p></div>
-      <div class="planning-pro-tools"><a href="/planning?mese=${prec}&categoria=${encodeURIComponent(categoriaFiltro)}">← Mese prima</a><a href="/planning?mese=${succ}&categoria=${encodeURIComponent(categoriaFiltro)}">Mese dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
+      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Clic prenotazione = contratto, verde = nuova prenotazione.</p></div>
+      <div class="planning-pro-tools"><a href="/planning?${navParam}&${keepCat}">← Prima</a><a href="/planning?${navParam2}&${keepCat}">Dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
     </div>
     <form class="box pl-filter-form" method="GET" action="/planning">
       <input type="month" name="mese" value="${esc(mese)}">
+      <input type="date" name="data" value="${esc(start.format('YYYY-MM-DD'))}">
       <select name="categoria">${catOptions}</select>
       <select name="vista"><option ${vista==='mese'?'selected':''} value="mese">Vista mese</option><option ${vista==='settimana'?'selected':''} value="settimana">Vista settimana</option><option ${vista==='giorno'?'selected':''} value="giorno">Vista giorno</option></select>
       <button>Filtra</button>
     </form>
-    <div class="planning-legend"><span class="pl-free">Verde libero</span><span class="pl-booked">Giallo prenotato</span><span class="pl-out">Blu check-out</span><span class="pl-late">Rosso ritardo</span><span class="pl-off">Nero fermo/officina</span></div>
+    <div class="planning-legend"><span class="pl-free">Verde libero</span><span class="pl-booked">Giallo preventivo/prenotato</span><span class="pl-out">Blu check-out</span><span class="pl-late">Rosso ritardo</span><span class="pl-off">Nero fermo/officina</span></div>
     <div class="planning-pro-wrap"><table class="planning-pro"><tr>${header}</tr>${rows || '<tr><td>Nessun mezzo trovato.</td></tr>'}</table></div>
   `));
 });
@@ -7262,6 +7304,14 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Scadenza documento<input type="date" name="documento_scadenza" value="${esc(v67IsoDate(p.documento_scadenza))}"></label>
           <label>Numero patente<input name="patente_numero" value="${esc(p.patente_numero)}"></label>
           <label>Scadenza patente<input type="date" name="patente_scadenza" value="${esc(v67IsoDate(p.patente_scadenza))}"></label>
+          <label>Nome 2° autista<input name="conducente2_nome" value="${esc(p.conducente2_nome || '')}"></label>
+          <label>Cognome 2° autista<input name="conducente2_cognome" value="${esc(p.conducente2_cognome || '')}"></label>
+          <label>CF 2° autista<input name="conducente2_cf" value="${esc(p.conducente2_cf || '')}"></label>
+          <label>Doc. 2° autista<input name="conducente2_doc_numero" value="${esc(p.conducente2_doc_numero || '')}"></label>
+          <label>Scad. doc. 2<input type="date" name="conducente2_doc_scadenza" value="${esc(v67IsoDate(p.conducente2_doc_scadenza))}"></label>
+          <label>Patente 2° autista<input name="conducente2_patente_numero" value="${esc(p.conducente2_patente_numero || p.conducente2_patente || p.patente2 || '')}"></label>
+          <label>Scad. patente 2<input type="date" name="conducente2_patente_scadenza" value="${esc(v67IsoDate(p.conducente2_patente_scadenza || p.patente2_scadenza))}"></label>
+          <label>Cat. patente 2<input name="conducente2_categoria_patente" value="${esc(p.conducente2_categoria_patente || '')}"></label>
           <label>Tipo cliente<select name="tipo_cliente"><option value="privato" ${(p.tipo_cliente||'privato')==='privato'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></label>
           <label>Ragione sociale<input name="ragione_sociale" value="${esc(p.ragione_sociale)}"></label>
           <label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva || p.piva)}"></label>
@@ -7297,14 +7347,14 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
         mezzo_id=COALESCE(?,mezzo_id), targa=COALESCE(?,targa), marca=COALESCE(?,marca), modello=COALESCE(?,modello), categoria=COALESCE(?,categoria),
         nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?,
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?, documento_tipo=?, documento_numero=?, documento_scadenza=?,
-        patente_numero=?, patente_scadenza=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
+        patente_numero=?, patente_scadenza=?, conducente2_nome=?, conducente2_cognome=?, conducente2=?, conducente2_cf=?, conducente2_doc_numero=?, conducente2_doc_scadenza=?, conducente2_patente_numero=?, conducente2_patente=?, conducente2_patente_scadenza=?, conducente2_categoria_patente=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
         data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?, totale=?, stato=?,
         cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, note=?
         WHERE id=?`, [
           b.mezzo_id || null, mezzo?.targa || null, mezzo?.marca || null, mezzo?.modello || null, mezzo?.categoria || null,
           v62Val(b.nome), v62Val(b.cognome), v62Val(b.telefono), v62Val(b.email), v62Val(b.codice_fiscale),
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
-          v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
+          v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
           v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Val(b.check_out_orario), v62Val(b.check_in_orario), v62Money(b.totale), v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
       ]);
