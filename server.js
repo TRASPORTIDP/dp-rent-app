@@ -9439,3 +9439,186 @@ v163AfterContractChange = async function v170AfterContractChange(prenotazioneId)
 
 console.log('DP RENT V173: Drive PDF atomico verificato + cartelle non vuote');
 console.log('DP RENT V172: FIX REALE drive globale inizializzato');
+
+// =========================
+// V174 - DRIVE CARTELLA CLIENTE UNICA DEFINITIVA
+// Regola: per lo stesso cliente UNA SOLA cartella.
+// Ogni noleggio dello stesso cliente scrive PDF + documenti dentro quella cartella cliente.
+// Nessuna sottocartella contratto obbligatoria.
+// =========================
+async function v174GetOrCreateClienteFolder(p){
+  ensureDriveClientV172();
+  if (!drive) return null;
+  const folderName = (typeof v164ClienteFolderName === 'function') ? v164ClienteFolderName(p || {}) : driveClienteFolderNameV168(p || {});
+  const parent = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || null;
+  let q = `mimeType='application/vnd.google-apps.folder' and name='${v164DriveQ ? v164DriveQ(folderName) : String(folderName).replace(/'/g,"\\'")}' and trashed=false`;
+  if (parent) q += ` and '${parent}' in parents`;
+  const found = await drive.files.list({
+    q,
+    fields:'files(id,name,webViewLink)',
+    spaces:'drive',
+    supportsAllDrives:true,
+    includeItemsFromAllDrives:true
+  });
+  if (found.data.files && found.data.files[0]) {
+    console.log('V174 cartella cliente trovata:', found.data.files[0].name, found.data.files[0].id);
+    return found.data.files[0];
+  }
+  const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
+  if (parent) requestBody.parents = [parent];
+  const created = await drive.files.create({ requestBody, fields:'id,name,webViewLink', supportsAllDrives:true });
+  console.log('V174 cartella cliente creata:', created.data.name, created.data.id);
+  return created.data;
+}
+
+// Mantiene compatibilità col vecchio nome: ora ritorna SEMPRE la cartella cliente unica.
+getOrCreateDriveContractFolderV63 = async function getOrCreateDriveClientFolderV174(p){
+  return await v174GetOrCreateClienteFolder(p);
+};
+
+async function v174MoveDriveFileToFolder(fileId, targetFolderId){
+  ensureDriveClientV172();
+  if (!drive || !fileId || !targetFolderId) return false;
+  try {
+    const file = await drive.files.get({ fileId, fields:'id,name,parents', supportsAllDrives:true });
+    const parents = file.data.parents || [];
+    if (parents.includes(targetFolderId)) return true;
+    await drive.files.update({
+      fileId,
+      addParents: targetFolderId,
+      removeParents: parents.join(','),
+      fields:'id,name,parents,webViewLink',
+      supportsAllDrives:true
+    });
+    console.log('V174 file spostato in cartella cliente:', file.data.name, fileId, '->', targetFolderId);
+    return true;
+  } catch(e) {
+    console.log('V174 move file warning:', e.message);
+    return false;
+  }
+}
+
+async function v174DeleteSameContractPdfOnly(folderId, p){
+  ensureDriveClientV172();
+  if (!drive || !folderId) return;
+  const pdfName = (typeof v164ContrattoPdfName === 'function') ? v164ContrattoPdfName(p) : driveContractPdfNameV168(p);
+  const code = String(p?.codice || '').toLowerCase();
+  const found = await drive.files.list({
+    q: `'${folderId}' in parents and trashed=false and mimeType='application/pdf'`,
+    fields:'files(id,name)',
+    supportsAllDrives:true,
+    includeItemsFromAllDrives:true
+  });
+  for (const f of (found.data.files || [])) {
+    const n = String(f.name || '').toLowerCase();
+    if (n === String(pdfName).toLowerCase() || (code && n.includes(code))) {
+      try { await drive.files.delete({ fileId:f.id, supportsAllDrives:true }); console.log('V174 vecchio PDF contratto eliminato:', f.name); }
+      catch(e) { console.log('V174 delete PDF warning:', e.message); }
+    }
+  }
+}
+
+uploadLocalAllegatiToDriveV63 = async function uploadLocalAllegatiToDriveClienteUnicaV174(prenotazioneId, folderId){
+  ensureDriveClientV172();
+  if (!drive || !folderId) return;
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+    let allegati = await all(`SELECT * FROM allegati WHERE prenotazione_id=? ORDER BY id ASC`, [prenotazioneId]).catch(()=>[]);
+    if (p && p.cliente_id) {
+      const docsCliente = await all(`SELECT * FROM allegati WHERE cliente_id=? ORDER BY id ASC`, [p.cliente_id]).catch(()=>[]);
+      allegati = allegati.concat(docsCliente);
+    }
+    const seen = new Set();
+    for (const a of (allegati || [])) {
+      const key = String(a.id || '') + ':' + String(a.drive_file_id || a.path || a.filename || '');
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      // Se il file esiste già su Drive ma magari è finito in una sottocartella contratto,
+      // lo spostiamo nella cartella cliente unica.
+      if (a.drive_file_id) {
+        await v174MoveDriveFileToFolder(a.drive_file_id, folderId);
+        continue;
+      }
+
+      const localPath = a.path || (a.filename ? path.join(uploadDir, path.basename(a.filename)) : '');
+      if (!localPath || !fs.existsSync(localPath)) continue;
+      const fileName = safeFileName(a.originalname || a.filename || path.basename(localPath));
+      const up = await uploadFileToDriveFolderV63(localPath, fileName, a.mimetype || 'application/octet-stream', folderId);
+      if (up && up.id) {
+        await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [up.id, up.webViewLink || null, a.id]).catch(()=>{});
+      }
+    }
+  } catch(e) {
+    console.log('V174 upload allegati cartella cliente warning:', e.message);
+  }
+};
+
+async function v174SyncContrattoCartellaCliente(prenotazioneId){
+  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+  if (!p) throw new Error('Contratto non trovato');
+  if (!googleDriveConfigured()) throw new Error('Google Drive non configurato');
+
+  const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:true, skipDrive:true });
+  const size = await assertFileReadyV173(pdf, 'PDF contratto');
+  const pdfName = (typeof v164ContrattoPdfName === 'function') ? v164ContrattoPdfName(p) : driveContractPdfNameV168(p);
+
+  ensureDriveClientV172();
+  let folder = drive ? await v174GetOrCreateClienteFolder(p) : null;
+  let uploaded = null;
+
+  if (folder && folder.id) {
+    await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
+    await v174DeleteSameContractPdfOnly(folder.id, p);
+    uploaded = await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
+    console.log('V174 PDF caricato in CARTELLA CLIENTE:', pdfName, size, 'bytes', 'clienteFolder', folder.name, folder.id, uploaded?.webViewLink || '');
+  }
+
+  // Fallback Apps Script: sempre stesso nome cartella cliente.
+  if (!uploaded) {
+    const folderName = (typeof v164ClienteFolderName === 'function') ? v164ClienteFolderName(p) : driveClienteFolderNameV168(p);
+    uploaded = await uploadFileToDrive(pdf, pdfName, 'application/pdf', folderName);
+    console.log('V174 PDF caricato via Apps Script in cartella cliente:', folderName, uploaded?.webViewLink || uploaded?.link || '');
+  }
+
+  if (!uploaded || !(uploaded.id || uploaded.webViewLink || uploaded.link)) {
+    await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+    throw new Error('PDF generato ma upload Drive non riuscito');
+  }
+
+  const link = uploaded.webViewLink || uploaded.link || '';
+  await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_web_link=?, pdf_drive_file_id=?, drive_folder_id=COALESCE(?,drive_folder_id), drive_folder_link=COALESCE(?,drive_folder_link) WHERE id=?`,
+    [pdf, link, link, uploaded.id || '', folder?.id || null, folder?.webViewLink || null, prenotazioneId]);
+
+  if (folder && folder.id) await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
+  if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
+  return { ok:true, pdf, link, fileId:uploaded.id || '', folder };
+}
+
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V174(prenotazioneId){
+  try { return await v174SyncContrattoCartellaCliente(prenotazioneId); }
+  catch(e) { console.log('V174 sync Drive error:', e.message); return { ok:false, error:e.message }; }
+};
+
+v163AfterContractChange = async function v174AfterContractChange(prenotazioneId){
+  const id = String(prenotazioneId || '').trim();
+  if(!id) return null;
+  const driveSync = await syncContrattoDriveV63(id);
+  try {
+    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
+    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
+      const ics = await v153IcsFileForPrenotazione(fresh);
+      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
+    }
+  } catch(e) { console.log('V174 calendario warning:', e.message); }
+  return { ok:true, driveSync };
+};
+
+app.get('/admin/drive-cliente-unica/:id', async (req,res)=>{
+  try{
+    const r = await v174SyncContrattoCartellaCliente(req.params.id);
+    res.send(page('Drive cartella cliente unica', `<div class="box"><h2 class="ok">PDF + allegati nella cartella cliente</h2><p><b>PDF:</b> <a target="_blank" href="${esc(r.link||'')}">Apri PDF Drive</a></p><p><b>Cartella cliente:</b> ${r.folder?.webViewLink ? `<a target="_blank" href="${esc(r.folder.webViewLink)}">Apri cartella cliente</a>` : 'n/d'}</p><p>Ogni nuovo noleggio dello stesso cliente verrà scritto qui dentro.</p><a class="btn" href="/contratto/${esc(req.params.id)}/gestisci">Torna contratto</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore Drive cliente unica', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna</a></div>`)); }
+});
+
+console.log('DP RENT V174: Drive cartella cliente unica DEFINITIVA - ogni noleggio stesso cliente scrive lì dentro');
