@@ -5995,7 +5995,8 @@ app.post('/firma/:id', async (req, res) => {
     const file = path.join(firmeDir, `firma_${req.params.id}.png`);
     fs.writeFileSync(file, base64, 'base64');
     await run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id]);
-    await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
+    await generaPdfContratto(req.params.id, { forceDrive: true, skipDrive: true });
+    try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('V164 sync Drive dopo firma POST warning:', e.message); }
     res.json({ ok:true, redirect:'/contratto/' + req.params.id + '/firmato' });
   } catch (e) {
     res.status(500).send(e.message);
@@ -8676,6 +8677,46 @@ app.get('/documenti-clienti', async (req,res)=>{
   res.send(page('Documenti clienti', `<div class="premium-card"><h2>Archivio documenti clienti</h2><p>Qui vedi i documenti veri collegati al cliente unico: upload cliente, OCR, pratica e ufficio.</p><a class="btn" href="/clienti">Vai ai clienti</a> <a class="btn btn2" href="/admin/sincronizza-documenti-clienti">Sincronizza documenti</a></div><table><tr><th>Cliente</th><th>CF</th><th>Documento / Patente</th><th>File</th><th>Azioni</th></tr>${trs || '<tr><td colspan="5">Nessun cliente.</td></tr>'}</table>`));
 });
 
+
+
+// V165: upload documenti cliente non deve bloccare Safari/iPhone.
+// Salva subito locale + DB e poi sincronizza Drive in background nella cartella cliente unica.
+async function v165SyncClienteDocumentoDrive(allegatoId, localPath, fileName, mimeType, cliente){
+  try{
+    if(!localPath || !fs.existsSync(localPath)) return null;
+    let uploaded = null;
+    let folder = null;
+    const folderName = (typeof v164ClienteFolderName === 'function') ? v164ClienteFolderName(cliente || {}) : (`CLIENTE ${(cliente?.nome||'')} ${(cliente?.cognome||'')}`.trim() || 'CLIENTE');
+
+    // 1) Drive diretto se configurato
+    if (drive) {
+      try {
+        folder = await getOrCreateDriveContractFolderV63(cliente || {});
+        if(folder && folder.id){
+          uploaded = await uploadFileToDriveFolderV63(localPath, fileName, mimeType || 'application/octet-stream', folder.id);
+        }
+      } catch(e){ console.log('V165 upload doc cliente Drive diretto warning:', e.message); }
+    }
+
+    // 2) Fallback Apps Script come vecchio sistema foto/documenti
+    if(!uploaded){
+      try { uploaded = await uploadFileToDrive(localPath, fileName, mimeType || 'application/octet-stream', folderName); }
+      catch(e){ console.log('V165 upload doc cliente Apps Script warning:', e.message); }
+    }
+
+    if(uploaded && (uploaded.webViewLink || uploaded.link)){
+      const link = uploaded.webViewLink || uploaded.link || '';
+      await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [uploaded.id || '', link, allegatoId]).catch(()=>{});
+      if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(localPath);
+      return {ok:true, link};
+    }
+    return {ok:false};
+  }catch(e){
+    console.log('V165 sync documento cliente Drive errore:', e.message);
+    return {ok:false, error:e.message};
+  }
+}
+
 app.get('/cliente/:id/documenti', async (req,res)=>{
   const c = await get(`SELECT * FROM clienti WHERE id=?`, [req.params.id]);
   if(!c) return res.redirect('/clienti');
@@ -8708,24 +8749,37 @@ app.post('/cliente/:id/documenti', upload.single('file'), async (req,res)=>{
     const safeName = `cliente_${req.params.id}_${Date.now()}_${String(req.body.tipo||'documento').replace(/[^a-z0-9_-]/gi,'')}${ext}`;
     const finalPath = path.join(uploadDir, safeName);
     fs.renameSync(req.file.path, finalPath);
-    let driveRes = null;
+
+    // Salvataggio immediato: non aspettiamo Drive, così Safari/iPhone non perde connessione.
+    let allegatoId = null;
     try {
-      driveRes = await uploadFileToDrive(finalPath, safeName, req.file.mimetype || 'application/octet-stream', `CLIENTE ${c.nome || ''} ${c.cognome || ''}`.trim() || `CLIENTE_${req.params.id}`);
-    } catch(e) { console.log('V151 upload documento cliente Drive:', e.message); }
-    await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size, drive_file_id, drive_web_link) VALUES (?,?,?,?,?,?,?,?,?,?)`, [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0, driveRes?.id || null, driveRes?.webViewLink || null]).catch(async ()=>{
-      await run(`INSERT INTO allegati (prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?)`, [null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]);
-    });
-    if (driveRes && String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(finalPath);
+      const info = await run(`INSERT INTO allegati (cliente_id, prenotazione_id, tipo, filename, originalname, path, mimetype, size, drive_file_id, drive_web_link) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        [req.params.id, null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0, null, null]);
+      allegatoId = info?.lastID || null;
+    } catch(eIns) {
+      const info = await run(`INSERT INTO allegati (prenotazione_id, tipo, filename, originalname, path, mimetype, size) VALUES (?,?,?,?,?,?,?)`,
+        [null, req.body.tipo || 'cliente_documento', safeName, req.file.originalname || safeName, finalPath, req.file.mimetype || '', req.file.size || 0]);
+      allegatoId = info?.lastID || null;
+    }
+
     if(req.body.tipo === 'cliente_documento') await run(`UPDATE clienti SET documento_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
     if(req.body.tipo === 'cliente_patente') await run(`UPDATE clienti SET patente_file=?, updated_at=CURRENT_TIMESTAMP WHERE id=?`, [finalPath, req.params.id]).catch(()=>{});
-    res.redirect(`/cliente/${req.params.id}/documenti`);
-  } catch(e){ res.status(500).send(page('Errore documento', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+
+    // Drive in background: stessa cartella cliente dei contratti. Se fallisce resta locale e non blocca upload.
+    setImmediate(()=>{
+      v165SyncClienteDocumentoDrive(allegatoId, finalPath, safeName, req.file.mimetype || 'application/octet-stream', c)
+        .catch(e=>console.log('V165 background doc Drive:', e.message));
+    });
+
+    res.redirect(`/cliente/${req.params.id}/documenti?ok=1`);
+  } catch(e){ res.status(500).send(page('Errore documento', `<div class="box"><h2 class="bad">Errore caricamento documento</h2><pre>${esc(e.message)}</pre><a class="btn" href="/cliente/${req.params.id}/documenti">Torna documenti</a></div>`)); }
 });
 
 app.get('/contratto/:id/firmato', async (req,res)=>{
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   if(!p) return res.send('Contratto non trovato');
-  try { await generaPdfContratto(req.params.id, { forceDrive:false }); } catch(e) {}
+  try { await generaPdfContratto(req.params.id, { forceDrive:true, skipDrive:true }); } catch(e) {}
+  try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('V164 sync Drive firmato GET warning:', e.message); }
   const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]).catch(()=>p);
   const pdfLink = fresh?.pdf_drive_web_link || fresh?.pdf_drive_link || p.pdf_drive_web_link || p.pdf_drive_link || '';
   res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} &egrave; stato firmato e registrato da DP RENT.</p>${pdfLink ? `<a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a>` : '<p class="muted">Puoi chiudere questa pagina.</p>'}`));
@@ -8840,3 +8894,146 @@ app.get('/contratto/:id/calendario', async (req,res)=>{
 });
 
 console.log('DP RENT V163: rifinitura modifica contratto + calendario + WhatsApp contesto attiva');
+
+
+// =========================
+// V164 - DRIVE DEFINITIVO: cartella unica per cliente + PDF contratto aggiornato/sovrascritto
+// Obiettivo: niente nuova cartella per ogni contratto, PDF firmato/modificato sempre rigenerato e risincronizzato.
+// =========================
+function v164NormPart(v){
+  return String(v || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-zA-Z0-9 _.-]/g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
+function v164ClienteFolderName(p){
+  const nome = v164NormPart(`${p?.nome || ''} ${p?.cognome || ''}`).toUpperCase() || 'CLIENTE';
+  const cf = v164NormPart(p?.codice_fiscale || p?.cf || '').toUpperCase();
+  const tel = v164NormPart(String(p?.telefono || p?.telefono_cliente || '').replace(/^whatsapp:/,''));
+  const key = cf || tel || `ID${p?.cliente_id || p?.id || ''}`;
+  return (`${nome}${key ? ' - ' + key : ''}`).slice(0,120);
+}
+function v164ContrattoPdfName(p){
+  const code = v164NormPart(p?.codice || `DPR-${p?.id || ''}`).toUpperCase();
+  return `contratto_${code}.pdf`;
+}
+function v164DriveQ(v){ return String(v || '').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+// Override: la cartella non è più per singolo contratto ma per cliente.
+getOrCreateDriveContractFolderV63 = async function getOrCreateDriveClientFolderV164(p) {
+  if (!drive) return null;
+  const folderName = v164ClienteFolderName(p);
+  const parent = process.env.GOOGLE_DRIVE_FOLDER_ID || process.env.DRIVE_FOLDER_ID || null;
+  let q = `mimeType='application/vnd.google-apps.folder' and name='${v164DriveQ(folderName)}' and trashed=false`;
+  if (parent) q += ` and '${parent}' in parents`;
+  const found = await drive.files.list({ q, fields:'files(id,name,webViewLink)', spaces:'drive', supportsAllDrives:true, includeItemsFromAllDrives:true });
+  if (found.data.files && found.data.files[0]) return found.data.files[0];
+  const requestBody = { name: folderName, mimeType:'application/vnd.google-apps.folder' };
+  if (parent) requestBody.parents = [parent];
+  const created = await drive.files.create({ requestBody, fields:'id,name,webViewLink', supportsAllDrives:true });
+  return created.data;
+};
+
+async function v164DeleteOldSameContractPdf(folderId, p) {
+  if (!drive || !folderId) return;
+  const code = v164NormPart(p?.codice || '').toUpperCase();
+  const exact = v164ContrattoPdfName(p).toLowerCase();
+  const found = await drive.files.list({
+    q: `'${folderId}' in parents and trashed=false and mimeType='application/pdf'`,
+    fields:'files(id,name)',
+    supportsAllDrives:true,
+    includeItemsFromAllDrives:true
+  });
+  for (const f of (found.data.files || [])) {
+    const n = String(f.name || '').toLowerCase();
+    const hit = n === exact || (code && n.includes(code.toLowerCase()));
+    if (hit) {
+      try { await drive.files.delete({ fileId:f.id, supportsAllDrives:true }); } catch(e) { console.log('V164 delete old PDF skip:', e.message); }
+    }
+  }
+}
+
+async function v164SyncPdfDriveOnly(prenotazioneId){
+  const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+  if (!p) throw new Error('Contratto non trovato');
+  const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:true, skipDrive:true });
+  const pdfName = v164ContrattoPdfName(p);
+  let uploaded = null;
+  let folder = null;
+
+  // 1) Preferito: Google Drive diretto, cartella unica cliente, sostituisce solo il PDF di questo contratto.
+  if (drive) {
+    try {
+      folder = await getOrCreateDriveContractFolderV63(p);
+      if (folder && folder.id) {
+        await v164DeleteOldSameContractPdf(folder.id, p);
+        uploaded = await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
+      }
+    } catch(e) { console.log('V164 Drive diretto PDF warning:', e.message); }
+  }
+
+  // 2) Fallback: Apps Script come per foto/documenti, ma sempre con cartella cliente stabile.
+  if (!uploaded) {
+    try {
+      uploaded = await uploadFileToDrive(pdf, pdfName, 'application/pdf', v164ClienteFolderName(p));
+    } catch(e) { console.log('V164 Drive Apps Script PDF warning:', e.message); }
+  }
+
+  if (uploaded && (uploaded.webViewLink || uploaded.link)) {
+    const link = uploaded.webViewLink || uploaded.link || '';
+    await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_web_link=?, pdf_drive_file_id=?, drive_folder_id=COALESCE(?,drive_folder_id), drive_folder_link=COALESCE(?,drive_folder_link) WHERE id=?`,
+      [pdf, link, link, uploaded.id || '', folder?.id || null, folder?.webViewLink || null, prenotazioneId]);
+    if (String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
+    return { ok:true, pdf, link, fileId: uploaded.id || '', folder };
+  }
+
+  await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+  return { ok:false, pdf, error:'PDF generato locale ma non caricato su Drive' };
+}
+
+// Override sync principale usato da modifica, WhatsApp, email, firma.
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V164(prenotazioneId) {
+  let pdfRes = null;
+  try { pdfRes = await v164SyncPdfDriveOnly(prenotazioneId); }
+  catch(e) { console.log('V164 sync PDF Drive error:', e.message); }
+
+  // Carica anche gli allegati nella stessa cartella cliente quando c'è Drive diretto.
+  try {
+    const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+    const folder = pdfRes?.folder || (drive ? await getOrCreateDriveContractFolderV63(p) : null);
+    if (folder && folder.id) {
+      await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
+      if (typeof uploadLocalAllegatiToDriveV63 === 'function') await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
+    }
+  } catch(e) { console.log('V164 sync allegati warning:', e.message); }
+
+  return pdfRes || { ok:false, error:'Sync Drive non riuscito' };
+};
+
+// Override dopo modifica: rigenera sempre PDF fresco, aggiorna Drive e calendario.
+v163AfterContractChange = async function v164AfterContractChange(prenotazioneId){
+  const id = String(prenotazioneId || '').trim();
+  if(!id) return null;
+  const driveSync = await syncContrattoDriveV63(id);
+  try {
+    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
+    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
+      const ics = await v153IcsFileForPrenotazione(fresh);
+      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
+    }
+  } catch(e) { console.log('V164 calendario dopo modifica warning:', e.message); }
+  return { ok:true, driveSync };
+};
+
+app.get('/admin/drive-cliente-fix/:id', async (req,res)=>{
+  try{
+    const r = await syncContrattoDriveV63(req.params.id);
+    const p = await get(`SELECT pdf_drive_web_link,pdf_drive_link,drive_folder_link FROM prenotazioni WHERE id=?`, [req.params.id]);
+    res.send(page('Drive cliente fix', `<div class="box"><h2 class="${(p?.pdf_drive_web_link||p?.pdf_drive_link)?'ok':'bad'}">Sync Drive cliente completato</h2><p><b>PDF:</b> ${(p?.pdf_drive_web_link||p?.pdf_drive_link) ? `<a target="_blank" href="${esc(p.pdf_drive_web_link||p.pdf_drive_link)}">Apri PDF Drive</a>` : esc(r?.error||'non caricato')}</p><p><b>Cartella cliente:</b> ${p?.drive_folder_link ? `<a target="_blank" href="${esc(p.drive_folder_link)}">Apri cartella</a>` : 'n/d'}</p><a class="btn" href="/contratto/${req.params.id}/gestisci">Torna contratto</a></div>`));
+  }catch(e){ res.status(500).send(page('Drive cliente fix errore', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
+console.log('DP RENT V164: Drive cartella cliente + PDF firmato/modificato sincronizzato');
+
+console.log('DP RENT V165: upload documenti cliente anti-crash Safari + Drive background');
