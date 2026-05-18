@@ -7946,10 +7946,10 @@ async function dpHandleWhatsApp(req,res){
   }
 
   if((dpIsMenuKeyword(body) || body === '') && session.state === 'menu'){
+    // V167: su un semplice ciao non forziamo più il messaggio Bentornato.
+    // Il cliente viene comunque riconosciuto quando conferma/prenota.
     dpReset(from, profileName);
-    const known = await dpFindClienteWhatsApp(from).catch(()=>null);
-    const hello = known ? `Bentornato ${known.nome || profileName} 👋\nHo riconosciuto il tuo numero, userò i dati già presenti quando confermi una prenotazione.\n\n` : '';
-    return dpTwimlResponse(res, hello + dpMenu(profileName));
+    return dpTwimlResponse(res, dpMenu(profileName));
   }
 
   if(session.state === 'menu'){
@@ -7999,6 +7999,13 @@ async function dpHandleWhatsApp(req,res){
     if(body === '5'){
       session.state = 'altro'; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.chat} *Altre richieste*\n\nScrivi pure la tua richiesta. Ti rispondo subito e la inoltro allo staff DP.`);
+    }
+    // V167: se il testo non è un numero/menu ma una frase libera,
+    // risponde ChatGPT invece di ributtare sempre il menu.
+    if(body && !['1','2','3','4','5'].includes(body)){
+      session.state = 'altro'; session.ts = Date.now();
+      const answer = await dpChatGPTAnswer(body);
+      return dpTwimlResponse(res, answer + '\n\nScrivi MENU per tornare al menu principale.');
     }
     return dpTwimlResponse(res, dpMenu(profileName));
   }
@@ -9036,4 +9043,70 @@ app.get('/admin/drive-cliente-fix/:id', async (req,res)=>{
 
 console.log('DP RENT V164: Drive cartella cliente + PDF firmato/modificato sincronizzato');
 
-console.log('DP RENT V165: upload documenti cliente anti-crash Safari + Drive background');
+console.log('DP RENT V167: WhatsApp smart + documenti Drive definitivo');
+
+
+// =========================
+// V167 FIX WHATSAPP + DOCUMENTI DRIVE DEFINITIVO
+// =========================
+async function v167SyncDocumentoClienteRow(a){
+  try{
+    if(!a || a.drive_web_link) return {ok:true, skipped:'already_synced'};
+    const localPath = a.path || (a.filename ? path.join(uploadDir, path.basename(a.filename)) : '');
+    if(!localPath || !fs.existsSync(localPath)) return {ok:false, error:'file locale non trovato'};
+    let c = null;
+    if(a.cliente_id) c = await get(`SELECT * FROM clienti WHERE id=?`, [a.cliente_id]).catch(()=>null);
+    if(!c && a.prenotazione_id){
+      const pr = await get(`SELECT * FROM prenotazioni WHERE id=?`, [a.prenotazione_id]).catch(()=>null);
+      if(pr){
+        const cid = await v137EnsurePrenCliente(pr.id).catch(()=>null);
+        if(cid){
+          await run(`UPDATE allegati SET cliente_id=? WHERE id=?`, [cid, a.id]).catch(()=>{});
+          c = await get(`SELECT * FROM clienti WHERE id=?`, [cid]).catch(()=>null);
+        } else {
+          c = pr;
+        }
+      }
+    }
+    const clienteForFolder = c || { nome:'CLIENTE', cognome:'SENZA ANAGRAFICA', id:a.cliente_id||a.prenotazione_id||a.id };
+    const fileName = a.originalname || a.filename || path.basename(localPath);
+    const mime = a.mimetype || 'application/octet-stream';
+    const r = await v165SyncClienteDocumentoDrive(a.id, localPath, fileName, mime, clienteForFolder);
+    return r || {ok:false};
+  }catch(e){ return {ok:false, error:e.message}; }
+}
+
+async function v167SyncDocumentiCliente(clienteId){
+  const rows = await all(`SELECT * FROM allegati WHERE cliente_id=? AND (drive_web_link IS NULL OR drive_web_link='') ORDER BY id ASC`, [clienteId]).catch(()=>[]);
+  let ok=0, fail=0, details=[];
+  for(const a of rows){
+    const r = await v167SyncDocumentoClienteRow(a);
+    if(r && r.ok) ok++; else fail++;
+    details.push({id:a.id, tipo:a.tipo, file:a.originalname||a.filename, result:r});
+  }
+  return {ok:true, synced:ok, failed:fail, total:rows.length, details};
+}
+
+// Forza sync documenti di un cliente: /admin/drive-sync-documenti-cliente/ID
+app.get('/admin/drive-sync-documenti-cliente/:id', async (req,res)=>{
+  try{
+    const r = await v167SyncDocumentiCliente(req.params.id);
+    res.send(page('Sync Drive documenti cliente', `<div class="box"><h2 class="ok">Sync Drive documenti completato</h2><p>Totali: <b>${r.total}</b></p><p>Caricati: <b>${r.synced}</b></p><p>Errori: <b>${r.failed}</b></p><pre>${esc(JSON.stringify(r.details,null,2))}</pre><a class="btn" href="/cliente/${esc(req.params.id)}/documenti">Torna documenti</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore sync Drive documenti', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
+// Forza sync globale di tutti i documenti senza link Drive.
+app.get('/admin/drive-sync-documenti-tutti', async (req,res)=>{
+  try{
+    const rows = await all(`SELECT * FROM allegati WHERE (drive_web_link IS NULL OR drive_web_link='') ORDER BY id ASC LIMIT 500`).catch(()=>[]);
+    let ok=0, fail=0, details=[];
+    for(const a of rows){
+      const r = await v167SyncDocumentoClienteRow(a);
+      if(r && r.ok) ok++; else fail++;
+      details.push({id:a.id, cliente_id:a.cliente_id, prenotazione_id:a.prenotazione_id, tipo:a.tipo, file:a.originalname||a.filename, result:r});
+    }
+    res.send(page('Sync Drive documenti tutti', `<div class="box"><h2 class="ok">Sync Drive documenti globale completato</h2><p>Totali: <b>${rows.length}</b></p><p>Caricati: <b>${ok}</b></p><p>Errori: <b>${fail}</b></p><pre>${esc(JSON.stringify(details,null,2))}</pre><a class="btn" href="/documenti-clienti">Archivio documenti</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore sync Drive documenti', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
+console.log('DP RENT V167: WhatsApp smart ripristinato + sync documenti Drive forzabile');
