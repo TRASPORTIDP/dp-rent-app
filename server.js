@@ -636,7 +636,13 @@ addColumn('mezzi','record_cargos_veicolo_tipo','TEXT');
   addColumn('prenotazioni','record_cargos_last_check','TEXT');
   addColumn('prenotazioni','record_cargos_last_send','TEXT');
   addColumn('prenotazioni','record_cargos_last_error','TEXT');
-  addColumn('prenotazioni','drive_folder_id','TEXT');
+  
+// V159 - colonne aggiuntive per check-in/check-out e modifica mezzo
+addColumn('prenotazioni','check_out_orario','TEXT');
+addColumn('prenotazioni','check_in_orario','TEXT');
+addColumn('prenotazioni','check_out_note','TEXT');
+addColumn('prenotazioni','check_in_note','TEXT');
+addColumn('prenotazioni','drive_folder_id','TEXT');
   addColumn('prenotazioni','drive_folder_link','TEXT');
 
   // =========================
@@ -1836,6 +1842,7 @@ async function generaPdfContratto(id, opts = {}) {
     ['Giorni', String(p.giorni || '')],
     ['Km incl./prev.', `${Number(p.km_inclusi || 0) * Number(p.giorni || 0)} / ${p.km_previsti || 0}`],
     ['Km uscita/rientro', `${p.km_uscita || ''} / ${p.km_rientro || ''}`],
+    ['Orari check', `OUT ${p.check_out_orario || p.ora_inizio || ''} / IN ${p.check_in_orario || p.ora_fine || ''}`],
     ['Carburante', `${p.carburante_uscita || ''} / ${p.carburante_rientro || ''}`]
   ], M, startCols2, COL_W, BLACK);
   const rightBottom2 = drawCardAt('RIEPILOGO ECONOMICO', [
@@ -4127,8 +4134,7 @@ app.get('/prenotazione/:id/calendario.ics', async (req,res)=>{
       'END:VEVENT','END:VCALENDAR'
     ].join('\r\n');
     res.setHeader('Content-Type','text/calendar; charset=utf-8');
-    res.setHeader('Content-Disposition', `inline; filename="DPRENT-${p.codice || p.id}.ics"`);
-    res.setHeader('Cache-Control','no-store');
+    res.setHeader('Content-Disposition', `attachment; filename="DPRENT-${p.codice || p.id}.ics"`);
     res.send(ics);
   }catch(e){ res.status(500).send('Errore calendario: '+(e.message||e)); }
 });
@@ -4147,22 +4153,10 @@ function v148GoogleCalendarLink(p){
 function v153CalendarLinks(req, p) {
   const base = (process.env.APP_BASE_URL || absoluteUrl(req, '')).replace(/\/+$/,'');
   return {
-    page: `${base}/prenotazione/${p.id}/calendario`,
     ics: `${base}/prenotazione/${p.id}/calendario.ics`,
     google: v148GoogleCalendarLink(p)
   };
 }
-
-app.get('/prenotazione/:id/calendario', async (req,res)=>{
-  try{
-    const p = await get(`SELECT p.*, m.targa AS mezzo_targa, m.marca AS mezzo_marca, m.modello AS mezzo_modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
-    if(!p) return res.status(404).send('Prenotazione non trovata');
-    const links = v153CalendarLinks(req, p);
-    const mezzo = [p.mezzo_targa || p.targa, p.mezzo_marca || p.marca, p.mezzo_modello || p.modello].filter(Boolean).join(' ');
-    res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Calendario DP RENT</title>
-    <style>body{font-family:Arial,Helvetica,sans-serif;background:#f4f6fb;margin:0;padding:22px;color:#111827}.card{max-width:720px;margin:auto;background:#fff;border-radius:28px;padding:28px;box-shadow:0 12px 35px rgba(0,0,0,.12)}.hero{background:linear-gradient(135deg,#101010,#002b7f);color:white;border-radius:28px;padding:26px;margin-bottom:22px}.hero h1{font-size:34px;margin:0 0 8px}.badge{display:inline-block;background:#fff;color:#002b7f;border-radius:999px;padding:10px 18px;font-weight:900}.btn{display:block;text-align:center;text-decoration:none;color:white;border-radius:22px;padding:22px;margin:16px 0;font-size:26px;font-weight:900}.apple{background:#111}.google{background:#1a73e8}.back{background:#d80000}.small{font-size:17px;color:#4b5563;line-height:1.45}</style></head><body><div class="card"><div class="hero"><h1>📅 DP RENT</h1><p>Aggiungi la prenotazione al calendario</p><span class="badge">${esc(p.codice || p.id)}</span></div><p><b>Mezzo:</b> ${esc(mezzo || p.categoria || 'Noleggio')}</p><p><b>Periodo:</b> ${esc(p.data_inizio || '')} ${esc(p.ora_inizio || '08:30')} - ${esc(p.data_fine || '')} ${esc(p.ora_fine || '18:00')}</p><a class="btn apple" href="${esc(links.ics)}">🍎 iPhone / Calendario Apple</a><a class="btn google" href="${esc(links.google)}" target="_blank">🤖 Google Calendar / Android</a><p class="small">Su iPhone si apre il file calendario: premi <b>Aggiungi</b>. Su Android si apre Google Calendar e confermi il salvataggio.</p><a class="btn back" href="javascript:history.back()">Indietro</a></div></body></html>`);
-  }catch(e){ res.status(500).send('Errore calendario: '+(e.message||e)); }
-});
 
 function v153IcsContent(p) {
   const start = v148DateTimeLocalToIcs(p.data_inizio, p.ora_inizio || '08:30');
@@ -4187,6 +4181,56 @@ async function v153IcsFileForPrenotazione(p) {
   const file = path.join(contractsDir, `calendario_${safe}.ics`);
   fs.writeFileSync(file, v153IcsContent(p));
   return file;
+}
+
+
+// V159 - helper robusti per Drive, email e form modifica
+function v159AbsBase(req){
+  return (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || (req ? absoluteUrl(req, '') : '') || '').replace(/\/+$/,'');
+}
+function v159MezzoLabel(m){
+  return [m.targa, m.marca, m.modello, m.categoria].filter(Boolean).join(' - ');
+}
+function v159Selected(a,b){ return String(a||'') === String(b||'') ? 'selected' : ''; }
+async function v159SyncPdfDrive(prenotazioneId){
+  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+  if(!p) throw new Error('Contratto non trovato');
+  const pdf = await generaPdfContratto(prenotazioneId, { skipDrive:true, forceDrive:false });
+  let uploadedPdf = null;
+  let folder = null;
+  try{
+    if (typeof getOrCreateDriveContractFolderV63 === 'function' && typeof uploadFileToDriveFolderV63 === 'function') {
+      folder = await getOrCreateDriveContractFolderV63(p).catch(()=>null);
+      if(folder && folder.id){
+        try { await deleteAllContractPdfsInDriveV63(folder.id); } catch(e) {}
+        uploadedPdf = await uploadFileToDriveFolderV63(pdf, path.basename(pdf), 'application/pdf', folder.id);
+      }
+    }
+  }catch(e){ console.log('V159 Drive diretto PDF KO:', e.message); }
+  if(!uploadedPdf){
+    try{
+      uploadedPdf = await uploadFileToDrive(pdf, path.basename(pdf), 'application/pdf', `${p.codice || 'contratto'} - ${p.nome || ''} ${p.cognome || ''}`);
+    }catch(e){ console.log('V159 Drive Apps Script PDF KO:', e.message); }
+  }
+  if(uploadedPdf && (uploadedPdf.webViewLink || uploadedPdf.link)){
+    const web = uploadedPdf.webViewLink || uploadedPdf.link || '';
+    await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_file_id=?, pdf_drive_web_link=?, drive_folder_id=COALESCE(?,drive_folder_id), drive_folder_link=COALESCE(?,drive_folder_link) WHERE id=?`,
+      [pdf, web, uploadedPdf.id || '', web, folder?.id || null, folder?.webViewLink || null, prenotazioneId]);
+    if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
+    return { ok:true, pdf, link:web, fileId: uploadedPdf.id || '', folder };
+  }
+  await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]);
+  return { ok:false, pdf, error:'Drive non configurato o upload PDF non riuscito' };
+}
+async function v159EmailAttachmentsForPrenotazione(req, p){
+  const out = [];
+  const pdf = await generaPdfContratto(p.id, { skipDrive:true, forceDrive:false });
+  out.push({ filename:path.basename(pdf), path:pdf, contentType:'application/pdf' });
+  try{
+    const icsFile = await v153IcsFileForPrenotazione(p);
+    if(fs.existsSync(icsFile)) out.push({ filename:path.basename(icsFile), path:icsFile, contentType:'text/calendar; charset=utf-8; method=PUBLISH' });
+  }catch(e){ console.log('V159 ICS email skip:', e.message); }
+  return out;
 }
 
 
@@ -4347,7 +4391,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .contract-main-actions .btn{width:100%!important;}
 }
 
-</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerà i dati e ti confermerà contratto e disponibilità.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" href="/prenotazione/${result.lastID}/calendario">📅 Aggiungi al calendario</a><a class="btn" style="background:#1a73e8;margin-left:8px" target="_blank" href="${v148GoogleCalendarLink(Object.assign({}, data, {id: result.lastID, codice: cod}))}">📅 Google Calendar</a></div></div></body></html>`);
+</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerà i dati e ti confermerà contratto e disponibilità.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a><a class="btn" style="background:#1a73e8;margin-left:8px" target="_blank" href="${v148GoogleCalendarLink(Object.assign({}, data, {id: result.lastID, codice: cod}))}">📅 Google Calendar</a></div></div></body></html>`);
   } catch (e) {
     res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore invio dati</h1><pre>${esc(e.stack || e.message)}</pre><a href="javascript:history.back()">Torna</a>`);
   }
@@ -4832,45 +4876,35 @@ function getPrenotazioneCompleta(id, callback) {
 }
 
 async function syncContrattoDriveV63(prenotazioneId) {
-  // V63: una sola cartella Drive per contratto, un solo PDF. Le foto vanno nella stessa cartella.
+  // V159: PDF sempre tentato su Drive, senza dipendere da una sola configurazione.
   try {
-    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
-    if (!p) return null;
-
-    const folder = await getOrCreateDriveContractFolderV63(p);
-    if (!folder) return null;
-
-    await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`,
-      [folder.id, folder.webViewLink || null, prenotazioneId]);
-
-    const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false });
-    const pdfName = path.basename(pdf);
-
-    await deleteAllContractPdfsInDriveV63(folder.id);
-    const uploadedPdf = await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
-
-    await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=? WHERE id=?`,
-      [pdf, uploadedPdf?.webViewLink || null, prenotazioneId]);
-
+    const result = await v159SyncPdfDrive(prenotazioneId);
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+    let folder = result.folder || null;
+    if(!folder && typeof getOrCreateDriveContractFolderV63 === 'function' && p){
+      folder = await getOrCreateDriveContractFolderV63(p).catch(()=>null);
+      if(folder) await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
+    }
     const allegati = await all(`SELECT * FROM allegati WHERE prenotazione_id=?`, [prenotazioneId]).catch(() => []);
     for (const a of (allegati || [])) {
-      if (a.drive_file_id) continue;
-      if (!a.path || !fs.existsSync(a.path)) continue;
-      const up = await uploadFileToDriveFolderV63(
-        a.path,
-        a.originalname || a.filename || path.basename(a.path),
-        a.mimetype || 'application/octet-stream',
-        folder.id
-      );
-      if (up?.id) {
-        await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`,
-          [up.id, up.webViewLink || null, a.id]);
-      }
+      if (a.drive_file_id || !a.path || !fs.existsSync(a.path)) continue;
+      try{
+        let up = null;
+        if(folder && folder.id && typeof uploadFileToDriveFolderV63 === 'function'){
+          up = await uploadFileToDriveFolderV63(a.path, a.originalname || a.filename || path.basename(a.path), a.mimetype || 'application/octet-stream', folder.id);
+        }
+        if(!up){
+          up = await uploadFileToDrive(a.path, a.originalname || a.filename || path.basename(a.path), a.mimetype || 'application/octet-stream', `${p?.codice || 'contratto'} - allegati`);
+        }
+        if (up?.id || up?.webViewLink || up?.link) {
+          await run(`UPDATE allegati SET drive_file_id=?, drive_web_link=? WHERE id=?`, [up.id || '', up.webViewLink || up.link || '', a.id]);
+          if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(a.path);
+        }
+      }catch(e){ console.log('V159 allegato Drive KO:', e.message); }
     }
-
-    return { folder, pdf: uploadedPdf };
+    return { folder, pdf: result };
   } catch (e) {
-    console.log('uploadAllContrattoDriveV40 V63 error:', e.message);
+    console.log('syncContrattoDriveV63 V159 error:', e.message);
     return null;
   }
 }
@@ -5774,24 +5808,28 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
 app.get('/checkout/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   if (!p) return res.send('Contratto non trovato');
-  res.send(page('Check-out', `<div class="box"><h2>📤 Check-out mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><form method="POST" action="/checkout/${p.id}"><div class="grid"><div><label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions(p.carburante_uscita)}</select></div><div><label>Km uscita</label><input type="number" name="km_uscita" value="${esc(p.km_uscita)}"></div></div><label>Note check-out / danni presenti</label><textarea name="note">${esc(p.note)}</textarea><button>Salva check-out</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto uscita</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
+  const nowTime = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  res.send(page('Check-out', `<div class="box"><h2>📤 Check-out mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><form method="POST" action="/checkout/${p.id}"><div class="grid"><div><label>Orario check-out</label><input type="time" name="check_out_orario" value="${esc(p.check_out_orario || p.ora_inizio || nowTime)}"></div><div><label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions(p.carburante_uscita)}</select></div><div><label>Km uscita</label><input type="number" name="km_uscita" value="${esc(p.km_uscita)}"></div></div><label>Note check-out / danni presenti</label><textarea name="note">${esc(p.check_out_note || p.note)}</textarea><button>Salva check-out</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto uscita</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
 });
 app.post('/checkout/:id', async (req, res) => {
   const p = await get(`SELECT mezzo_id FROM prenotazioni WHERE id=?`, [req.params.id]);
-  await run(`UPDATE prenotazioni SET carburante_uscita=?, km_uscita=?, note=?, stato='in_corso' WHERE id=?`, [req.body.carburante_uscita, req.body.km_uscita, req.body.note, req.params.id]);
+  await run(`UPDATE prenotazioni SET check_out_orario=?, carburante_uscita=?, km_uscita=?, check_out_note=?, note=?, stato='in_corso' WHERE id=?`, [req.body.check_out_orario, req.body.carburante_uscita, req.body.km_uscita, req.body.note, req.body.note, req.params.id]);
   if (p && req.body.km_uscita) await run(`UPDATE mezzi SET km_attuali=? WHERE id=?`, [req.body.km_uscita, p.mezzo_id]);
-  res.send(actionScreen(req.params.id, 'Check-out salvato', 'Contratto aggiornato in stato in_corso.'));
+  try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
+  res.send(actionScreen(req.params.id, 'Check-out salvato', 'Contratto aggiornato con orario check-out.'));
 });
 app.get('/checkin/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   if (!p) return res.send('Contratto non trovato');
-  res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}"></div></div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.note)}</textarea><button>Salva check-in</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
+  const nowTime = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+  res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Orario check-in</label><input type="time" name="check_in_orario" value="${esc(p.check_in_orario || p.ora_fine || nowTime)}"></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}"></div></div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.check_in_note || p.note)}</textarea><button>Salva check-in</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
 });
 app.post('/checkin/:id', async (req, res) => {
   const p = await get(`SELECT mezzo_id FROM prenotazioni WHERE id=?`, [req.params.id]);
-  await run(`UPDATE prenotazioni SET carburante_rientro=?, km_rientro=?, note=?, stato='rientrato' WHERE id=?`, [req.body.carburante_rientro, req.body.km_rientro, req.body.note, req.params.id]);
+  await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, req.body.km_rientro, req.body.note, req.body.note, req.params.id]);
   if (p && req.body.km_rientro) await run(`UPDATE mezzi SET km_attuali=? WHERE id=?`, [req.body.km_rientro, p.mezzo_id]);
-  res.send(actionScreen(req.params.id, 'Check-in salvato', 'Contratto aggiornato in stato rientrato.'));
+  try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
+  res.send(actionScreen(req.params.id, 'Check-in salvato', 'Contratto aggiornato con orario check-in.'));
 });
 
 
@@ -6014,14 +6052,12 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
     }
 
     let pdfLink = p.pdf_drive_web_link || p.pdf_drive_link || '';
-    if (!pdfLink) {
-      try {
-        const sync = await syncContrattoDriveV63(p.id);
-        const updated = await get(`SELECT pdf_drive_web_link,pdf_drive_link FROM prenotazioni WHERE id=?`, [p.id]);
-        pdfLink = updated?.pdf_drive_web_link || updated?.pdf_drive_link || sync?.pdf?.webViewLink || '';
-      } catch (e) {
-        console.log('Errore generazione/sync PDF per WhatsApp:', e.message);
-      }
+    try {
+      const sync = await syncContrattoDriveV63(p.id);
+      const updated = await get(`SELECT pdf_drive_web_link,pdf_drive_link,pdf_path FROM prenotazioni WHERE id=?`, [p.id]);
+      pdfLink = updated?.pdf_drive_web_link || updated?.pdf_drive_link || sync?.pdf?.link || sync?.pdf?.webViewLink || pdfLink || '';
+    } catch (e) {
+      console.log('Errore generazione/sync PDF per WhatsApp:', e.message);
     }
 
     let pdfDriveWarning = false;
@@ -6038,11 +6074,11 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
       `Totale: Euro ${Number(p.totale || 0).toFixed(2)}\n\n` +
       (pdfLink ? `PDF contratto: ${pdfLink}\n\n` : '') +
       `Firma online: ${firmaLink}\n\n` +
-      `Aggiungi al calendario iPhone/Android: ${calLinks.ics}\n` +
+      `Aggiungi al calendario: ${calLinks.page}\n` +
       `Google Calendar: ${calLinks.google}`;
 
     const r = await dpNotify([tel], testo);
-    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>${pdfDriveWarning ? '<p class="warn">Drive non disponibile per il PDF: inviato link PDF locale Render.</p>' : ''}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><p><b>Calendario:</b> <a target="_blank" href="${esc(calLinks.page)}">Pagina calendario</a> | <a target="_blank" href="${esc(calLinks.google)}">Google Calendar</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
+    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>${pdfDriveWarning ? '<p class="warn">Drive non disponibile per il PDF: inviato link PDF locale Render.</p>' : ''}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><p><b>Calendario:</b> <a target="_blank" href="${esc(calLinks.page)}">iPhone/Android</a> | <a target="_blank" href="${esc(calLinks.google)}">Google Calendar</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
   } catch (e) {
     res.status(500).send(page('Errore invio contratto WhatsApp', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
   }
@@ -6054,27 +6090,23 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
 app.get('/email/:id', async (req,res)=>{
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);
   if(!p)return res.send('Contratto non trovato');
-  res.send(page('Invia email', `<h2>Invia contratto via email</h2><form method="POST" action="/email/${p.id}"><label>Email destinatario</label><input name="email" value="${esc(p.email)}" required><label>Messaggio</label><textarea name="messaggio">Buongiorno, in allegato trova il contratto DP RENT.</textarea><button>Invia email</button></form><p class="notice">Per inviare davvero configura SMTP su Render.</p>`));
+  res.send(page('Invia email', `<div class="box"><h2>Invia contratto via email</h2><form method="POST" action="/email/${p.id}"><label>Email destinatario</label><input name="email" value="${esc(p.email)}" required><label>Messaggio</label><textarea name="messaggio">Buongiorno, in allegato trova il contratto DP RENT.</textarea><button>Invia email</button></form><p class="notice">La mail allega PDF e calendario .ics. Se SMTP non è configurato, compare errore chiaro senza rompere il contratto.</p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a></div>`));
 });
 app.post('/email/:id', async (req,res)=>{
   try {
     const p = await get(`SELECT p.*, m.targa, m.marca, m.modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
-    const file = await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
-    const icsFile = await v153IcsFileForPrenotazione(p || {id:req.params.id});
-    const calLinks = v153CalendarLinks(req, p || {id:req.params.id});
-    const bodyEmail = (req.body.messaggio || 'In allegato contratto DP RENT.') + `
-
-Aggiungi al calendario:
-- iPhone/Android: ${calLinks.page}
-- Google Calendar: ${calLinks.google}`;
-    await sendEmail(req.body.email, 'Contratto DP RENT', bodyEmail, [
-      {filename:path.basename(file),path:file},
-      {filename:path.basename(icsFile),path:icsFile, contentType:'text/calendar'}
-    ]);
+    if(!p) return res.status(404).send(page('Email', '<div class="box"><h2>Contratto non trovato</h2></div>'));
+    const to = String(req.body.email || p.email || '').trim();
+    if(!to) throw new Error('Email destinatario mancante');
+    const calLinks = v153CalendarLinks(req, p);
+    const bodyEmail = (req.body.messaggio || 'In allegato contratto DP RENT.') + `\n\nAggiungi al calendario:\n- Pagina calendario: ${calLinks.page}\n- Google Calendar: ${calLinks.google}`;
+    const attachments = await v159EmailAttachmentsForPrenotazione(req, p);
+    await sendEmail(to, 'Contratto DP RENT ' + (p.codice || ''), bodyEmail, attachments);
     await run(`UPDATE prenotazioni SET stato='inviato_email' WHERE id=?`,[req.params.id]);
-    res.send(actionScreen(req.params.id,'Email inviata','Contratto inviato correttamente.'));
+    try{ await syncContrattoDriveV63(req.params.id); }catch(e){ console.log('V159 sync Drive dopo email warning:', e.message); }
+    res.send(actionScreen(req.params.id,'Email inviata','Contratto e calendario inviati correttamente.'));
   } catch(e) {
-    res.status(500).send(page('Errore Email', `<div class="box"><h2 class="bad">Errore email</h2><pre>${esc(e.message)}</pre></div>`));
+    res.status(500).send(page('Errore Email', `<div class="box"><h2 class="bad">Errore email</h2><pre>${esc(e.message)}</pre><p>Controlla su Render le variabili SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.</p><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a><a class="btn" href="/email/${req.params.id}">Riprova email</a></div>`));
   }
 });
 
@@ -7189,82 +7221,44 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
   v67EnsureCriticalColumns(async ()=>{
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
     if(!p) return res.status(404).send(page('Non trovato', `<div class="box"><h2>Contratto non trovato</h2></div>`));
+    const mezzi = await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
+    const mezzoOptions = ['<option value="">-- scegli mezzo --</option>'].concat((mezzi||[]).map(m => `<option value="${esc(m.id)}" ${v159Selected(p.mezzo_id,m.id)}>${esc(v159MezzoLabel(m))}</option>`)).join('');
     res.send(page('Modifica contratto', `<div class="box">
       <h2>Modifica ${esc(p.codice || p.id)}</h2>
+      <p class="notice"><b>Contratto modificabile anche se firmato.</b> Se cambi mezzo, il PDF viene rigenerato e risincronizzato su Drive.</p>
       <form method="post" action="/prenotazione/${p.id}/modifica">
         <div class="grid">
+          <label>Mezzo assegnato<select name="mezzo_id">${mezzoOptions}</select></label>
           <label>Nome<input name="nome" value="${esc(p.nome)}" required></label>
           <label>Cognome<input name="cognome" value="${esc(p.cognome)}" required></label>
           <label>Telefono<input name="telefono" value="${esc(p.telefono)}"></label>
           <label>Email<input name="email" value="${esc(p.email)}"></label>
           <label>Codice fiscale<input name="codice_fiscale" value="${esc(p.codice_fiscale || p.cf)}"></label>
-          <label>Data nascita<input type="date" name="data_nascita" value="${esc(v67IsoDate(p.data_nascita))}" required></label>
+          <label>Data nascita<input type="date" name="data_nascita" value="${esc(v67IsoDate(p.data_nascita))}"></label>
           <label>Luogo nascita<input name="luogo_nascita" value="${esc(p.luogo_nascita)}"></label>
           <label>Cittadinanza codice<input name="cittadinanza_cod" value="${esc(p.cittadinanza_cod || '100000100')}"></label>
-          <label>Tipo documento
-            <select name="documento_tipo">
-              <option value="IDENT" ${(p.documento_tipo||'IDENT')==='IDENT'?'selected':''}>Carta identità</option>
-              <option value="IDELE" ${p.documento_tipo==='IDELE'?'selected':''}>Carta identità elettronica</option>
-              <option value="PASOR" ${p.documento_tipo==='PASOR'?'selected':''}>Passaporto</option>
-              <option value="PATEN" ${p.documento_tipo==='PATEN'?'selected':''}>Patente</option>
-            </select>
-          </label>
-          <label>Numero documento<input name="documento_numero" value="${esc(p.documento_numero)}" required></label>
+          <label>Tipo documento<select name="documento_tipo"><option value="IDENT" ${(p.documento_tipo||'IDENT')==='IDENT'?'selected':''}>Carta identità</option><option value="IDELE" ${p.documento_tipo==='IDELE'?'selected':''}>Carta identità elettronica</option><option value="PASOR" ${p.documento_tipo==='PASOR'?'selected':''}>Passaporto</option><option value="PATEN" ${p.documento_tipo==='PATEN'?'selected':''}>Patente</option></select></label>
+          <label>Numero documento<input name="documento_numero" value="${esc(p.documento_numero)}"></label>
           <label>Scadenza documento<input type="date" name="documento_scadenza" value="${esc(v67IsoDate(p.documento_scadenza))}"></label>
-          <label>Numero patente<input name="patente_numero" value="${esc(p.patente_numero)}" required></label>
+          <label>Numero patente<input name="patente_numero" value="${esc(p.patente_numero)}"></label>
           <label>Scadenza patente<input type="date" name="patente_scadenza" value="${esc(v67IsoDate(p.patente_scadenza))}"></label>
-          <label>Tipo cliente
-            <select name="tipo_cliente">
-              <option value="privato" ${(p.tipo_cliente||'privato')==='privato'?'selected':''}>Privato</option>
-              <option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option>
-            </select>
-          </label>
+          <label>Tipo cliente<select name="tipo_cliente"><option value="privato" ${(p.tipo_cliente||'privato')==='privato'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></label>
           <label>Ragione sociale<input name="ragione_sociale" value="${esc(p.ragione_sociale)}"></label>
-          <label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva)}"></label>
+          <label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva || p.piva)}"></label>
           <label>PEC<input name="pec" value="${esc(p.pec)}"></label>
-          <label>Codice SDI<input name="codice_sdi" value="${esc(p.codice_sdi)}"></label>
+          <label>Codice SDI<input name="codice_sdi" value="${esc(p.codice_sdi || p.sdi)}"></label>
+          <label>Indirizzo fatturazione<input name="indirizzo_fatturazione" value="${esc(p.indirizzo_fatturazione || p.fatt_indirizzo)}"></label>
           <label>Data inizio<input type="date" name="data_inizio" value="${esc(p.data_inizio)}"></label>
           <label>Ora inizio<input type="time" name="ora_inizio" value="${esc(p.ora_inizio)}"></label>
           <label>Data fine<input type="date" name="data_fine" value="${esc(p.data_fine)}"></label>
           <label>Ora fine<input type="time" name="ora_fine" value="${esc(p.ora_fine)}"></label>
+          <label>Orario check-out<input type="time" name="check_out_orario" value="${esc(p.check_out_orario || '')}"></label>
+          <label>Orario check-in<input type="time" name="check_in_orario" value="${esc(p.check_in_orario || '')}"></label>
           <label>Totale<input name="totale" value="${esc(p.totale)}"></label>
-          <label>Stato
-            <select name="stato">
-              <option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option>
-              <option value="bozza" ${p.stato==='bozza'?'selected':''}>Bozza</option>
-              <option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option>
-              <option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option>
-              <option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option>
-            </select>
-          </label>
-          <label>Cauzione richiesta
-            <select name="cauzione_richiesta">
-              <option value="no" ${(p.cauzione_richiesta||'no')==='no'?'selected':''}>NO</option>
-              <option value="si" ${p.cauzione_richiesta==='si'?'selected':''}>SI</option>
-            </select>
-          </label>
-          <label>Cauzione ricevuta
-            <select name="cauzione_ricevuta">
-              <option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option>
-              <option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option>
-            </select>
-          </label>
+          <label>Stato<select name="stato"><option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option><option value="bozza" ${p.stato==='bozza'?'selected':''}>Bozza</option><option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option><option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option><option value="in_corso" ${p.stato==='in_corso'?'selected':''}>In corso/check-out</option><option value="rientrato" ${p.stato==='rientrato'?'selected':''}>Rientrato/check-in</option><option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option></select></label>
+          <label>Cauzione ricevuta<select name="cauzione_ricevuta"><option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option></select></label>
           <label>Importo cauzione<input name="cauzione_importo" value="${esc(p.cauzione_importo || p.cauzione || 0)}"></label>
-          <label>Metodo cauzione
-            <select name="cauzione_metodo">
-              <option value="">---</option>
-              <option value="contanti" ${p.cauzione_metodo==='contanti'?'selected':''}>Contanti</option>
-              <option value="carta" ${p.cauzione_metodo==='carta'?'selected':''}>Carta</option>
-              <option value="bonifico" ${p.cauzione_metodo==='bonifico'?'selected':''}>Bonifico</option>
-              <option value="non_versata" ${p.cauzione_metodo==='non_versata'?'selected':''}>Non versata</option>
-            </select>
-          </label>
-          <label>Cauzione restituita
-            <select name="cauzione_restituita">
-              <option value="no" ${(p.cauzione_restituita||'no')==='no'?'selected':''}>NO</option>
-              <option value="si" ${p.cauzione_restituita==='si'?'selected':''}>SI</option>
-            </select>
-          </label>
+          <label>Metodo cauzione<select name="cauzione_metodo"><option value="">---</option><option value="contanti" ${p.cauzione_metodo==='contanti'?'selected':''}>Contanti</option><option value="carta" ${p.cauzione_metodo==='carta'?'selected':''}>Carta</option><option value="bonifico" ${p.cauzione_metodo==='bonifico'?'selected':''}>Bonifico</option><option value="non_versata" ${p.cauzione_metodo==='non_versata'?'selected':''}>Non versata</option></select></label>
         </div>
         <label>Note<textarea name="note">${esc(p.note)}</textarea></label>
         <button class="btn" type="submit">Salva modifiche</button>
@@ -7278,25 +7272,23 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
   v67EnsureCriticalColumns(async ()=>{
     try{
       const b = req.body || {};
+      const mezzo = b.mezzo_id ? await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]).catch(()=>null) : null;
       await run(`UPDATE prenotazioni SET
+        mezzo_id=COALESCE(?,mezzo_id), targa=COALESCE(?,targa), marca=COALESCE(?,marca), modello=COALESCE(?,modello), categoria=COALESCE(?,categoria),
         nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?,
-        data_nascita=?, luogo_nascita=?, cittadinanza_cod=?,
-        documento_tipo=?, documento_numero=?, documento_scadenza=?,
-        patente_numero=?, patente_scadenza=?,
-        tipo_cliente=?, ragione_sociale=?, partita_iva=?, pec=?, codice_sdi=?,
-        data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, totale=?, stato=?,
-        cauzione_richiesta=?, cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, cauzione_restituita=?, note=?
+        data_nascita=?, luogo_nascita=?, cittadinanza_cod=?, documento_tipo=?, documento_numero=?, documento_scadenza=?,
+        patente_numero=?, patente_scadenza=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
+        data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?, totale=?, stato=?,
+        cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, note=?
         WHERE id=?`, [
+          b.mezzo_id || null, mezzo?.targa || null, mezzo?.marca || null, mezzo?.modello || null, mezzo?.categoria || null,
           v62Val(b.nome), v62Val(b.cognome), v62Val(b.telefono), v62Val(b.email), v62Val(b.codice_fiscale),
-          v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'),
-          v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
-          v62Val(b.patente_numero), v62Val(b.patente_scadenza),
-          v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi),
-          v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Money(b.totale), v62Val(b.stato || 'contratto'),
-          v62Val(b.cauzione_richiesta || 'no'), v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.cauzione_restituita || 'no'), v62Val(b.note),
-          req.params.id
+          v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
+          v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
+          v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Val(b.check_out_orario), v62Val(b.check_in_orario), v62Money(b.totale), v62Val(b.stato || 'contratto'),
+          v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
       ]);
-      try{ if(typeof syncContrattoDriveV59==='function') await syncContrattoDriveV59(req.params.id); }catch(e){}
+      try{ await syncContrattoDriveV63(req.params.id); }catch(e){ console.log('V159 sync dopo modifica warning:', e.message); }
       res.redirect(`/contratto/${req.params.id}/gestisci`);
     } catch(e){
       res.status(500).send(page('Errore salvataggio', `<div class="box"><h2 class="bad">Errore salvataggio</h2><pre>${esc(e.message)}</pre><a class="btn" href="/prenotazione/${req.params.id}/modifica">Torna modifica</a></div>`));
@@ -7623,7 +7615,7 @@ function dpServiceIntentFromText(text){
 
   // Noleggio: include anche frasi generiche senza categoria precisa.
   if(has([
-    'noleggio','noleggiare','noleggia','noleggiare','affitto','affittare','rent','prenotare','prenotazione',
+    'noleggio','noleggiare','noleggia','affittare','affitto','preventivo noleggio','preventivo mezzo','affittare','rent','prenotare','prenotazione',
     'mi serve un mezzo','mi serve mezzo','mi serve auto','mi serve macchina','mi serve furgone',
     'furgone','pulmino','9 posti','nove posti','dacia','golf','escavatore','mezzo speciale'
   ])) return 'noleggio';
