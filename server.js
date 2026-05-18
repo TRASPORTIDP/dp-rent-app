@@ -6107,10 +6107,22 @@ app.post('/email/:id', async (req,res)=>{
     if(!to) throw new Error('Email destinatario mancante');
     const calLinks = v153CalendarLinks(req, p);
     const bodyEmail = (req.body.messaggio || 'In allegato contratto DP RENT.') + `\n\nAggiungi al calendario:\n- Pagina calendario: ${calLinks.page}\n- Google Calendar: ${calLinks.google}`;
-    const attachments = await v159EmailAttachmentsForPrenotazione(req, p);
+    // V162: rigenera sempre il PDF prima della mail. Non usare un pdf_path vecchio:
+    // se il file locale è stato pulito dopo Drive, la mail non deve andare in ENOENT.
+    const pdfLocale = await generaPdfContratto(p.id, { skipDrive:true, forceDrive:false });
+    if (!pdfLocale || !fs.existsSync(pdfLocale)) {
+      throw new Error('PDF contratto non generato: impossibile allegare email');
+    }
+
+    const attachments = [{ filename:path.basename(pdfLocale), path:pdfLocale, contentType:'application/pdf' }];
+    try{
+      const icsFile = await v153IcsFileForPrenotazione(p);
+      if(fs.existsSync(icsFile)) attachments.push({ filename:path.basename(icsFile), path:icsFile, contentType:'text/calendar; charset=utf-8; method=PUBLISH' });
+    }catch(e){ console.log('V162 ICS email skip:', e.message); }
+
     await sendEmail(to, 'Contratto DP RENT ' + (p.codice || ''), bodyEmail, attachments);
-    await run(`UPDATE prenotazioni SET stato='inviato_email' WHERE id=?`,[req.params.id]);
-    try{ await syncContrattoDriveV63(req.params.id); }catch(e){ console.log('V159 sync Drive dopo email warning:', e.message); }
+    await run(`UPDATE prenotazioni SET stato='inviato_email', pdf_path=? WHERE id=?`,[pdfLocale, req.params.id]);
+    try{ await syncContrattoDriveV63(req.params.id); }catch(e){ console.log('V162 sync Drive dopo email warning:', e.message); }
     res.send(actionScreen(req.params.id,'Email inviata','Contratto e calendario inviati correttamente.'));
   } catch(e) {
     res.status(500).send(page('Errore Email', `<div class="box"><h2 class="bad">Errore email</h2><pre>${esc(e.message)}</pre><p>Controlla su Render le variabili SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.</p><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a><a class="btn" href="/email/${req.params.id}">Riprova email</a></div>`));
@@ -7295,7 +7307,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           v62Val(b.data_inizio), v62Val(b.ora_inizio), v62Val(b.data_fine), v62Val(b.ora_fine), v62Val(b.check_out_orario), v62Val(b.check_in_orario), v62Money(b.totale), v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_ricevuta || 'no'), v62Money(b.cauzione_importo), v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
       ]);
-      try{ await syncContrattoDriveV63(req.params.id); }catch(e){ console.log('V159 sync dopo modifica warning:', e.message); }
+      try{ if (typeof v163AfterContractChange === 'function') { await v163AfterContractChange(req.params.id); } else { await syncContrattoDriveV63(req.params.id); } }catch(e){ console.log('V163 sync dopo modifica warning:', e.message); }
       res.redirect(`/contratto/${req.params.id}/gestisci`);
     } catch(e){
       res.status(500).send(page('Errore salvataggio', `<div class="box"><h2 class="bad">Errore salvataggio</h2><pre>${esc(e.message)}</pre><a class="btn" href="/prenotazione/${req.params.id}/modifica">Torna modifica</a></div>`));
@@ -7439,7 +7451,7 @@ function dpMenu(name){
 }
 function dpIsMenuKeyword(body){
   const t = dpNorm(body);
-  return ['ciao','salve','buongiorno','buonasera','menu','start','inizio','info','informazioni','aiuto'].includes(t);
+  return ['ciao','salve','buongiorno','buonasera','menu','start','inizio'].includes(t);
 }
 function dpAlreadySid(sid){
   if(!sid) return false;
@@ -7932,7 +7944,7 @@ async function dpHandleWhatsApp(req,res){
     return dpTwimlResponse(res, 'Nessun problema 👍\n\n' + dpMenu(profileName));
   }
 
-  if(dpIsMenuKeyword(body) || body === ''){
+  if((dpIsMenuKeyword(body) || body === '') && session.state === 'menu'){
     dpReset(from, profileName);
     const known = await dpFindClienteWhatsApp(from).catch(()=>null);
     const hello = known ? `Bentornato ${known.nome || profileName} 👋\nHo riconosciuto il tuo numero, userò i dati già presenti quando confermi una prenotazione.\n\n` : '';
@@ -8790,3 +8802,41 @@ app.get('/admin/sync-drive-forza/:id', async (req,res)=>{
 });
 
 console.log('DP RENT V161: Drive PDF robusto attivo');
+
+
+// =========================
+// V163 - RIFINITURA STABILE: dopo modifica contratto aggiorna PDF, Drive e calendario
+// Non tocca la mail: la mail resta quella funzionante della V162.
+// =========================
+async function v163AfterContractChange(prenotazioneId){
+  const id = String(prenotazioneId || '').trim();
+  if(!id) return null;
+  let pdf = null;
+  try {
+    pdf = await generaPdfContratto(id, { skipDrive:true, forceDrive:false });
+    await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, id]).catch(()=>{});
+  } catch(e) { console.log('V163 genera PDF dopo modifica:', e.message); }
+  let driveSync = null;
+  try {
+    driveSync = await syncContrattoDriveV63(id);
+  } catch(e) { console.log('V163 sync Drive dopo modifica:', e.message); }
+  try {
+    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
+    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
+      const ics = await v153IcsFileForPrenotazione(fresh);
+      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
+    }
+  } catch(e) { console.log('V163 calendario dopo modifica:', e.message); }
+  return { ok:true, pdf, driveSync };
+}
+
+app.get('/contratto/:id/calendario', async (req,res)=>{
+  try{
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if(!p) return res.status(404).send(page('Calendario', `<div class="box"><h2 class="bad">Contratto non trovato</h2><a class="btn btn2" href="/storico">Storico</a></div>`));
+    const links = v153CalendarLinks(req, p);
+    res.send(page('Aggiungi calendario', `<div class="box"><h2>📅 Aggiungi al calendario</h2><p><b>${esc(p.codice || p.id)}</b><br>${esc(p.nome||'')} ${esc(p.cognome||'')}<br>${esc(p.data_inizio||'')} ${esc(p.ora_inizio||'')} - ${esc(p.data_fine||'')} ${esc(p.ora_fine||'')}</p><a class="btn" href="${esc(links.ics)}">🍎 iPhone / Calendario Apple</a><a class="btn btn3" target="_blank" href="${esc(links.google)}">📅 Google Calendar / Android</a><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna contratto</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore calendario', `<div class="box"><h2 class="bad">Errore calendario</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna contratto</a></div>`)); }
+});
+
+console.log('DP RENT V163: rifinitura modifica contratto + calendario + WhatsApp contesto attiva');
