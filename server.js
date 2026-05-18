@@ -1351,6 +1351,28 @@ function alertBadge(m) {
 }
 
 /* GOOGLE DRIVE VIA APPS SCRIPT - NON USA SERVICE ACCOUNT DIRETTO */
+// V172 FIX REALE: alcune funzioni V63/V170 usano la variabile globale `drive`.
+// Se non viene dichiarata, Render stampa: "drive is not defined".
+// La dichiariamo sempre e, se ci sono le ENV del service account, la inizializziamo.
+let drive = null;
+function ensureDriveClientV172(){
+  try {
+    if (drive) return drive;
+    if (typeof google === 'undefined' || !google) return null;
+    const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || process.env.GOOGLE_CLIENT_EMAIL || '';
+    let privateKey = process.env.GOOGLE_PRIVATE_KEY || '';
+    if (!clientEmail || !privateKey) return null;
+    privateKey = privateKey.replace(/\\n/g, '\n');
+    const auth = new google.auth.JWT(clientEmail, null, privateKey, ['https://www.googleapis.com/auth/drive']);
+    drive = google.drive({ version:'v3', auth });
+    return drive;
+  } catch(e) {
+    console.log('V172 init Drive diretto warning:', e.message);
+    drive = null;
+    return null;
+  }
+}
+ensureDriveClientV172();
 function googleDriveConfigured() {
   return !!(process.env.DRIVE_WEBAPP_URL && process.env.GOOGLE_DRIVE_FOLDER_ID);
 }
@@ -9103,6 +9125,7 @@ syncContrattoDriveV63 = async function syncContrattoDriveV63_V164(prenotazioneId
   // Carica anche gli allegati nella stessa cartella cliente quando c'è Drive diretto.
   try {
     const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+    ensureDriveClientV172();
     const folder = pdfRes?.folder || (drive ? await getOrCreateDriveContractFolderV63(p) : null);
     if (folder && folder.id) {
       await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
@@ -9288,6 +9311,7 @@ async function v170DriveUploadOrUpdatePdf(prenotazioneId){
   let folder = null;
   let uploaded = null;
 
+  ensureDriveClientV172();
   if (drive) {
     folder = await getOrCreateDriveContractFolderV63(p);
     if (folder && folder.id) {
@@ -9354,3 +9378,4 @@ v163AfterContractChange = async function v170AfterContractChange(prenotazioneId)
 };
 
 console.log('DP RENT V170: modifica contratto ricalcola importi/km e aggiorna PDF Drive');
+console.log('DP RENT V172: FIX REALE drive globale inizializzato');
