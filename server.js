@@ -6086,6 +6086,13 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
 
 
 
+// V160 alias email: i pulsanti vecchi usano /contratto/:id/email
+app.get('/contratto/:id/email', (req, res) => {
+  return res.redirect(`/email/${req.params.id}`);
+});
+app.post('/contratto/:id/email', (req, res) => {
+  return res.redirect(307, `/email/${req.params.id}`);
+});
 
 app.get('/email/:id', async (req,res)=>{
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`,[req.params.id]);
@@ -8723,3 +8730,63 @@ app.get('/v108-check', async (req,res)=>{
   const dirs = [DATA_DIR, uploadDir, contractsDir, firmeDir].map(d=>`${d}: ${fs.existsSync(d) ? 'OK' : 'NO'}`).join('\n');
   res.type('text/plain').send(`DP RENT V109 OK\nDB: ${dbOk ? DB_PATH : 'NO'}\n${dirs}`);
 });
+
+// =========================
+// V161 FIX DRIVE PDF ROBUSTO + WHATSAPP OK
+// =========================
+// Il vecchio syncContrattoDriveV63 usava solo l'oggetto drive service-account.
+// Se le foto andavano via Apps Script ma il PDF no, qui forziamo il fallback Apps Script
+// e aggiorniamo sempre i campi pdf_drive_* dopo modifica mezzo/email/WhatsApp.
+const dpOldSyncContrattoDriveV63_V161 = (typeof syncContrattoDriveV63 === 'function') ? syncContrattoDriveV63 : null;
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V161(prenotazioneId) {
+  let lastError = '';
+
+  // 1) Prova prima il sync vecchio, se funziona davvero e salva un link Drive lo teniamo.
+  try {
+    if (dpOldSyncContrattoDriveV63_V161) {
+      await dpOldSyncContrattoDriveV63_V161(prenotazioneId);
+      const chk = await get(`SELECT pdf_drive_web_link,pdf_drive_link FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+      if (chk && (chk.pdf_drive_web_link || chk.pdf_drive_link)) {
+        return { ok:true, mode:'service_account', link: chk.pdf_drive_web_link || chk.pdf_drive_link };
+      }
+    }
+  } catch(e) {
+    lastError = e.message || String(e);
+    console.log('V161 sync vecchio non riuscito:', lastError);
+  }
+
+  // 2) Fallback robusto: genera PDF locale e carica con uploadFileToDrive (Apps Script),
+  // lo stesso meccanismo che gia funziona per foto/documenti.
+  try {
+    if (typeof v159SyncPdfDrive === 'function') {
+      const r = await v159SyncPdfDrive(prenotazioneId);
+      if (r && r.ok) return { ok:true, mode:'apps_script', link:r.link || r.webViewLink || '', pdf:r.pdf };
+      lastError = (r && r.error) || lastError || 'Upload Drive PDF non riuscito';
+    }
+  } catch(e) {
+    lastError = e.message || String(e);
+    console.log('V161 sync Apps Script non riuscito:', lastError);
+  }
+
+  // 3) Ultima sicurezza: almeno rigenera PDF locale, così WhatsApp/email hanno sempre un link Render valido.
+  try {
+    const pdf = await generaPdfContratto(prenotazioneId, { skipDrive:true, forceDrive:false });
+    await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+    return { ok:false, mode:'local', pdf, error:lastError || 'Drive non disponibile' };
+  } catch(e) {
+    return { ok:false, mode:'none', error:e.message || lastError || 'Errore generazione PDF' };
+  }
+};
+
+app.get('/admin/sync-drive-forza/:id', async (req,res)=>{
+  try{
+    const r = await syncContrattoDriveV63(req.params.id);
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]).catch(()=>null);
+    const link = p?.pdf_drive_web_link || p?.pdf_drive_link || r?.link || '';
+    res.send(page('Sync Drive contratto', `<div class="box"><h2 class="${link ? 'ok':'bad'}">${link ? 'PDF sincronizzato su Drive' : 'Drive non disponibile'}</h2><p><b>Modalità:</b> ${esc(r?.mode || '')}</p>${link ? `<p><a class="btn" target="_blank" href="${esc(link)}">Apri PDF Drive</a></p>` : `<pre>${esc(r?.error || '')}</pre>`}<a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a></div>`));
+  }catch(e){
+    res.status(500).send(page('Errore sync Drive', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna</a></div>`));
+  }
+});
+
+console.log('DP RENT V161: Drive PDF robusto attivo');
