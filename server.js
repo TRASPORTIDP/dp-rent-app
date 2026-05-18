@@ -4127,7 +4127,8 @@ app.get('/prenotazione/:id/calendario.ics', async (req,res)=>{
       'END:VEVENT','END:VCALENDAR'
     ].join('\r\n');
     res.setHeader('Content-Type','text/calendar; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="DPRENT-${p.codice || p.id}.ics"`);
+    res.setHeader('Content-Disposition', `inline; filename="DPRENT-${p.codice || p.id}.ics"`);
+    res.setHeader('Cache-Control','no-store');
     res.send(ics);
   }catch(e){ res.status(500).send('Errore calendario: '+(e.message||e)); }
 });
@@ -4146,10 +4147,22 @@ function v148GoogleCalendarLink(p){
 function v153CalendarLinks(req, p) {
   const base = (process.env.APP_BASE_URL || absoluteUrl(req, '')).replace(/\/+$/,'');
   return {
+    page: `${base}/prenotazione/${p.id}/calendario`,
     ics: `${base}/prenotazione/${p.id}/calendario.ics`,
     google: v148GoogleCalendarLink(p)
   };
 }
+
+app.get('/prenotazione/:id/calendario', async (req,res)=>{
+  try{
+    const p = await get(`SELECT p.*, m.targa AS mezzo_targa, m.marca AS mezzo_marca, m.modello AS mezzo_modello FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
+    if(!p) return res.status(404).send('Prenotazione non trovata');
+    const links = v153CalendarLinks(req, p);
+    const mezzo = [p.mezzo_targa || p.targa, p.mezzo_marca || p.marca, p.mezzo_modello || p.modello].filter(Boolean).join(' ');
+    res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Calendario DP RENT</title>
+    <style>body{font-family:Arial,Helvetica,sans-serif;background:#f4f6fb;margin:0;padding:22px;color:#111827}.card{max-width:720px;margin:auto;background:#fff;border-radius:28px;padding:28px;box-shadow:0 12px 35px rgba(0,0,0,.12)}.hero{background:linear-gradient(135deg,#101010,#002b7f);color:white;border-radius:28px;padding:26px;margin-bottom:22px}.hero h1{font-size:34px;margin:0 0 8px}.badge{display:inline-block;background:#fff;color:#002b7f;border-radius:999px;padding:10px 18px;font-weight:900}.btn{display:block;text-align:center;text-decoration:none;color:white;border-radius:22px;padding:22px;margin:16px 0;font-size:26px;font-weight:900}.apple{background:#111}.google{background:#1a73e8}.back{background:#d80000}.small{font-size:17px;color:#4b5563;line-height:1.45}</style></head><body><div class="card"><div class="hero"><h1>📅 DP RENT</h1><p>Aggiungi la prenotazione al calendario</p><span class="badge">${esc(p.codice || p.id)}</span></div><p><b>Mezzo:</b> ${esc(mezzo || p.categoria || 'Noleggio')}</p><p><b>Periodo:</b> ${esc(p.data_inizio || '')} ${esc(p.ora_inizio || '08:30')} - ${esc(p.data_fine || '')} ${esc(p.ora_fine || '18:00')}</p><a class="btn apple" href="${esc(links.ics)}">🍎 iPhone / Calendario Apple</a><a class="btn google" href="${esc(links.google)}" target="_blank">🤖 Google Calendar / Android</a><p class="small">Su iPhone si apre il file calendario: premi <b>Aggiungi</b>. Su Android si apre Google Calendar e confermi il salvataggio.</p><a class="btn back" href="javascript:history.back()">Indietro</a></div></body></html>`);
+  }catch(e){ res.status(500).send('Errore calendario: '+(e.message||e)); }
+});
 
 function v153IcsContent(p) {
   const start = v148DateTimeLocalToIcs(p.data_inizio, p.ora_inizio || '08:30');
@@ -4334,7 +4347,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .contract-main-actions .btn{width:100%!important;}
 }
 
-</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerà i dati e ti confermerà contratto e disponibilità.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a><a class="btn" style="background:#1a73e8;margin-left:8px" target="_blank" href="${v148GoogleCalendarLink(Object.assign({}, data, {id: result.lastID, codice: cod}))}">📅 Google Calendar</a></div></div></body></html>`);
+</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerà i dati e ti confermerà contratto e disponibilità.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" href="/prenotazione/${result.lastID}/calendario">📅 Aggiungi al calendario</a><a class="btn" style="background:#1a73e8;margin-left:8px" target="_blank" href="${v148GoogleCalendarLink(Object.assign({}, data, {id: result.lastID, codice: cod}))}">📅 Google Calendar</a></div></div></body></html>`);
   } catch (e) {
     res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore invio dati</h1><pre>${esc(e.stack || e.message)}</pre><a href="javascript:history.back()">Torna</a>`);
   }
@@ -6029,7 +6042,7 @@ app.get('/whatsapp-contratto/:id', async (req, res) => {
       `Google Calendar: ${calLinks.google}`;
 
     const r = await dpNotify([tel], testo);
-    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>${pdfDriveWarning ? '<p class="warn">Drive non disponibile per il PDF: inviato link PDF locale Render.</p>' : ''}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><p><b>Calendario:</b> <a target="_blank" href="${esc(calLinks.ics)}">iPhone/Android</a> | <a target="_blank" href="${esc(calLinks.google)}">Google Calendar</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
+    res.send(page('Invio contratto WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Contratto inviato su WhatsApp' : 'Invio WhatsApp non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><p><b>PDF:</b> <a target="_blank" href="${esc(pdfLink)}">Apri PDF</a></p>${pdfDriveWarning ? '<p class="warn">Drive non disponibile per il PDF: inviato link PDF locale Render.</p>' : ''}<p><b>Firma:</b> <a target="_blank" href="${esc(firmaLink)}">${esc(firmaLink)}</a></p><p><b>Calendario:</b> <a target="_blank" href="${esc(calLinks.page)}">Pagina calendario</a> | <a target="_blank" href="${esc(calLinks.google)}">Google Calendar</a></p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="javascript:history.back()">Indietro</a></div>`));
   } catch (e) {
     res.status(500).send(page('Errore invio contratto WhatsApp', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`));
   }
@@ -6052,7 +6065,7 @@ app.post('/email/:id', async (req,res)=>{
     const bodyEmail = (req.body.messaggio || 'In allegato contratto DP RENT.') + `
 
 Aggiungi al calendario:
-- iPhone/Android: ${calLinks.ics}
+- iPhone/Android: ${calLinks.page}
 - Google Calendar: ${calLinks.google}`;
     await sendEmail(req.body.email, 'Contratto DP RENT', bodyEmail, [
       {filename:path.basename(file),path:file},
