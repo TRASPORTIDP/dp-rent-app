@@ -9638,3 +9638,145 @@ app.get('/admin/drive-cliente-unica/:id', async (req,res)=>{
 });
 
 console.log('DP RENT V175: Drive torna Apps Script fallback + cartella cliente unica');
+
+// =========================
+// V176 - DRIVE PDF SOVRASCRITTURA REALE
+// Regola definitiva: nella cartella cliente deve esistere UN SOLO PDF per codice contratto.
+// Prima prova update sul file_id salvato; se non riesce elimina i vecchi duplicati e ricarica.
+// Se il service account non può caricare per quota, pulisce comunque i duplicati e usa Apps Script fallback.
+// =========================
+async function v176FindPdfContrattoInFolder(folderId, p){
+  ensureDriveClientV172();
+  if (!drive || !folderId) return [];
+  const pdfName = (typeof v164ContrattoPdfName === 'function') ? v164ContrattoPdfName(p) : driveContractPdfNameV168(p);
+  const code = String(p?.codice || '').trim().toLowerCase();
+  const found = await drive.files.list({
+    q: `'${folderId}' in parents and trashed=false and mimeType='application/pdf'`,
+    fields:'files(id,name,webViewLink,modifiedTime)',
+    supportsAllDrives:true,
+    includeItemsFromAllDrives:true,
+    spaces:'drive',
+    orderBy:'modifiedTime desc'
+  });
+  return (found.data.files || []).filter(f => {
+    const n = String(f.name || '').toLowerCase();
+    return n === String(pdfName).toLowerCase() || (code && n.includes(code));
+  });
+}
+
+async function v176DeletePdfDuplicates(folderId, p, keepId){
+  const files = await v176FindPdfContrattoInFolder(folderId, p).catch(()=>[]);
+  let deleted = 0;
+  for (const f of files) {
+    if (keepId && String(f.id) === String(keepId)) continue;
+    try {
+      await drive.files.delete({ fileId:f.id, supportsAllDrives:true });
+      deleted++;
+      console.log('V176 PDF duplicato eliminato:', f.name, f.id);
+    } catch(e) {
+      console.log('V176 delete duplicato skip:', f.name, e.message);
+    }
+  }
+  return deleted;
+}
+
+async function v176UpdateOrCreatePdfDrive(prenotazioneId){
+  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+  if (!p) throw new Error('Contratto non trovato');
+  if (!googleDriveConfigured()) throw new Error('Google Drive non configurato');
+
+  const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:true, skipDrive:true });
+  const size = await assertFileReadyV173(pdf, 'PDF contratto');
+  const pdfName = (typeof v164ContrattoPdfName === 'function') ? v164ContrattoPdfName(p) : driveContractPdfNameV168(p);
+  const folderName = (typeof v164ClienteFolderName === 'function') ? v164ClienteFolderName(p) : driveClienteFolderNameV168(p);
+
+  ensureDriveClientV172();
+  let folder = drive ? await v174GetOrCreateClienteFolder(p).catch(e => { console.log('V176 cartella cliente warning:', e.message); return null; }) : null;
+  let uploaded = null;
+  let link = '';
+
+  if (folder && folder.id && drive) {
+    await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
+
+    const oldIdDb = String(p.pdf_drive_file_id || '').trim();
+    const existing = await v176FindPdfContrattoInFolder(folder.id, p).catch(()=>[]);
+    const oldId = oldIdDb || (existing[0]?.id || '');
+
+    // 1) Prova sovrascrittura vera del file esistente.
+    if (oldId) {
+      try {
+        uploaded = (await drive.files.update({
+          fileId: oldId,
+          requestBody:{ name: pdfName },
+          media:{ mimeType:'application/pdf', body: fs.createReadStream(pdf) },
+          fields:'id,name,webViewLink',
+          supportsAllDrives:true
+        })).data;
+        console.log('V176 PDF aggiornato/sovrascritto:', pdfName, size, 'bytes', uploaded.id, uploaded.webViewLink || '');
+        await v176DeletePdfDuplicates(folder.id, p, uploaded.id);
+      } catch(e) {
+        console.log('V176 update PDF non riuscito, pulisco e ricarico:', e.message);
+        await v176DeletePdfDuplicates(folder.id, p, null);
+      }
+    } else {
+      await v176DeletePdfDuplicates(folder.id, p, null);
+    }
+
+    // 2) Se update non è riuscito, crea nuovo ma DOPO aver eliminato i duplicati.
+    if (!uploaded) {
+      try {
+        uploaded = await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
+        if (uploaded) console.log('V176 PDF creato unico in cartella cliente:', pdfName, size, 'bytes', uploaded.id, uploaded.webViewLink || '');
+      } catch(e) {
+        console.log('V176 create diretto warning:', e.message);
+      }
+    }
+  }
+
+  // 3) Fallback Apps Script: prima abbiamo già pulito i duplicati via Drive se possibile.
+  if (!uploaded) {
+    uploaded = await uploadFileToDrive(pdf, pdfName, 'application/pdf', folderName);
+    console.log('V176 PDF Apps Script fallback unico:', folderName, uploaded?.id || '', uploaded?.webViewLink || uploaded?.link || '');
+  }
+
+  if (!uploaded || !(uploaded.id || uploaded.webViewLink || uploaded.link)) {
+    await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+    throw new Error('PDF generato ma upload Drive non riuscito');
+  }
+
+  link = uploaded.webViewLink || uploaded.link || '';
+  await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_web_link=?, pdf_drive_file_id=?, drive_folder_id=COALESCE(?,drive_folder_id), drive_folder_link=COALESCE(?,drive_folder_link) WHERE id=?`,
+    [pdf, link, link, uploaded.id || '', folder?.id || null, folder?.webViewLink || null, prenotazioneId]);
+
+  if (folder && folder.id && typeof uploadLocalAllegatiToDriveV63 === 'function') await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
+  if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
+  return { ok:true, pdf, link, fileId:uploaded.id || '', folder };
+}
+
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V176(prenotazioneId){
+  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
+  catch(e) { console.log('V176 sync Drive error:', e.message); return { ok:false, error:e.message }; }
+};
+
+v163AfterContractChange = async function v176AfterContractChange(prenotazioneId){
+  const id = String(prenotazioneId || '').trim();
+  if(!id) return null;
+  const driveSync = await syncContrattoDriveV63(id);
+  try {
+    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
+    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
+      const ics = await v153IcsFileForPrenotazione(fresh);
+      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
+    }
+  } catch(e) { console.log('V176 calendario warning:', e.message); }
+  return { ok:true, driveSync };
+};
+
+app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
+  try{
+    const r = await v176UpdateOrCreatePdfDrive(req.params.id);
+    res.send(page('Drive PDF unico', `<div class="box"><h2 class="ok">PDF unico aggiornato</h2><p><b>PDF:</b> <a target="_blank" href="${esc(r.link||'')}">Apri PDF Drive</a></p><p><b>Cartella cliente:</b> ${r.folder?.webViewLink ? `<a target="_blank" href="${esc(r.folder.webViewLink)}">Apri cartella cliente</a>` : 'n/d'}</p><p>Ora le modifiche non creano duplicati: aggiornano lo stesso PDF.</p><a class="btn" href="/contratto/${esc(req.params.id)}/gestisci">Torna contratto</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore Drive PDF unico', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna</a></div>`)); }
+});
+
+console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
