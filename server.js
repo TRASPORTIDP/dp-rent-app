@@ -9041,8 +9041,23 @@ async function v164DeleteOldSameContractPdf(folderId, p) {
   }
 }
 
+
+// =========================
+// V171 FIX: getPrenotazioneCompleta promise-safe
+// =========================
+function getPrenotazioneCompletaAsyncV171(id) {
+  return new Promise((resolve) => {
+    try {
+      if (typeof getPrenotazioneCompleta !== 'function') return resolve(null);
+      getPrenotazioneCompleta(id, (err, row) => resolve(err ? null : (row || null)));
+    } catch (e) {
+      resolve(null);
+    }
+  });
+}
+
 async function v164SyncPdfDriveOnly(prenotazioneId){
-  const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
   if (!p) throw new Error('Contratto non trovato');
   const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:true, skipDrive:true });
   const pdfName = v164ContrattoPdfName(p);
@@ -9087,7 +9102,7 @@ syncContrattoDriveV63 = async function syncContrattoDriveV63_V164(prenotazioneId
 
   // Carica anche gli allegati nella stessa cartella cliente quando c'è Drive diretto.
   try {
-    const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+    const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
     const folder = pdfRes?.folder || (drive ? await getOrCreateDriveContractFolderV63(p) : null);
     if (folder && folder.id) {
       await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
@@ -9266,7 +9281,7 @@ console.log('DP RENT V169: route /admin/update-db /admin/fix-db aggiunte + migra
 // V170 - FIX MODIFICA CONTRATTO: ricalcolo automatico + Drive PDF sempre aggiornato
 // =========================
 async function v170DriveUploadOrUpdatePdf(prenotazioneId){
-  const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
   if (!p) throw new Error('Contratto non trovato');
   const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:true, skipDrive:true });
   const pdfName = (typeof v164ContrattoPdfName === 'function') ? v164ContrattoPdfName(p) : `contratto_${p.codice || prenotazioneId}.pdf`;
@@ -9314,7 +9329,7 @@ async function v170DriveUploadOrUpdatePdf(prenotazioneId){
 syncContrattoDriveV63 = async function syncContrattoDriveV63_V170(prenotazioneId){
   const pdfRes = await v170DriveUploadOrUpdatePdf(prenotazioneId).catch(e => ({ ok:false, error:e.message }));
   try {
-    const p = await getPrenotazioneCompleta(prenotazioneId).catch(()=>null) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]);
+    const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
     const folder = pdfRes?.folder || (drive ? await getOrCreateDriveContractFolderV63(p) : null);
     if (folder && folder.id) {
       await run(`UPDATE prenotazioni SET drive_folder_id=?, drive_folder_link=? WHERE id=?`, [folder.id, folder.webViewLink || null, prenotazioneId]).catch(()=>{});
