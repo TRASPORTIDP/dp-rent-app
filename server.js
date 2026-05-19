@@ -6235,8 +6235,10 @@ app.post('/email/:id', async (req,res)=>{
     }catch(e){ console.log('V162 ICS email skip:', e.message); }
 
     await sendEmail(to, 'Contratto DP RENT ' + (p.codice || ''), bodyEmail, attachments);
+    // V178: l'invio email NON deve mai risincronizzare Drive.
+    // Il PDF Drive viene creato/aggiornato solo in creazione, firma e modifica contratto.
+    // Prima qui richiamava syncContrattoDriveV63() e Google Drive creava un duplicato ogni email.
     await run(`UPDATE prenotazioni SET stato='inviato_email', pdf_path=? WHERE id=?`,[pdfLocale, req.params.id]);
-    try{ await syncContrattoDriveV63(req.params.id); }catch(e){ console.log('V162 sync Drive dopo email warning:', e.message); }
     res.send(actionScreen(req.params.id,'Email inviata','Contratto e calendario inviati correttamente.'));
   } catch(e) {
     const msg = String(e && e.message || 'Errore email');
@@ -9792,3 +9794,31 @@ console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
 
 
 console.log('DP RENT V177: flusso blindato - occupato blocca, email PDF stabile, dashboard pulita');
+
+
+// V178: blocco duplicati Drive.
+// Se esiste già un PDF Drive per il contratto e l'update diretto non riesce,
+// NON usare Apps Script fallback perché crea un nuovo file con lo stesso nome.
+const v176UpdateOrCreatePdfDrive_ORIG_V178 = v176UpdateOrCreatePdfDrive;
+v176UpdateOrCreatePdfDrive = async function v178UpdateOrCreatePdfDriveNoDuplicates(prenotazioneId){
+  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+  const hadDrivePdf = !!(p && (String(p.pdf_drive_file_id || '').trim() || String(p.pdf_drive_web_link || p.pdf_drive_link || '').trim()));
+  try {
+    return await v176UpdateOrCreatePdfDrive_ORIG_V178(prenotazioneId);
+  } catch(e) {
+    if (hadDrivePdf) {
+      const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false, skipDrive:true });
+      await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+      console.log('V178 Drive update non riuscito: mantengo PDF Drive esistente, NO duplicato:', e.message);
+      return { ok:false, pdf, keptExisting:true, error:e.message };
+    }
+    throw e;
+  }
+};
+
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId){
+  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
+  catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
+};
+
+console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
