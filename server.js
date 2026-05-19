@@ -1188,8 +1188,6 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 <a href="/prenota">Pagina cliente</a>
 <a href="/cargos">Ca.R.G.O.S.</a><a href="/cargos-config">Config CARGOS</a>
 <a href="/logo">Logo</a>
-<a href="/test-email">Test Email</a>
-<a href="/test-drive">Test Drive</a>
 </nav>
 <main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
 </body>
@@ -3817,7 +3815,7 @@ app.post('/prenota-admin', async (req, res) => {
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
     if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi">Vai ai mezzi</a></div>`));
     const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00');
-    if (occ) return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p>Contratto: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><a class="btn" href="/planning">Vai al planning</a></div>`));
+    if (occ) return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p><b>Nessun nuovo contratto è stato creato.</b></p><p>Il mezzo è già bloccato da: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><a class="btn" href="/planning">Vai al planning</a><a class="btn btn2" href="/nuova-prenotazione">Cambia date/mezzo</a></div>`));
 
     salvaClienteStorico({
       nome: b.nome, cognome: b.cognome, telefono: b.telefono, email: b.email,
@@ -6217,14 +6215,20 @@ app.post('/email/:id', async (req,res)=>{
     if(!to) throw new Error('Email destinatario mancante');
     const calLinks = v153CalendarLinks(req, p);
     const bodyEmail = (req.body.messaggio || 'In allegato contratto DP RENT.') + `\n\nAggiungi al calendario:\n- Pagina calendario: ${calLinks.page}\n- Google Calendar: ${calLinks.google}`;
-    // V162: rigenera sempre il PDF prima della mail. Non usare un pdf_path vecchio:
-    // se il file locale è stato pulito dopo Drive, la mail non deve andare in ENOENT.
-    const pdfLocale = await generaPdfContratto(p.id, { skipDrive:true, forceDrive:false });
+    // V177: email robusta. Genera il PDF locale, verifica che esista davvero
+    // e ne fa una copia temporanea dedicata alla mail, così Drive/sync/cleanup non può eliminarlo mentre Nodemailer lo legge.
+    const pdfLocale = await generaPdfContratto(p.id, { skipDrive:true, forceDrive:true });
     if (!pdfLocale || !fs.existsSync(pdfLocale)) {
       throw new Error('PDF contratto non generato: impossibile allegare email');
     }
+    const stPdf = fs.statSync(pdfLocale);
+    if (!stPdf.size || stPdf.size < 1000) {
+      throw new Error('PDF contratto generato ma vuoto/non valido: impossibile allegare email');
+    }
+    const emailPdf = path.join(tempDir, `email_${String(p.codice || p.id).replace(/[^a-zA-Z0-9_-]/g,'')}_${Date.now()}.pdf`);
+    fs.copyFileSync(pdfLocale, emailPdf);
 
-    const attachments = [{ filename:path.basename(pdfLocale), path:pdfLocale, contentType:'application/pdf' }];
+    const attachments = [{ filename:path.basename(pdfLocale), path:emailPdf, contentType:'application/pdf' }];
     try{
       const icsFile = await v153IcsFileForPrenotazione(p);
       if(fs.existsSync(icsFile)) attachments.push({ filename:path.basename(icsFile), path:icsFile, contentType:'text/calendar; charset=utf-8; method=PUBLISH' });
@@ -6235,7 +6239,12 @@ app.post('/email/:id', async (req,res)=>{
     try{ await syncContrattoDriveV63(req.params.id); }catch(e){ console.log('V162 sync Drive dopo email warning:', e.message); }
     res.send(actionScreen(req.params.id,'Email inviata','Contratto e calendario inviati correttamente.'));
   } catch(e) {
-    res.status(500).send(page('Errore Email', `<div class="box"><h2 class="bad">Errore email</h2><pre>${esc(e.message)}</pre><p>Controlla su Render le variabili SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.</p><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a><a class="btn" href="/email/${req.params.id}">Riprova email</a></div>`));
+    const msg = String(e && e.message || 'Errore email');
+    const isPdfErr = msg.toLowerCase().includes('pdf') || msg.includes('ENOENT');
+    const help = isPdfErr
+      ? 'Errore PDF: il contratto viene rigenerato prima della mail. Riprova; se resta, apri il contratto e premi PDF.'
+      : 'Errore SMTP: controlla su Render le variabili SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.';
+    res.status(500).send(page('Errore Email', `<div class="box"><h2 class="bad">Errore email</h2><pre>${esc(msg)}</pre><p>${esc(help)}</p><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a><a class="btn" href="/email/${req.params.id}">Riprova email</a></div>`));
   }
 });
 
@@ -9780,3 +9789,6 @@ app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
 });
 
 console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
+
+
+console.log('DP RENT V177: flusso blindato - occupato blocca, email PDF stabile, dashboard pulita');
