@@ -7802,8 +7802,13 @@ function dpDays(a,b){ return Math.round((new Date(b.getFullYear(),b.getMonth(),b
 function dpExtractKm(text){ const m = String(text||'').replace(/\./g,'').match(/\d{1,6}/); return m ? Number(m[0]) : 150; }
 function dpCategoryFromChoice(txt){
   const t = dpNorm(txt);
-  if(t === '1' || t.includes('furg')) return { label:'Furgone cargo/merci', categoria:'FURGONE', cats:['FURGONE','FURGONI','F1-VAN','F2-PC','F3-PL'] };
-  if(t === '2' || t.includes('pulmino') || t.includes('9') || t.includes('posti')) return { label:'Pulmino 8/9 posti', categoria:'9_POSTI', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
+  if(t === '1' || /\bfurg(on|one|oni)?\b/.test(t) || /\b(van|cargo|merci)\b/.test(t)) return { label:'Furgone cargo/merci', categoria:'FURGONE', cats:['FURGONE','FURGONI','F1-VAN','F2-PC','F3-PL'] };
+
+  // V179 FIX: non basta trovare il numero 9 dentro una frase.
+  // Prima "Panda del 2019/2910" veniva letto come Pulmino 9 posti.
+  // Il pulmino si riconosce solo da scelta 2 o parole esplicite: pulmino, minibus, 8/9 posti, 9 posti, persone/passeggeri.
+  if(t === '2' || /\b(pulmino|minibus|pulman|pullman)\b/.test(t) || /\b(8|9|otto|nove)\s*(posti|p|persone|passeggeri)\b/.test(t) || /\b8\s*\/?\s*9\s*(posti|p)\b/.test(t)) return { label:'Pulmino 8/9 posti', categoria:'9_POSTI', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
+
   if(t === '3' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', categoria:'AUTO_DACIA', cats:['AUTO_DACIA','DACIA'] };
   if(t === '4' || t.includes('golf')) return { label:'Auto categoria Golf', categoria:'AUTO_GOLF', cats:['AUTO_GOLF','GOLF'] };
   if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', categoria:'ESCAVATORE', cats:['ESCAVATORE','SEMOVENTE','X-ESC'] };
@@ -7817,16 +7822,18 @@ function dpServiceIntentFromText(text){
 
   const has = (words) => words.some(w => t.includes(w));
 
+  // V179: prima controllo officina/vendita/trasporto.
+  // Così una frase tipo "sostituzione bombole metano Panda 2019" non viene trascinata nel vecchio flusso noleggio.
+  if(has(['officina','tagliando','diagnosi','guasto','riparazione','riparare','gomme','convergenza','revisione','spia','motore','elettrauto','sostituzione','sostituire','bombola','bombole','metano','gpl','collaudo','collaudo bombole','freni','frizione','cinghia','distribuzione','olio','perdita','non parte','avviamento','batteria'])) return 'officina';
+  if(has(['vendita','comprare','acquistare','auto usata','macchina usata','permuta','finanziamento','vendo','prezzo auto','cerco auto','vorrei comprare'])) return 'vendita';
+  if(has(['trasporto','trasportare','bisarca','ritiro auto','consegna auto','portare auto','trasporta veicolo','trasporto veicolo','ritirare veicolo','consegnare veicolo'])) return 'trasporto';
+
   // Noleggio: include anche frasi generiche senza categoria precisa.
   if(has([
-    'noleggio','noleggiare','noleggia','affittare','affitto','preventivo noleggio','preventivo mezzo','affittare','rent','prenotare','prenotazione',
+    'noleggio','noleggiare','noleggia','affittare','affitto','preventivo noleggio','preventivo mezzo','rent','prenotare','prenotazione',
     'mi serve un mezzo','mi serve mezzo','mi serve auto','mi serve macchina','mi serve furgone',
     'furgone','pulmino','9 posti','nove posti','dacia','golf','escavatore','mezzo speciale'
   ])) return 'noleggio';
-
-  if(has(['officina','tagliando','diagnosi','guasto','riparazione','riparare','gomme','convergenza','revisione','spia','motore','elettrauto'])) return 'officina';
-  if(has(['vendita','comprare','acquistare','auto usata','macchina usata','permuta','finanziamento','vendo','prezzo auto'])) return 'vendita';
-  if(has(['trasporto','trasportare','bisarca','ritiro auto','consegna auto','portare auto','trasporta veicolo','trasporto veicolo'])) return 'trasporto';
   // Richieste generiche: non resettare il menu, apri una conversazione libera.
   if(has([
     'informazione','informazioni','info','domanda','chiedere','sapere','vorrei sapere','volevo sapere',
@@ -8134,6 +8141,40 @@ async function dpHandleWhatsApp(req,res){
     // Il cliente viene comunque riconosciuto quando conferma/prenota.
     dpReset(from, profileName);
     return dpTwimlResponse(res, dpMenu(profileName));
+  }
+
+  // V179 FIX GLOBALE: cambio intento anche se era rimasto aperto un vecchio flusso.
+  // Esempio: cliente era in noleggio, poi scrive "sostituzione bombole metano": si resetta e passa a officina.
+  const globalIntent = dpServiceIntentFromText(body);
+  const stateFlow = session.state && session.state.startsWith('noleggio') ? 'noleggio' :
+    (session.state && session.state.startsWith('officina') ? 'officina' :
+    (session.state === 'vendita' ? 'vendita' :
+    (session.state === 'trasporto' ? 'trasporto' :
+    (session.state === 'altro' ? 'altro' : 'menu'))));
+
+  if(session.state !== 'menu' && globalIntent && globalIntent !== 'altro' && globalIntent !== stateFlow){
+    session.data = {};
+    session.ts = Date.now();
+    if(globalIntent === 'officina'){
+      session.state = 'officina_data';
+      session.data.descrizione = body;
+      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nHo segnato la richiesta:\n${body}\n\nOra scrivi la data desiderata per l appuntamento.\nEsempio: 20/05/2026`);
+    }
+    if(globalIntent === 'noleggio'){
+      session.state = 'noleggio_model';
+      const natural = dpNaturalRentalRequest(body);
+      if(natural) dpMergeRentalData(session, natural);
+      const known = await dpFindClienteWhatsApp(from).catch(()=>null);
+      return dpTwimlResponse(res, dpAskNextRental(session, profileName, known));
+    }
+    if(globalIntent === 'vendita'){
+      session.state = 'vendita';
+      return dpTwimlResponse(res, `${EMJ.auto} *DP AUTO - Vendita auto*\n\nDimmi che auto cerchi, budget, permuta o finanziamento.\n\nAuto disponibili:\n${DP_AUTOSUPERMARKET_URL}`);
+    }
+    if(globalIntent === 'trasporto'){
+      session.state = 'trasporto';
+      return dpTwimlResponse(res, `${EMJ.truck} *Trasporto veicoli*\n\nScrivi marca/modello, marciante o non marciante, ritiro, consegna e periodo desiderato.`);
+    }
   }
 
   if(session.state === 'menu'){
