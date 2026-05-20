@@ -644,6 +644,17 @@ addColumn('prenotazioni','check_out_note','TEXT');
 addColumn('prenotazioni','check_in_note','TEXT');
 addColumn('prenotazioni','drive_folder_id','TEXT');
   addColumn('prenotazioni','drive_folder_link','TEXT');
+// V180 - check-in economico e fermo/officina
+addColumn('prenotazioni','km_percorsi','TEXT');
+addColumn('prenotazioni','km_extra_rientro','TEXT');
+addColumn('prenotazioni','supplemento_km_rientro','TEXT');
+addColumn('prenotazioni','totale_finale','TEXT');
+addColumn('prenotazioni','officina_motivo','TEXT');
+addColumn('mezzi','stato_operativo','TEXT');
+addColumn('mezzi','fermo_da','TEXT');
+addColumn('mezzi','fermo_a','TEXT');
+addColumn('mezzi','fermo_motivo','TEXT');
+addColumn('mezzi','ultimo_intervento','TEXT');
 
   // =========================
   // V39 - CREAZIONE TABELLE BASE PRIMA DEGLI ALTER TABLE
@@ -815,6 +826,16 @@ addColumn('mezzi','record_cargos_veicolo_tipo','TEXT');
   addColumn('prenotazioni','record_cargos_last_error','TEXT');
   addColumn('prenotazioni','drive_folder_id','TEXT');
   addColumn('prenotazioni','drive_folder_link','TEXT');
+  addColumn('prenotazioni','km_percorsi','TEXT');
+  addColumn('prenotazioni','km_extra_rientro','TEXT');
+  addColumn('prenotazioni','supplemento_km_rientro','TEXT');
+  addColumn('prenotazioni','totale_finale','TEXT');
+  addColumn('prenotazioni','officina_motivo','TEXT');
+  addColumn('mezzi','stato_operativo','TEXT');
+  addColumn('mezzi','fermo_da','TEXT');
+  addColumn('mezzi','fermo_a','TEXT');
+  addColumn('mezzi','fermo_motivo','TEXT');
+  addColumn('mezzi','ultimo_intervento','TEXT');
 
   // CARGOS V36 columns
   addColumn('prenotazioni','record_cargos_pagamento_tipo','TEXT DEFAULT "0"');
@@ -1155,6 +1176,10 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 .planning-pro-head{display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;background:linear-gradient(135deg,#050505,#222 55%,#d70000);color:#fff;border-radius:26px;padding:22px;margin-bottom:18px;box-shadow:0 18px 45px rgba(0,0,0,.22)}
 .planning-pro-head h2{margin:0;font-size:clamp(28px,4vw,48px);font-weight:950}.planning-pro-tools{display:flex;gap:10px;flex-wrap:wrap}.planning-pro-tools a,.planning-pro-tools select{background:#fff;color:#111;border:0;border-radius:14px;padding:12px 16px;text-decoration:none;font-weight:900;width:auto}.planning-legend{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}.planning-legend span{border-radius:999px;padding:8px 12px;font-weight:900}.pl-free{background:#1fae4b;color:#fff}.pl-booked{background:#ffb000;color:#111}.pl-out{background:#1457d9;color:#fff}.pl-late{background:#d70000;color:#fff}.pl-off{background:#111;color:#fff}.planning-pro-wrap{overflow:auto;border-radius:22px;box-shadow:0 15px 35px rgba(0,0,0,.12);border:1px solid #ddd;background:#fff}.planning-pro{border-collapse:separate;border-spacing:0;min-width:980px}.planning-pro th{position:sticky;top:0;z-index:3;background:#111;color:#fff}.planning-pro .sticky-col{position:sticky;left:0;z-index:4;background:#fff;color:#111;min-width:230px;box-shadow:6px 0 12px rgba(0,0,0,.06)}.planning-pro th.sticky-col{background:#111;color:#fff}.planning-cell{min-width:48px;height:46px;text-align:center;font-weight:950;border:2px solid #fff!important;cursor:pointer;border-radius:10px}.planning-cell small{display:block;font-size:10px;font-weight:800}.planning-cell:hover{outline:3px solid #111}.pl-card{padding:6px}.pl-targa{font-size:18px;font-weight:950}.pl-desc{font-size:12px;color:#555}.pl-filter-form{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.pl-filter-form select,.pl-filter-form input{width:auto;min-width:160px}.wa-pro-note{background:#eaf4ff;border:1px solid #9cc8ff;border-radius:18px;padding:16px;margin:10px 0;color:#123;font-weight:800}
 @media(max-width:700px){.planning-pro-head{display:block}.planning-pro-tools a,.planning-pro-tools select,.pl-filter-form select,.pl-filter-form input,.pl-filter-form button{width:100%}.planning-pro-wrap{max-height:72vh}.planning-pro .sticky-col{min-width:190px}.planning-cell{min-width:42px;height:42px}}
+/* V180 planning leggibile */
+.planning-pro-wrap{width:100%;overflow:auto;-webkit-overflow-scrolling:touch;max-height:78vh;touch-action:pan-x pan-y;background:#fff}
+.planning-pro{table-layout:fixed;border-spacing:4px;min-width:max-content}.planning-pro th{font-size:15px;white-space:nowrap;padding:10px 8px}.planning-pro .sticky-col{min-width:260px!important;max-width:260px!important}.planning-cell{min-width:64px!important;width:64px;height:58px!important;font-size:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}.planning-cell small{font-size:11px;color:inherit;opacity:.95}.pl-off{background:#050505!important;color:#fff!important}.pl-late{background:#d70000!important;color:#fff!important}.pl-out{background:#1457d9!important;color:#fff!important}.pl-booked{background:#ffc400!important;color:#111!important}.pl-free{background:#12a846!important;color:#fff!important}.pl-card .mini-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.pl-card .mini-actions a{font-size:11px;padding:4px 6px;border-radius:8px;text-decoration:none;background:#111;color:#fff}.pl-card .mini-actions a.off{background:#d70000}
+@media(max-width:700px){.planning-pro-head h2{font-size:30px}.planning-pro .sticky-col{min-width:155px!important;max-width:155px!important}.planning-cell{min-width:58px!important;width:58px;height:62px!important;font-size:15px}.pl-targa{font-size:15px}.pl-desc{font-size:10px}.planning-legend span{font-size:12px;padding:7px 9px}.planning-pro-wrap{border-radius:14px;max-height:68vh}.planning-pro th{font-size:13px;padding:8px 6px}.pl-card .mini-actions a{font-size:10px;padding:3px 5px}}
 
 </style>
 <script>
@@ -1296,15 +1321,18 @@ function dpDateTimeSafe(data, ora, fallbackOra) {
   return `${d} ${h.slice(0,5)}:00`;
 }
 async function queryDisponibilita(mezzo_id, data_inizio, data_fine, ora_inizio='08:30', ora_fine='18:00', excludeId=0) {
-  // V141: controllo con data+ora, non solo giorno intero.
-  // Overlap vero: esistente.start < richiesta.end AND esistente.end > richiesta.start.
-  // Così un mezzo occupato il 19 non blocca automaticamente dal 20 in poi.
+  // V180: se il mezzo è in officina/fermo, non è prenotabile.
+  const mz = await get(`SELECT * FROM mezzi WHERE id=?`, [mezzo_id]).catch(()=>null);
+  if (mz && v180StatoMezzoOff(mz)) {
+    return { id: 0, codice: 'FERMO/OFFICINA', stato: 'officina', nome: 'Mezzo', cognome: 'in officina', data_inizio, data_fine };
+  }
+  // V141/V180: controllo con data+ora. Esclude rientrati/chiusi, così al check-in torna libero.
   const startReq = dpDateTimeSafe(data_inizio, ora_inizio, '08:30');
   const endReq = dpDateTimeSafe(data_fine, ora_fine, '18:00');
   return get(`
     SELECT * FROM prenotazioni
     WHERE mezzo_id = ?
-    AND COALESCE(stato,'') NOT IN ('annullato','eliminato_attesa','cancellato')
+    AND COALESCE(stato,'') NOT IN ('annullato','eliminato_attesa','cancellato','rientrato','chiuso','completato')
     AND id <> COALESCE(?,0)
     AND datetime(COALESCE(data_inizio,'') || ' ' || COALESCE(NULLIF(ora_inizio,''),'08:30') || ':00') < datetime(?)
     AND datetime(COALESCE(data_fine,'') || ' ' || COALESCE(NULLIF(ora_fine,''),'18:00') || ':00') > datetime(?)
@@ -1314,6 +1342,24 @@ async function queryDisponibilita(mezzo_id, data_inizio, data_fine, ora_inizio='
 function fuelOptions(selected) {
   const vals = ['4/4 pieno','3/4','1/2','1/4','Riserva','Vuoto'];
   return vals.map(v => `<option value="${esc(v)}" ${selected===v?'selected':''}>${esc(v)}</option>`).join('');
+}
+
+// V180: calcolo supplemento km al rientro. Prezzo: EXTRA_KM + IVA.
+function v180CheckinKmCalc(p, kmRientro){
+  const kmOut = Number(p.km_uscita || 0);
+  const kmIn = Number(kmRientro || 0);
+  const kmPercorsi = (kmOut > 0 && kmIn >= kmOut) ? (kmIn - kmOut) : 0;
+  const inclusi = Number(p.km_inclusi || 0);
+  const extraKm = Math.max(0, kmPercorsi - inclusi);
+  const imponibile = extraKm * Number(EXTRA_KM || 0.15);
+  const iva = imponibile * Number(IVA || 0.22);
+  const supplemento = imponibile + iva;
+  return { kmOut, kmIn, kmPercorsi, inclusi, extraKm, imponibile, iva, supplemento };
+}
+function v180Money(n){ return (Number(n||0)).toFixed(2); }
+function v180StatoMezzoOff(m){
+  const st = String(m.stato_operativo || m.stato || '').toLowerCase();
+  return st.includes('officina') || st.includes('fermo') || st.includes('manutenzione');
 }
 function alertMezzo(m) {
   const out = [];
@@ -1925,10 +1971,12 @@ async function generaPdfContratto(id, opts = {}) {
   ], M, startCols2, COL_W, BLACK);
   const rightBottom2 = drawCardAt('RIEPILOGO ECONOMICO', [
     ['Extra orario', `${euroTxt(p.extra_fuori_orario)} + IVA`],
-    ['Extra km', `${euroTxt(p.extra_km)} + IVA`],
+    ['Extra km preventivo', `${euroTxt(p.extra_km)} + IVA`],
+    ['Extra km rientro', p.km_extra_rientro ? `${p.km_extra_rientro} km / ${euroTxt(p.supplemento_km_rientro)} IVA incl.` : '-'],
     ['Imponibile', euroTxt(p.imponibile)],
     ['IVA 22%', euroTxt(p.iva)],
     ['Totale IVA incl.', euroTxt(p.totale)],
+    ['Totale finale', p.totale_finale ? euroTxt(p.totale_finale) : euroTxt(p.totale)],
     ['Deposito cauzionale', euroTxt(p.cauzione || CAUZIONE)]
   ], M + COL_W + GAP, startCols2, COL_W, BLACK);
   y = Math.max(leftBottom2, rightBottom2);
@@ -2668,7 +2716,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V168 - cliente nuovo, 2 autista, planning fix, Drive cliente'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V180 - planning pro, officina, km check-in extra'));
 
 
 // =========================
@@ -5240,7 +5288,7 @@ app.get('/stato/:id/:stato', async (req, res) => {
 });
 
 app.get('/planning', async (req, res) => {
-  const vista = String(req.query.vista || 'mese');
+  const vista = String(req.query.vista || 'settimana');
   const categoriaFiltro = String(req.query.categoria || '').trim();
   const rawMese = req.query.mese || moment().format('YYYY-MM');
   const rawData = req.query.data || '';
@@ -5285,14 +5333,18 @@ app.get('/planning', async (req, res) => {
   giorni.forEach(mm => header += `<th>${mm.format('D')}<br><small>${mm.format('dd')}</small></th>`);
   let rows = '';
   mezzi.forEach(m => {
-    rows += `<tr><td class="sticky-col"><div class="pl-card"><div class="pl-targa">${esc(m.targa || '')}</div><div class="pl-desc">${esc(descrizionePubblica(m))}</div><span class="badge badge-blue">${esc(m.categoria || '')}</span></div></td>`;
+    const mezzoOff = v180StatoMezzoOff(m);
+    const offTxt = mezzoOff ? `<span class="badge badge-red">OFFICINA</span>` : `<span class="badge badge-blue">${esc(m.categoria || '')}</span>`;
+    rows += `<tr><td class="sticky-col"><div class="pl-card"><div class="pl-targa">${esc(m.targa || '')}</div><div class="pl-desc">${esc(descrizionePubblica(m))}</div>${offTxt}<div class="mini-actions"><a href="/mezzi/${m.id}/modifica">Scheda</a><a class="off" href="/mezzi/${m.id}/officina">Officina</a></div></div></td>`;
     giorni.forEach(mm => {
       const day = mm.format('YYYY-MM-DD');
-      const occ = pren.find(p => String(p.mezzo_id || '') === String(m.id || '') && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
+      let occ = pren.find(p => String(p.mezzo_id || '') === String(m.id || '') && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
+      if (!occ && mezzoOff) occ = { id:m.id, codice:'FERMO/OFFICINA', stato:'officina', nome:'OFF', cognome:m.fermo_motivo||'Officina' };
       const st = statoCell(occ);
       if (occ) {
         const cliente = `${occ.nome || ''} ${occ.cognome || ''}`.trim() || 'Cliente';
-        rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='/contratto/${occ.id}/gestisci'">${st.label}<small>${esc((cliente||'').slice(0,8))}</small></td>`;
+        const url = occ.codice==='FERMO/OFFICINA' ? `/mezzi/${m.id}/officina` : `/contratto/${occ.id}/gestisci`;
+        rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='${url}'">${st.label}<small>${esc((cliente||'').slice(0,8))}</small></td>`;
       } else {
         rows += `<td class="planning-cell ${st.cls}" title="Libero ${esc(m.targa || '')} ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'">L</td>`;
       }
@@ -5929,14 +5981,37 @@ app.get('/checkin/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   if (!p) return res.send('Contratto non trovato');
   const nowTime = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-  res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Orario check-in</label><input type="time" name="check_in_orario" value="${esc(p.check_in_orario || p.ora_fine || nowTime)}"></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}"></div></div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.check_in_note || p.note)}</textarea><button>Salva check-in</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
+  const kmOut = Number(p.km_uscita || 0);
+  const kmIncl = Number(p.km_inclusi || 0);
+  res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><p><b>Km uscita:</b> ${esc(kmOut||'-')} &nbsp; <b>Km inclusi contratto:</b> ${esc(kmIncl||'-')} &nbsp; <b>Extra km:</b> €${esc(EXTRA_KM)} + IVA/km</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Orario check-in</label><input type="time" name="check_in_orario" value="${esc(p.check_in_orario || p.ora_fine || nowTime)}"></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}" required></div></div><div class="notice"><b>Calcolo automatico:</b> se i km percorsi superano i km inclusi, il sistema calcola il supplemento cliente e aggiorna i km del mezzo.</div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.check_in_note || p.note)}</textarea><button>Salva check-in e calcola extra km</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
 });
 app.post('/checkin/:id', async (req, res) => {
-  const p = await get(`SELECT mezzo_id FROM prenotazioni WHERE id=?`, [req.params.id]);
-  await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, req.body.km_rientro, req.body.note, req.body.note, req.params.id]);
-  if (p && req.body.km_rientro) await run(`UPDATE mezzi SET km_attuali=? WHERE id=?`, [req.body.km_rientro, p.mezzo_id]);
+  const p = await get(`SELECT p.*, m.km_attuali AS mezzo_km_attuali, m.tagliando_km AS mezzo_tagliando_km, m.tagliando_km_scadenza AS mezzo_tagliando_km_scadenza FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
+  if (!p) return res.send('Contratto non trovato');
+  const c = v180CheckinKmCalc(p, req.body.km_rientro);
+  const noteBase = req.body.note || '';
+  const noteExtra = c.extraKm > 0 ? `
+EXTRA KM RIENTRO: percorsi ${c.kmPercorsi}, inclusi ${c.inclusi}, extra ${c.extraKm}, supplemento €${v180Money(c.supplemento)} IVA inclusa.` : `
+KM RIENTRO: percorsi ${c.kmPercorsi}, inclusi ${c.inclusi}, nessun extra km.`;
+  await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, km_percorsi=?, km_extra_rientro=?, supplemento_km_rientro=?, totale_finale=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, c.kmIn, c.kmPercorsi, c.extraKm, v180Money(c.supplemento), v180Money(Number(p.totale||0)+c.supplemento), noteBase + noteExtra, noteBase + noteExtra, req.params.id]);
+  if (p && c.kmIn) await run(`UPDATE mezzi SET km_attuali=?, km=? WHERE id=?`, [c.kmIn, c.kmIn, p.mezzo_id]);
   try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
-  res.send(actionScreen(req.params.id, 'Check-in salvato', 'Contratto aggiornato con orario check-in.'));
+  const msg = c.extraKm > 0 ? `Check-in salvato. Km percorsi ${c.kmPercorsi}. Extra km ${c.extraKm}. Supplemento cliente: €${v180Money(c.supplemento)} IVA inclusa.` : `Check-in salvato. Km percorsi ${c.kmPercorsi}. Nessun supplemento km.`;
+  res.send(actionScreen(req.params.id, 'Check-in salvato', msg));
+});
+
+
+// V180 - fermo/officina mezzo dal planning o dalla scheda mezzo
+app.get('/mezzi/:id/officina', async (req,res)=>{
+  const m = await get(`SELECT * FROM mezzi WHERE id=?`, [req.params.id]);
+  if(!m) return res.status(404).send('Mezzo non trovato');
+  res.send(page('Fermo officina', `<div class="box"><h2>⚫ Fermo / Officina mezzo</h2><p><b>${esc(m.targa||'')}</b> ${esc(descrizionePubblica(m))}</p><form method="POST" action="/mezzi/${m.id}/officina"><div class="grid"><label>Stato<select name="stato_operativo"><option value="officina" ${v180StatoMezzoOff(m)?'selected':''}>OFFICINA / FERMO</option><option value="attivo" ${!v180StatoMezzoOff(m)?'selected':''}>ATTIVO / DISPONIBILE</option></select></label><label>Da<input type="date" name="fermo_da" value="${esc(m.fermo_da || moment().format('YYYY-MM-DD'))}"></label><label>Previsto rientro<input type="date" name="fermo_a" value="${esc(m.fermo_a || '')}"></label><label>Km attuali<input type="number" name="km_attuali" value="${esc(m.km_attuali || m.km || '')}"></label></div><label>Motivo officina / fermo</label><textarea name="fermo_motivo" placeholder="Tagliando, gomme, guasto, revisione, frizione...">${esc(m.fermo_motivo || m.note || '')}</textarea><button>Salva stato mezzo</button></form><div class="actions"><a class="btn btn2" href="/planning">Torna planning</a><a class="btn" href="/mezzi/${m.id}/modifica">Scheda mezzo</a></div></div>`));
+});
+app.post('/mezzi/:id/officina', async (req,res)=>{
+  const b=req.body||{};
+  const stato = String(b.stato_operativo||'attivo').toLowerCase();
+  await run(`UPDATE mezzi SET stato_operativo=?, stato=?, fermo_da=?, fermo_a=?, fermo_motivo=?, ultimo_intervento=?, km_attuali=?, km=? WHERE id=?`, [stato, stato==='attivo'?'attivo':'officina', b.fermo_da||'', b.fermo_a||'', b.fermo_motivo||'', b.fermo_motivo||'', b.km_attuali||0, b.km_attuali||0, req.params.id]);
+  res.redirect('/planning');
 });
 
 
@@ -7276,10 +7351,10 @@ app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM all
 app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=preventivo'));
 app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=?`,[req.params.id]);res.redirect(`/prenotazione/${req.params.id}`);});
 
-app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="furgone">Furgone</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
-app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),'attivo',v62Val(b.note)]);res.redirect('/mezzi');});
-app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km<input name="km" value="${esc(m.km||m.km_attuali)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato<select name="stato"><option value="attivo" ${m.stato!=='non_attivo'?'selected':''}>Attivo</option><option value="non_attivo" ${m.stato==='non_attivo'?'selected':''}>Non attivo</option></select></label></div><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
-app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),v62Val(b.stato||'attivo'),v62Val(b.note),v62Val(b.data_nascita),v62Val(b.luogo_nascita),v62Val(b.cittadinanza_cod||'100000100'),v62Val(b.documento_tipo||'IDENT'),v62Val(b.documento_numero),v62Val(b.documento_scadenza),v62Val(b.patente_numero),v62Val(b.patente_scadenza),req.params.id]);res.redirect('/mezzi');});
+app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="furgone">Furgone</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi/giorno<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo">Attivo</option><option value="officina">Officina/Fermo</option></select></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
+app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||'attivo');await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.note)]);res.redirect('/mezzi');});
+app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km attuali<input name="km" value="${esc(m.km_attuali||m.km)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi/giorno<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo" ${!v180StatoMezzoOff(m)?'selected':''}>Attivo / disponibile</option><option value="officina" ${v180StatoMezzoOff(m)?'selected':''}>Officina / fermo</option></select></label></div><label>Motivo fermo/officina</label><textarea name="fermo_motivo">${esc(m.fermo_motivo||'')}</textarea><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi/${m.id}/officina">Fermo/officina veloce</a><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
+app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||b.stato||'attivo');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi');});
 app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi');});
 
 
