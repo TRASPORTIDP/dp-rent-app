@@ -1181,6 +1181,47 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 .planning-pro{table-layout:fixed;border-spacing:4px;min-width:max-content}.planning-pro th{font-size:15px;white-space:nowrap;padding:10px 8px}.planning-pro .sticky-col{min-width:260px!important;max-width:260px!important}.planning-cell{min-width:72px!important;width:72px;height:62px!important;font-size:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4);line-height:1.05}.planning-cell small{display:block;font-size:10px;color:inherit;opacity:.95;line-height:1.1;margin-top:4px}.pl-off{background:#050505!important;color:#fff!important}.pl-late{background:#d70000!important;color:#fff!important}.pl-out{background:#1457d9!important;color:#fff!important}.pl-booked{background:#ffc400!important;color:#111!important}.pl-done{background:#7b3ff2!important;color:#fff!important}.pl-free{background:#12a846!important;color:#fff!important}.pl-card .mini-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.pl-card .mini-actions a{font-size:11px;padding:4px 6px;border-radius:8px;text-decoration:none;background:#111;color:#fff}.pl-card .mini-actions a.off{background:#d70000}
 @media(max-width:700px){.planning-pro-head h2{font-size:30px}.planning-pro .sticky-col{min-width:165px!important;max-width:165px!important}.planning-cell{min-width:70px!important;width:70px;height:68px!important;font-size:15px}.pl-targa{font-size:15px}.pl-desc{font-size:10px}.planning-legend span{font-size:12px;padding:7px 9px}.planning-pro-wrap{border-radius:14px;max-height:70vh}.planning-pro th{font-size:13px;padding:8px 6px}.pl-card .mini-actions a{font-size:10px;padding:3px 5px}}
 
+
+/* V183 planning mobile compatto: righe leggibili, celle senza testo, colonna mezzo larga */
+.planning-pro-wrap{width:100%;overflow:auto;-webkit-overflow-scrolling:touch;border-radius:18px;background:#fff;box-shadow:0 12px 35px rgba(0,0,0,.14)}
+.planning-pro{border-collapse:separate!important;border-spacing:5px!important;table-layout:auto!important;min-width:max-content!important}
+.planning-pro th{background:#111!important;color:#fff!important;border-radius:0!important;padding:8px 6px!important;font-size:15px!important;line-height:1.05!important;text-align:center!important}
+.planning-pro .sticky-col{position:sticky!important;left:0!important;z-index:5!important;background:#fff!important;color:#111!important;min-width:230px!important;max-width:230px!important;width:230px!important;box-shadow:6px 0 14px rgba(0,0,0,.12)!important;border:1px solid #e5e5e5!important;vertical-align:top!important}
+.planning-pro th.sticky-col{background:#111!important;color:#fff!important;z-index:7!important;text-align:left!important}
+.planning-cell{min-width:58px!important;width:58px!important;height:42px!important;border-radius:10px!important;padding:0!important;font-size:0!important;color:transparent!important;border:2px solid #fff!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.45),0 2px 5px rgba(0,0,0,.10)!important;cursor:pointer!important}
+.planning-cell::after{content:'';display:block;width:100%;height:100%;border-radius:9px}
+.planning-cell small{display:none!important}
+.planning-cell:hover{outline:3px solid #111!important}
+.pl-card{padding:8px!important;overflow:hidden!important}
+.pl-targa{font-size:18px!important;line-height:1.05!important;font-weight:950!important;white-space:nowrap!important}
+.pl-desc{font-size:12px!important;line-height:1.1!important;color:#555!important;margin-top:4px!important;word-break:normal!important}
+.pl-card .badge{display:inline-block!important;margin-top:5px!important;font-size:11px!important;padding:5px 7px!important;border-radius:999px!important;max-width:100%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.pl-card .mini-actions{display:flex!important;gap:5px!important;flex-wrap:nowrap!important;margin-top:7px!important}
+.pl-card .mini-actions a{font-size:12px!important;padding:5px 8px!important;border-radius:9px!important;text-decoration:none!important;background:#111!important;color:#fff!important;line-height:1!important;display:inline-block!important}
+.pl-card .mini-actions a.off{background:#d70000!important}
+.planning-legend{position:sticky;left:0;z-index:6;background:#fff;padding:8px 0;margin:8px 0!important;gap:6px!important}
+.planning-legend span{font-size:12px!important;padding:7px 10px!important}
+@media(max-width:700px){
+  .planning-pro-head{border-radius:18px!important;padding:14px!important;margin-bottom:10px!important}
+  .planning-pro-head h2{font-size:24px!important}
+  .planning-pro-head p{font-size:13px!important}
+  .planning-pro-tools{display:grid!important;grid-template-columns:1fr 1fr!important;width:100%!important}
+  .planning-pro-tools a{font-size:14px!important;padding:10px!important;text-align:center!important}
+  .pl-filter-form{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;padding:10px!important}
+  .pl-filter-form select,.pl-filter-form input,.pl-filter-form button{width:100%!important;min-width:0!important;font-size:14px!important;padding:10px!important}
+  .planning-pro-wrap{max-height:68vh!important;border-radius:14px!important}
+  .planning-pro{border-spacing:4px!important}
+  .planning-pro th{font-size:13px!important;padding:7px 5px!important;min-width:44px!important}
+  .planning-pro .sticky-col{min-width:150px!important;max-width:150px!important;width:150px!important}
+  .planning-cell{min-width:44px!important;width:44px!important;height:34px!important;border-radius:8px!important}
+  .pl-card{padding:6px!important}
+  .pl-targa{font-size:15px!important}
+  .pl-desc{font-size:10px!important;max-height:34px!important;overflow:hidden!important}
+  .pl-card .badge{font-size:9px!important;padding:4px 6px!important}
+  .pl-card .mini-actions a{font-size:10px!important;padding:5px 6px!important}
+  .planning-legend span{font-size:11px!important;padding:6px 8px!important}
+}
+
 </style>
 <script>
 function toggleAzienda(){
@@ -2716,7 +2757,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V182 - planning officina a date corrette'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V183 - planning mobile compatto leggibile'));
 
 
 // =========================
@@ -5366,7 +5407,7 @@ app.get('/planning', async (req, res) => {
       if (occ) {
         const cliente = `${occ.nome || ''} ${occ.cognome || ''}`.trim() || 'Cliente';
         const url = occ.codice==='FERMO/OFFICINA' ? `/mezzi/${m.id}/officina` : `/contratto/${occ.id}/gestisci`;
-        rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='${url}'">${st.label}<small>${esc((cliente||'').slice(0,8))}</small></td>`;
+        rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='${url}'"></td>`;
       } else {
         rows += `<td class="planning-cell ${st.cls}" title="Libero ${esc(m.targa || '')} ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'">L</td>`;
       }
@@ -5378,7 +5419,7 @@ app.get('/planning', async (req, res) => {
   const keepCat = `categoria=${encodeURIComponent(categoriaFiltro)}&vista=${encodeURIComponent(vista)}`;
   res.send(page('Planning PRO', `
     <div class="planning-pro-head">
-      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Verde = libero. Giallo = prenotato/preventivo. Blu = in corso. Viola = rientrato/storico. Nero = officina.</p></div>
+      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Tocca una casella: verde libero, giallo prenotato, blu in corso, viola storico, nero officina.</p></div>
       <div class="planning-pro-tools"><a href="/planning?vista=settimana&data=${moment().format('YYYY-MM-DD')}&categoria=${encodeURIComponent(categoriaFiltro)}">Oggi</a><a href="/planning?${navParam}&${keepCat}">← Prima</a><a href="/planning?${navParam2}&${keepCat}">Dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
     </div>
     <form class="box pl-filter-form" method="GET" action="/planning">
@@ -9895,68 +9936,4 @@ async function v176UpdateOrCreatePdfDrive(prenotazioneId){
 
   link = uploaded.webViewLink || uploaded.link || '';
   await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_web_link=?, pdf_drive_file_id=?, drive_folder_id=COALESCE(?,drive_folder_id), drive_folder_link=COALESCE(?,drive_folder_link) WHERE id=?`,
-    [pdf, link, link, uploaded.id || '', folder?.id || null, folder?.webViewLink || null, prenotazioneId]);
-
-  if (folder && folder.id && typeof uploadLocalAllegatiToDriveV63 === 'function') await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
-  if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
-  return { ok:true, pdf, link, fileId:uploaded.id || '', folder };
-}
-
-syncContrattoDriveV63 = async function syncContrattoDriveV63_V176(prenotazioneId){
-  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
-  catch(e) { console.log('V176 sync Drive error:', e.message); return { ok:false, error:e.message }; }
-};
-
-v163AfterContractChange = async function v176AfterContractChange(prenotazioneId){
-  const id = String(prenotazioneId || '').trim();
-  if(!id) return null;
-  const driveSync = await syncContrattoDriveV63(id);
-  try {
-    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
-    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
-      const ics = await v153IcsFileForPrenotazione(fresh);
-      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
-    }
-  } catch(e) { console.log('V176 calendario warning:', e.message); }
-  return { ok:true, driveSync };
-};
-
-app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
-  try{
-    const r = await v176UpdateOrCreatePdfDrive(req.params.id);
-    res.send(page('Drive PDF unico', `<div class="box"><h2 class="ok">PDF unico aggiornato</h2><p><b>PDF:</b> <a target="_blank" href="${esc(r.link||'')}">Apri PDF Drive</a></p><p><b>Cartella cliente:</b> ${r.folder?.webViewLink ? `<a target="_blank" href="${esc(r.folder.webViewLink)}">Apri cartella cliente</a>` : 'n/d'}</p><p>Ora le modifiche non creano duplicati: aggiornano lo stesso PDF.</p><a class="btn" href="/contratto/${esc(req.params.id)}/gestisci">Torna contratto</a></div>`));
-  }catch(e){ res.status(500).send(page('Errore Drive PDF unico', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna</a></div>`)); }
-});
-
-console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
-
-
-console.log('DP RENT V181: planning oggi corretto + storico rientrato viola + mobile leggibile');
-
-
-// V178: blocco duplicati Drive.
-// Se esiste già un PDF Drive per il contratto e l'update diretto non riesce,
-// NON usare Apps Script fallback perché crea un nuovo file con lo stesso nome.
-const v176UpdateOrCreatePdfDrive_ORIG_V178 = v176UpdateOrCreatePdfDrive;
-v176UpdateOrCreatePdfDrive = async function v178UpdateOrCreatePdfDriveNoDuplicates(prenotazioneId){
-  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
-  const hadDrivePdf = !!(p && (String(p.pdf_drive_file_id || '').trim() || String(p.pdf_drive_web_link || p.pdf_drive_link || '').trim()));
-  try {
-    return await v176UpdateOrCreatePdfDrive_ORIG_V178(prenotazioneId);
-  } catch(e) {
-    if (hadDrivePdf) {
-      const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false, skipDrive:true });
-      await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
-      console.log('V178 Drive update non riuscito: mantengo PDF Drive esistente, NO duplicato:', e.message);
-      return { ok:false, pdf, keptExisting:true, error:e.message };
-    }
-    throw e;
-  }
-};
-
-syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId){
-  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
-  catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
-};
-
-console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
+    [pdf, link, link, uploaded.id || '
