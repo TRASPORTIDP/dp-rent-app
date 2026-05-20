@@ -1181,6 +1181,95 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 .planning-pro{table-layout:fixed;border-spacing:4px;min-width:max-content}.planning-pro th{font-size:15px;white-space:nowrap;padding:10px 8px}.planning-pro .sticky-col{min-width:260px!important;max-width:260px!important}.planning-cell{min-width:72px!important;width:72px;height:62px!important;font-size:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4);line-height:1.05}.planning-cell small{display:block;font-size:10px;color:inherit;opacity:.95;line-height:1.1;margin-top:4px}.pl-off{background:#050505!important;color:#fff!important}.pl-late{background:#d70000!important;color:#fff!important}.pl-out{background:#1457d9!important;color:#fff!important}.pl-booked{background:#ffc400!important;color:#111!important}.pl-done{background:#7b3ff2!important;color:#fff!important}.pl-free{background:#12a846!important;color:#fff!important}.pl-card .mini-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.pl-card .mini-actions a{font-size:11px;padding:4px 6px;border-radius:8px;text-decoration:none;background:#111;color:#fff}.pl-card .mini-actions a.off{background:#d70000}
 @media(max-width:700px){.planning-pro-head h2{font-size:30px}.planning-pro .sticky-col{min-width:165px!important;max-width:165px!important}.planning-cell{min-width:70px!important;width:70px;height:68px!important;font-size:15px}.pl-targa{font-size:15px}.pl-desc{font-size:10px}.planning-legend span{font-size:12px;padding:7px 9px}.planning-pro-wrap{border-radius:14px;max-height:70vh}.planning-pro th{font-size:13px;padding:8px 6px}.pl-card .mini-actions a{font-size:10px;padding:3px 5px}}
 
+
+/* V183 planning mobile compatto: righe leggibili, celle senza testo, colonna mezzo larga */
+.planning-pro-wrap{width:100%;overflow:auto;-webkit-overflow-scrolling:touch;border-radius:18px;background:#fff;box-shadow:0 12px 35px rgba(0,0,0,.14)}
+.planning-pro{border-collapse:separate!important;border-spacing:5px!important;table-layout:auto!important;min-width:max-content!important}
+.planning-pro th{background:#111!important;color:#fff!important;border-radius:0!important;padding:8px 6px!important;font-size:15px!important;line-height:1.05!important;text-align:center!important}
+.planning-pro .sticky-col{position:sticky!important;left:0!important;z-index:5!important;background:#fff!important;color:#111!important;min-width:230px!important;max-width:230px!important;width:230px!important;box-shadow:6px 0 14px rgba(0,0,0,.12)!important;border:1px solid #e5e5e5!important;vertical-align:top!important}
+.planning-pro th.sticky-col{background:#111!important;color:#fff!important;z-index:7!important;text-align:left!important}
+.planning-cell{min-width:58px!important;width:58px!important;height:42px!important;border-radius:10px!important;padding:0!important;font-size:0!important;color:transparent!important;border:2px solid #fff!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.45),0 2px 5px rgba(0,0,0,.10)!important;cursor:pointer!important}
+.planning-cell::after{content:'';display:block;width:100%;height:100%;border-radius:9px}
+.planning-cell small{display:none!important}
+.planning-cell:hover{outline:3px solid #111!important}
+.pl-card{padding:8px!important;overflow:hidden!important}
+.pl-targa{font-size:18px!important;line-height:1.05!important;font-weight:950!important;white-space:nowrap!important}
+.pl-desc{font-size:12px!important;line-height:1.1!important;color:#555!important;margin-top:4px!important;word-break:normal!important}
+.pl-card .badge{display:inline-block!important;margin-top:5px!important;font-size:11px!important;padding:5px 7px!important;border-radius:999px!important;max-width:100%!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.pl-card .mini-actions{display:flex!important;gap:5px!important;flex-wrap:nowrap!important;margin-top:7px!important}
+.pl-card .mini-actions a{font-size:12px!important;padding:5px 8px!important;border-radius:9px!important;text-decoration:none!important;background:#111!important;color:#fff!important;line-height:1!important;display:inline-block!important}
+.pl-card .mini-actions a.off{background:#d70000!important}
+.planning-legend{position:sticky;left:0;z-index:6;background:#fff;padding:8px 0;margin:8px 0!important;gap:6px!important}
+.planning-legend span{font-size:12px!important;padding:7px 10px!important}
+@media(max-width:700px){
+  .planning-pro-head{border-radius:18px!important;padding:14px!important;margin-bottom:10px!important}
+  .planning-pro-head h2{font-size:24px!important}
+  .planning-pro-head p{font-size:13px!important}
+  .planning-pro-tools{display:grid!important;grid-template-columns:1fr 1fr!important;width:100%!important}
+  .planning-pro-tools a{font-size:14px!important;padding:10px!important;text-align:center!important}
+  .pl-filter-form{display:grid!important;grid-template-columns:1fr 1fr!important;gap:8px!important;padding:10px!important}
+  .pl-filter-form select,.pl-filter-form input,.pl-filter-form button{width:100%!important;min-width:0!important;font-size:14px!important;padding:10px!important}
+  .planning-pro-wrap{max-height:68vh!important;border-radius:14px!important}
+  .planning-pro{border-spacing:4px!important}
+  .planning-pro th{font-size:13px!important;padding:7px 5px!important;min-width:44px!important}
+  .planning-pro .sticky-col{min-width:150px!important;max-width:150px!important;width:150px!important}
+  .planning-cell{min-width:44px!important;width:44px!important;height:34px!important;border-radius:8px!important}
+  .pl-card{padding:6px!important}
+  .pl-targa{font-size:15px!important}
+  .pl-desc{font-size:10px!important;max-height:34px!important;overflow:hidden!important}
+  .pl-card .badge{font-size:9px!important;padding:4px 6px!important}
+  .pl-card .mini-actions a{font-size:10px!important;padding:5px 6px!important}
+  .planning-legend span{font-size:11px!important;padding:6px 8px!important}
+}
+
+
+/* V185 PLANNING PRO UI - compatto reale desktop/mobile */
+.planning-pro-head{padding:14px!important;border-radius:18px!important;margin-bottom:10px!important}
+.planning-pro-head h2{font-size:clamp(24px,3.5vw,38px)!important;line-height:1.05!important}
+.planning-pro-head p{font-size:14px!important;line-height:1.25!important}
+.pl-filter-form{padding:12px!important;margin-bottom:8px!important}
+.planning-legend{position:relative!important;display:flex!important;flex-wrap:wrap!important;gap:6px!important;background:#fff!important;padding:6px 0!important;margin:4px 0 8px!important}
+.planning-legend span{font-size:11px!important;padding:6px 9px!important;line-height:1!important}
+.planning-pro-wrap{max-height:74vh!important;overflow:auto!important;border-radius:16px!important;background:#fff!important}
+.planning-pro{border-collapse:separate!important;border-spacing:3px!important;table-layout:auto!important;min-width:max-content!important}
+.planning-pro th{height:42px!important;min-width:44px!important;padding:5px 4px!important;font-size:12px!important;line-height:1.05!important;border-radius:0!important}
+.planning-pro th small{font-size:10px!important;color:#fff!important;opacity:.9!important}
+.planning-pro .sticky-col{min-width:205px!important;max-width:205px!important;width:205px!important;padding:0!important;vertical-align:middle!important;background:#fff!important;color:#111!important;z-index:9!important;box-shadow:5px 0 12px rgba(0,0,0,.10)!important}
+.planning-pro th.sticky-col{background:#111!important;color:#fff!important;padding:8px!important;text-align:left!important}
+.pl-card{padding:7px!important;display:grid!important;grid-template-columns:1fr auto!important;grid-template-areas:'targa badge' 'desc badge' 'actions actions'!important;gap:3px 6px!important;align-items:start!important;min-height:58px!important}
+.pl-targa{grid-area:targa!important;font-size:17px!important;font-weight:950!important;line-height:1!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important}
+.pl-desc{grid-area:desc!important;font-size:10px!important;line-height:1.05!important;color:#4b5563!important;max-height:22px!important;overflow:hidden!important;text-transform:uppercase!important}
+.pl-card .badge{grid-area:badge!important;margin:0!important;font-size:9px!important;padding:4px 6px!important;border-radius:999px!important;max-width:70px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;align-self:start!important}
+.pl-card .mini-actions{grid-area:actions!important;display:flex!important;gap:4px!important;margin:2px 0 0!important;flex-wrap:nowrap!important}
+.pl-card .mini-actions a{font-size:10px!important;padding:4px 7px!important;border-radius:8px!important;line-height:1!important}
+.planning-cell{min-width:46px!important;width:46px!important;height:34px!important;border-radius:8px!important;padding:0!important;font-size:0!important;color:transparent!important;line-height:0!important;border:1px solid #fff!important;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35),0 1px 3px rgba(0,0,0,.08)!important}
+.planning-cell::after{content:''!important;display:block!important;width:100%!important;height:100%!important;border-radius:7px!important}
+.planning-cell small{display:none!important}
+@media(max-width:700px){
+  main{padding-left:8px!important;padding-right:8px!important}
+  .planning-pro-head{display:block!important;padding:12px!important}
+  .planning-pro-head h2{font-size:22px!important}
+  .planning-pro-head p{display:none!important}
+  .planning-pro-tools{display:grid!important;grid-template-columns:repeat(4,1fr)!important;gap:6px!important;margin-top:8px!important}
+  .planning-pro-tools a{font-size:12px!important;padding:9px 4px!important;border-radius:10px!important;text-align:center!important;min-height:auto!important}
+  .pl-filter-form{display:grid!important;grid-template-columns:1fr 1fr!important;gap:6px!important;padding:8px!important}
+  .pl-filter-form select,.pl-filter-form input,.pl-filter-form button{font-size:12px!important;padding:8px!important;min-height:40px!important;border-radius:10px!important}
+  .planning-legend{gap:4px!important;overflow-x:auto!important;flex-wrap:nowrap!important;padding-bottom:4px!important}
+  .planning-legend span{font-size:10px!important;padding:6px 8px!important;white-space:nowrap!important}
+  .planning-pro-wrap{max-height:72vh!important;border-radius:12px!important}
+  .planning-pro{border-spacing:2px!important}
+  .planning-pro th{height:38px!important;min-width:38px!important;font-size:11px!important;padding:4px 3px!important}
+  .planning-pro th small{font-size:9px!important}
+  .planning-pro .sticky-col{min-width:142px!important;max-width:142px!important;width:142px!important}
+  .planning-pro th.sticky-col{font-size:12px!important;padding:6px!important}
+  .pl-card{padding:5px!important;grid-template-columns:1fr!important;grid-template-areas:'targa' 'desc' 'badge' 'actions'!important;min-height:74px!important}
+  .pl-targa{font-size:14px!important}
+  .pl-desc{font-size:9px!important;max-height:20px!important}
+  .pl-card .badge{font-size:8px!important;padding:3px 5px!important;max-width:100%!important;width:max-content!important}
+  .pl-card .mini-actions a{font-size:9px!important;padding:4px 5px!important}
+  .planning-cell{min-width:36px!important;width:36px!important;height:28px!important;border-radius:7px!important}
+}
+
 </style>
 <script>
 function toggleAzienda(){
@@ -2716,7 +2805,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V181 - planning leggibile, oggi corretto, rientrato storico'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V185 - planning pro UI compatto verificato'));
 
 
 // =========================
@@ -5333,6 +5422,22 @@ app.get('/planning', async (req, res) => {
     return { cls:'pl-booked', label:'P', text:'Prenotato' };
   }
 
+  // V182: il nero officina NON deve coprire tutto il calendario.
+  // Copre solo i giorni da fermo_da a fermo_a. Se manca fermo_a, resta nero da fermo_da in poi.
+  // Se mancano entrambe le date, per sicurezza resta nero su tutti i giorni finché il mezzo è "officina".
+  function v182MezzoFermoNelGiorno(m, day){
+    if(!v180StatoMezzoOff(m)) return false;
+    const d = moment(day, 'YYYY-MM-DD', true);
+    const daRaw = String(m.fermo_da || '').slice(0,10);
+    const aRaw = String(m.fermo_a || '').slice(0,10);
+    const da = daRaw ? moment(daRaw, 'YYYY-MM-DD', true) : null;
+    const a = aRaw ? moment(aRaw, 'YYYY-MM-DD', true) : null;
+    if(da && da.isValid() && a && a.isValid()) return d.isSameOrAfter(da,'day') && d.isSameOrBefore(a,'day');
+    if(da && da.isValid()) return d.isSameOrAfter(da,'day');
+    if(a && a.isValid()) return d.isSameOrBefore(a,'day');
+    return true;
+  }
+
   let giorni = [];
   for(let d=start.clone(); d.isSameOrBefore(endDate,'day'); d.add(1,'day')) giorni.push(d.clone());
   let header = '<th class="sticky-col">Mezzo</th>';
@@ -5345,14 +5450,14 @@ app.get('/planning', async (req, res) => {
     giorni.forEach(mm => {
       const day = mm.format('YYYY-MM-DD');
       let occ = pren.find(p => String(p.mezzo_id || '') === String(m.id || '') && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
-      if (!occ && mezzoOff) occ = { id:m.id, codice:'FERMO/OFFICINA', stato:'officina', nome:'OFF', cognome:m.fermo_motivo||'Officina' };
+      if (!occ && v182MezzoFermoNelGiorno(m, day)) occ = { id:m.id, codice:'FERMO/OFFICINA', stato:'officina', nome:'OFF', cognome:m.fermo_motivo||'Officina' };
       const st = statoCell(occ);
       if (occ) {
         const cliente = `${occ.nome || ''} ${occ.cognome || ''}`.trim() || 'Cliente';
         const url = occ.codice==='FERMO/OFFICINA' ? `/mezzi/${m.id}/officina` : `/contratto/${occ.id}/gestisci`;
-        rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='${url}'">${st.label}<small>${esc((cliente||'').slice(0,8))}</small></td>`;
+        rows += `<td class="planning-cell ${st.cls}" title="${esc(occ.codice || '')} - ${esc(cliente)} - ${esc(occ.stato || '')}" onclick="window.location='${url}'"></td>`;
       } else {
-        rows += `<td class="planning-cell ${st.cls}" title="Libero ${esc(m.targa || '')} ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'">L</td>`;
+        rows += `<td class="planning-cell ${st.cls}" title="Libero ${esc(m.targa || '')} ${day}" onclick="window.location='/nuova-prenotazione?mezzo_id=${m.id}&data=${day}'"></td>`;
       }
     });
     rows += '</tr>';
@@ -5362,7 +5467,7 @@ app.get('/planning', async (req, res) => {
   const keepCat = `categoria=${encodeURIComponent(categoriaFiltro)}&vista=${encodeURIComponent(vista)}`;
   res.send(page('Planning PRO', `
     <div class="planning-pro-head">
-      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Verde = libero. Giallo = prenotato/preventivo. Blu = in corso. Viola = rientrato/storico. Nero = officina.</p></div>
+      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Tocca una casella: verde libero, giallo prenotato, blu in corso, viola storico, nero officina.</p></div>
       <div class="planning-pro-tools"><a href="/planning?vista=settimana&data=${moment().format('YYYY-MM-DD')}&categoria=${encodeURIComponent(categoriaFiltro)}">Oggi</a><a href="/planning?${navParam}&${keepCat}">← Prima</a><a href="/planning?${navParam2}&${keepCat}">Dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
     </div>
     <form class="box pl-filter-form" method="GET" action="/planning">
@@ -9877,9 +9982,22 @@ async function v176UpdateOrCreatePdfDrive(prenotazioneId){
     throw new Error('PDF generato ma upload Drive non riuscito');
   }
 
-  link = uploaded.webViewLink || uploaded.link || '';
-  await run(`UPDATE prenotazioni SET pdf_path=?, pdf_drive_link=?, pdf_drive_web_link=?, pdf_drive_file_id=?, drive_folder_id=COALESCE(?,drive_folder_id), drive_folder_link=COALESCE(?,drive_folder_link) WHERE id=?`,
-    [pdf, link, link, uploaded.id || '', folder?.id || null, folder?.webViewLink || null, prenotazioneId]);
+  link = (uploaded && (uploaded.webViewLink || uploaded.link)) || '';
+  const uploadedId = (uploaded && uploaded.id) ? uploaded.id : '';
+  const folderId = (folder && folder.id) ? folder.id : null;
+  const folderLink = (folder && folder.webViewLink) ? folder.webViewLink : null;
+
+  await run(
+    `UPDATE prenotazioni
+       SET pdf_path=?,
+           pdf_drive_link=?,
+           pdf_drive_web_link=?,
+           pdf_drive_file_id=?,
+           drive_folder_id=COALESCE(?,drive_folder_id),
+           drive_folder_link=COALESCE(?,drive_folder_link)
+     WHERE id=?`,
+    [pdf, link, link, uploadedId, folderId, folderLink, prenotazioneId]
+  );
 
   if (folder && folder.id && typeof uploadLocalAllegatiToDriveV63 === 'function') await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
   if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
@@ -9915,7 +10033,7 @@ app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
 console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
 
 
-console.log('DP RENT V181: planning oggi corretto + storico rientrato viola + mobile leggibile');
+console.log('DP RENT V184: fix sintassi drive update + planning mobile compatto');
 
 
 // V178: blocco duplicati Drive.
