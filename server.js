@@ -1178,8 +1178,8 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 @media(max-width:700px){.planning-pro-head{display:block}.planning-pro-tools a,.planning-pro-tools select,.pl-filter-form select,.pl-filter-form input,.pl-filter-form button{width:100%}.planning-pro-wrap{max-height:72vh}.planning-pro .sticky-col{min-width:190px}.planning-cell{min-width:42px;height:42px}}
 /* V180 planning leggibile */
 .planning-pro-wrap{width:100%;overflow:auto;-webkit-overflow-scrolling:touch;max-height:78vh;touch-action:pan-x pan-y;background:#fff}
-.planning-pro{table-layout:fixed;border-spacing:4px;min-width:max-content}.planning-pro th{font-size:15px;white-space:nowrap;padding:10px 8px}.planning-pro .sticky-col{min-width:260px!important;max-width:260px!important}.planning-cell{min-width:64px!important;width:64px;height:58px!important;font-size:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4)}.planning-cell small{font-size:11px;color:inherit;opacity:.95}.pl-off{background:#050505!important;color:#fff!important}.pl-late{background:#d70000!important;color:#fff!important}.pl-out{background:#1457d9!important;color:#fff!important}.pl-booked{background:#ffc400!important;color:#111!important}.pl-free{background:#12a846!important;color:#fff!important}.pl-card .mini-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.pl-card .mini-actions a{font-size:11px;padding:4px 6px;border-radius:8px;text-decoration:none;background:#111;color:#fff}.pl-card .mini-actions a.off{background:#d70000}
-@media(max-width:700px){.planning-pro-head h2{font-size:30px}.planning-pro .sticky-col{min-width:155px!important;max-width:155px!important}.planning-cell{min-width:58px!important;width:58px;height:62px!important;font-size:15px}.pl-targa{font-size:15px}.pl-desc{font-size:10px}.planning-legend span{font-size:12px;padding:7px 9px}.planning-pro-wrap{border-radius:14px;max-height:68vh}.planning-pro th{font-size:13px;padding:8px 6px}.pl-card .mini-actions a{font-size:10px;padding:3px 5px}}
+.planning-pro{table-layout:fixed;border-spacing:4px;min-width:max-content}.planning-pro th{font-size:15px;white-space:nowrap;padding:10px 8px}.planning-pro .sticky-col{min-width:260px!important;max-width:260px!important}.planning-cell{min-width:72px!important;width:72px;height:62px!important;font-size:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.4);line-height:1.05}.planning-cell small{display:block;font-size:10px;color:inherit;opacity:.95;line-height:1.1;margin-top:4px}.pl-off{background:#050505!important;color:#fff!important}.pl-late{background:#d70000!important;color:#fff!important}.pl-out{background:#1457d9!important;color:#fff!important}.pl-booked{background:#ffc400!important;color:#111!important}.pl-done{background:#7b3ff2!important;color:#fff!important}.pl-free{background:#12a846!important;color:#fff!important}.pl-card .mini-actions{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}.pl-card .mini-actions a{font-size:11px;padding:4px 6px;border-radius:8px;text-decoration:none;background:#111;color:#fff}.pl-card .mini-actions a.off{background:#d70000}
+@media(max-width:700px){.planning-pro-head h2{font-size:30px}.planning-pro .sticky-col{min-width:165px!important;max-width:165px!important}.planning-cell{min-width:70px!important;width:70px;height:68px!important;font-size:15px}.pl-targa{font-size:15px}.pl-desc{font-size:10px}.planning-legend span{font-size:12px;padding:7px 9px}.planning-pro-wrap{border-radius:14px;max-height:70vh}.planning-pro th{font-size:13px;padding:8px 6px}.pl-card .mini-actions a{font-size:10px;padding:3px 5px}}
 
 </style>
 <script>
@@ -2716,7 +2716,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V180 - planning pro, officina, km check-in extra'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V182 - planning officina a date corrette'));
 
 
 // =========================
@@ -5290,15 +5290,18 @@ app.get('/stato/:id/:stato', async (req, res) => {
 app.get('/planning', async (req, res) => {
   const vista = String(req.query.vista || 'settimana');
   const categoriaFiltro = String(req.query.categoria || '').trim();
-  const rawMese = req.query.mese || moment().format('YYYY-MM');
-  const rawData = req.query.data || '';
+  const oggi = moment();
+  const rawMese = String(req.query.mese || '').trim();
+  const rawData = String(req.query.data || '').trim();
   let start;
-  if (vista === 'giorno') start = moment(rawData || (rawMese + '-01'));
-  else if (vista === 'settimana') start = moment(rawData || (rawMese + '-01')).startOf('isoWeek');
-  else start = moment(rawMese + '-01');
-  if (!start.isValid()) start = moment();
+  // V181: se non scelgo una data, il planning parte SEMPRE da oggi.
+  // Prima partiva dal giorno 1 del mese e, con vecchi link/cache, poteva restare su aprile.
+  if (vista === 'giorno') start = rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone();
+  else if (vista === 'settimana') start = (rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone()).startOf('isoWeek');
+  else start = rawMese ? moment(rawMese + '-01', 'YYYY-MM-DD', true) : oggi.clone().startOf('month');
+  if (!start.isValid()) start = oggi.clone();
   const endDate = vista === 'giorno' ? start.clone() : (vista === 'settimana' ? start.clone().add(6,'days') : start.clone().endOf('month'));
-  const mese = start.format('YYYY-MM');
+  const mese = (rawMese && /^\d{4}-\d{2}$/.test(rawMese)) ? rawMese : start.format('YYYY-MM');
   const prec = vista === 'giorno' ? start.clone().subtract(1,'day') : (vista === 'settimana' ? start.clone().subtract(1,'week') : start.clone().subtract(1,'month'));
   const succ = vista === 'giorno' ? start.clone().add(1,'day') : (vista === 'settimana' ? start.clone().add(1,'week') : start.clone().add(1,'month'));
   const navParam = vista === 'mese' ? `mese=${prec.format('YYYY-MM')}` : `data=${prec.format('YYYY-MM-DD')}&mese=${prec.format('YYYY-MM')}`;
@@ -5320,11 +5323,30 @@ app.get('/planning', async (req, res) => {
   function statoCell(occ){
     if(!occ) return { cls:'pl-free', label:'L', text:'Libero' };
     const st = String(occ.stato || '').toLowerCase();
-    if(st.includes('rientro') || st.includes('ritardo')) return { cls:'pl-late', label:'R', text:'Ritardo' };
-    if(st.includes('corso') || st.includes('checkout') || st.includes('check-out')) return { cls:'pl-out', label:'OUT', text:'Check-out' };
     if(st.includes('officina') || st.includes('fermo')) return { cls:'pl-off', label:'OFF', text:'Fermo' };
+    if(st.includes('ritardo')) return { cls:'pl-late', label:'RIT', text:'Ritardo' };
+    // V181: un contratto rientrato NON deve diventare verde nei giorni storici del noleggio.
+    // Deve restare visibile come noleggio concluso, mentre i giorni dopo la data fine restano verdi.
+    if(st.includes('rientrato') || st.includes('rientro') || st.includes('chiuso') || st.includes('completato')) return { cls:'pl-done', label:'OK', text:'Rientrato' };
+    if(st.includes('corso') || st.includes('checkout') || st.includes('check-out')) return { cls:'pl-out', label:'OUT', text:'In corso' };
     if(st.includes('preventivo') || st.includes('richiesta')) return { cls:'pl-booked', label:'PREV', text:'Preventivo' };
     return { cls:'pl-booked', label:'P', text:'Prenotato' };
+  }
+
+  // V182: il nero officina NON deve coprire tutto il calendario.
+  // Copre solo i giorni da fermo_da a fermo_a. Se manca fermo_a, resta nero da fermo_da in poi.
+  // Se mancano entrambe le date, per sicurezza resta nero su tutti i giorni finché il mezzo è "officina".
+  function v182MezzoFermoNelGiorno(m, day){
+    if(!v180StatoMezzoOff(m)) return false;
+    const d = moment(day, 'YYYY-MM-DD', true);
+    const daRaw = String(m.fermo_da || '').slice(0,10);
+    const aRaw = String(m.fermo_a || '').slice(0,10);
+    const da = daRaw ? moment(daRaw, 'YYYY-MM-DD', true) : null;
+    const a = aRaw ? moment(aRaw, 'YYYY-MM-DD', true) : null;
+    if(da && da.isValid() && a && a.isValid()) return d.isSameOrAfter(da,'day') && d.isSameOrBefore(a,'day');
+    if(da && da.isValid()) return d.isSameOrAfter(da,'day');
+    if(a && a.isValid()) return d.isSameOrBefore(a,'day');
+    return true;
   }
 
   let giorni = [];
@@ -5339,7 +5361,7 @@ app.get('/planning', async (req, res) => {
     giorni.forEach(mm => {
       const day = mm.format('YYYY-MM-DD');
       let occ = pren.find(p => String(p.mezzo_id || '') === String(m.id || '') && moment(day).isSameOrAfter(moment(p.data_inizio)) && moment(day).isSameOrBefore(moment(p.data_fine)));
-      if (!occ && mezzoOff) occ = { id:m.id, codice:'FERMO/OFFICINA', stato:'officina', nome:'OFF', cognome:m.fermo_motivo||'Officina' };
+      if (!occ && v182MezzoFermoNelGiorno(m, day)) occ = { id:m.id, codice:'FERMO/OFFICINA', stato:'officina', nome:'OFF', cognome:m.fermo_motivo||'Officina' };
       const st = statoCell(occ);
       if (occ) {
         const cliente = `${occ.nome || ''} ${occ.cognome || ''}`.trim() || 'Cliente';
@@ -5356,8 +5378,8 @@ app.get('/planning', async (req, res) => {
   const keepCat = `categoria=${encodeURIComponent(categoriaFiltro)}&vista=${encodeURIComponent(vista)}`;
   res.send(page('Planning PRO', `
     <div class="planning-pro-head">
-      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Clic prenotazione = contratto, verde = nuova prenotazione.</p></div>
-      <div class="planning-pro-tools"><a href="/planning?${navParam}&${keepCat}">← Prima</a><a href="/planning?${navParam2}&${keepCat}">Dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
+      <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Verde = libero. Giallo = prenotato/preventivo. Blu = in corso. Viola = rientrato/storico. Nero = officina.</p></div>
+      <div class="planning-pro-tools"><a href="/planning?vista=settimana&data=${moment().format('YYYY-MM-DD')}&categoria=${encodeURIComponent(categoriaFiltro)}">Oggi</a><a href="/planning?${navParam}&${keepCat}">← Prima</a><a href="/planning?${navParam2}&${keepCat}">Dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
     </div>
     <form class="box pl-filter-form" method="GET" action="/planning">
       <input type="month" name="mese" value="${esc(mese)}">
@@ -5366,7 +5388,7 @@ app.get('/planning', async (req, res) => {
       <select name="vista"><option ${vista==='mese'?'selected':''} value="mese">Vista mese</option><option ${vista==='settimana'?'selected':''} value="settimana">Vista settimana</option><option ${vista==='giorno'?'selected':''} value="giorno">Vista giorno</option></select>
       <button>Filtra</button>
     </form>
-    <div class="planning-legend"><span class="pl-free">Verde libero</span><span class="pl-booked">Giallo preventivo/prenotato</span><span class="pl-out">Blu check-out</span><span class="pl-late">Rosso ritardo</span><span class="pl-off">Nero fermo/officina</span></div>
+    <div class="planning-legend"><span class="pl-free">Verde libero</span><span class="pl-booked">Giallo preventivo/prenotato</span><span class="pl-out">Blu in corso/check-out</span><span class="pl-done">Viola rientrato/storico</span><span class="pl-late">Rosso ritardo</span><span class="pl-off">Nero fermo/officina</span></div>
     <div class="planning-pro-wrap"><table class="planning-pro"><tr>${header}</tr>${rows || '<tr><td>Nessun mezzo trovato.</td></tr>'}</table></div>
   `));
 });
@@ -9909,7 +9931,7 @@ app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
 console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
 
 
-console.log('DP RENT V177: flusso blindato - occupato blocca, email PDF stabile, dashboard pulita');
+console.log('DP RENT V181: planning oggi corretto + storico rientrato viola + mobile leggibile');
 
 
 // V178: blocco duplicati Drive.
