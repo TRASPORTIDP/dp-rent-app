@@ -649,6 +649,10 @@ addColumn('prenotazioni','km_percorsi','TEXT');
 addColumn('prenotazioni','km_extra_rientro','TEXT');
 addColumn('prenotazioni','supplemento_km_rientro','TEXT');
 addColumn('prenotazioni','totale_finale','TEXT');
+addColumn('prenotazioni','prezzo_manual_enabled','TEXT');
+addColumn('prenotazioni','prezzo_manual_imponibile','TEXT');
+addColumn('prenotazioni','prezzo_manual_totale','TEXT');
+addColumn('prenotazioni','tariffa_manuale_note','TEXT');
 addColumn('prenotazioni','officina_motivo','TEXT');
 addColumn('mezzi','stato_operativo','TEXT');
 addColumn('mezzi','fermo_da','TEXT');
@@ -830,6 +834,10 @@ addColumn('mezzi','record_cargos_veicolo_tipo','TEXT');
   addColumn('prenotazioni','km_extra_rientro','TEXT');
   addColumn('prenotazioni','supplemento_km_rientro','TEXT');
   addColumn('prenotazioni','totale_finale','TEXT');
+  addColumn('prenotazioni','prezzo_manual_enabled','TEXT');
+  addColumn('prenotazioni','prezzo_manual_imponibile','TEXT');
+  addColumn('prenotazioni','prezzo_manual_totale','TEXT');
+  addColumn('prenotazioni','tariffa_manuale_note','TEXT');
   addColumn('prenotazioni','officina_motivo','TEXT');
   addColumn('mezzi','stato_operativo','TEXT');
   addColumn('mezzi','fermo_da','TEXT');
@@ -1438,12 +1446,14 @@ function v180CheckinKmCalc(p, kmRientro){
   const kmOut = Number(p.km_uscita || 0);
   const kmIn = Number(kmRientro || 0);
   const kmPercorsi = (kmOut > 0 && kmIn >= kmOut) ? (kmIn - kmOut) : 0;
-  const inclusi = Number(p.km_inclusi || 0);
+  const giorni = Math.max(1, Number(p.giorni || (p.data_inizio && p.data_fine ? moment(p.data_fine).diff(moment(p.data_inizio), 'days') + 1 : 1) || 1));
+  const kmGiorno = Number(p.km_inclusi || p.km_inclusi_giorno || kmCategoria(p.categoria || p.tipo) || 150);
+  const inclusi = giorni * kmGiorno;
   const extraKm = Math.max(0, kmPercorsi - inclusi);
   const imponibile = extraKm * Number(EXTRA_KM || 0.15);
   const iva = imponibile * Number(IVA || 0.22);
   const supplemento = imponibile + iva;
-  return { kmOut, kmIn, kmPercorsi, inclusi, extraKm, imponibile, iva, supplemento };
+  return { kmOut, kmIn, kmPercorsi, giorni, kmGiorno, inclusi, extraKm, imponibile, iva, supplemento };
 }
 function v180Money(n){ return (Number(n||0)).toFixed(2); }
 function v180StatoMezzoOff(m){
@@ -2065,6 +2075,7 @@ async function generaPdfContratto(id, opts = {}) {
     ['Imponibile', euroTxt(p.imponibile)],
     ['IVA 22%', euroTxt(p.iva)],
     ['Totale IVA incl.', euroTxt(p.totale)],
+    ['Tariffa manuale', p.prezzo_manual_enabled === 'si' ? (p.tariffa_manuale_note || 'Applicata') : '-'],
     ['Totale finale', p.totale_finale ? euroTxt(p.totale_finale) : euroTxt(p.totale)],
     ['Deposito cauzionale', euroTxt(p.cauzione || CAUZIONE)]
   ], M + COL_W + GAP, startCols2, COL_W, BLACK);
@@ -2454,23 +2465,32 @@ async function estraiDatiDocumentoConAI(localPath, mimetype) {
   if (!fs.existsSync(localPath)) throw new Error('File OCR non trovato');
 
   const base64 = fs.readFileSync(localPath).toString('base64');
-  const dataUrl = `data:${mimetype || 'image/jpeg'};base64,${base64}`;
+  const mt = mimetype || (String(localPath).toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'image/jpeg');
+  const dataUrl = `data:${mt};base64,${base64}`;
 
-  const prompt = `Leggi documento italiano patente/carta identità. Rispondi SOLO JSON valido:
+  const prompt = `Leggi documento italiano patente/carta identità/tessera sanitaria da foto o PDF scannerizzato. Se è un PDF guarda la pagina visibile/scansionata. Rispondi SOLO JSON valido:
 {
 "tipo_documento":"","nome":"","cognome":"","data_nascita":"YYYY-MM-DD","luogo_nascita":"",
 "codice_fiscale":"","numero_documento":"","ente_rilascio":"","data_rilascio":"YYYY-MM-DD",
 "data_scadenza":"YYYY-MM-DD","numero_patente":"","categoria_patente":"","indirizzo":"",
 "note":"","confidence":"alta|media|bassa"
 }
-Se un campo non è visibile lascia vuoto.`;
+Se un campo non è visibile lascia vuoto. Per codice fiscale usa lettere maiuscole. Per date usa YYYY-MM-DD.`;
+
+  const content = [{ type: 'input_text', text: prompt }];
+  if (String(mt).toLowerCase().includes('pdf')) {
+    // V187: PDF scanner da ufficio. Usa input_file con file_data base64.
+    content.push({ type: 'input_file', filename: path.basename(localPath) || 'documento.pdf', file_data: dataUrl });
+  } else {
+    content.push({ type: 'input_image', image_url: dataUrl });
+  }
 
   const r = await fetch('https://api.openai.com/v1/responses', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model: process.env.OPENAI_OCR_MODEL || 'gpt-4.1-mini',
-      input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }, { type: 'input_image', image_url: dataUrl }] }],
+      input: [{ role: 'user', content }],
       temperature: 0
     })
   });
@@ -2479,9 +2499,11 @@ Se un campo non è visibile lascia vuoto.`;
   if (!r.ok) throw new Error('Errore OpenAI OCR: ' + text);
 
   const data = JSON.parse(text);
-  const outputText = data.output_text || (data.output || []).flatMap(o => o.content || []).map(c => c.text || '').join('\\n');
+  const outputText = data.output_text || (data.output || []).flatMap(o => o.content || []).map(c => c.text || '').join('\n');
   const clean = String(outputText || '').replace(/^```json/i,'').replace(/^```/i,'').replace(/```$/i,'').trim();
-  return JSON.parse(clean);
+  const parsed = JSON.parse(clean);
+  if (parsed.codice_fiscale) parsed.codice_fiscale = String(parsed.codice_fiscale).toUpperCase().replace(/[^A-Z0-9]/g,'');
+  return parsed;
 }
 
 function ocrValue(v) { return esc(v || ''); }
@@ -2805,7 +2827,7 @@ function v50EnsureAllDb(done) {
 // esegue all'avvio
 v50EnsurePrenotazioniDb(() => console.log('V50 prenotazioni DB OK'));
 
-app.get('/versione', (req, res) => res.send('DP RENT APP V185 - planning pro UI compatto verificato'));
+app.get('/versione', (req, res) => res.send('DP RENT APP V186 - planning oggi corretto + filtro manuale'));
 
 
 // =========================
@@ -5380,11 +5402,12 @@ app.get('/planning', async (req, res) => {
   const vista = String(req.query.vista || 'settimana');
   const categoriaFiltro = String(req.query.categoria || '').trim();
   const oggi = moment();
-  const rawMese = String(req.query.mese || '').trim();
-  const rawData = String(req.query.data || '').trim();
+  // V186: il planning NON deve riaprire vecchie date rimaste in cache/link (es. 27 aprile).
+  // Le date in query vengono rispettate solo quando arrivano dai pulsanti Prima/Dopo o dal filtro manuale.
+  const filtroManuale = String(req.query.manual || '') === '1' || String(req.query.nav || '') === '1';
+  const rawMese = filtroManuale ? String(req.query.mese || '').trim() : '';
+  const rawData = filtroManuale ? String(req.query.data || '').trim() : '';
   let start;
-  // V181: se non scelgo una data, il planning parte SEMPRE da oggi.
-  // Prima partiva dal giorno 1 del mese e, con vecchi link/cache, poteva restare su aprile.
   if (vista === 'giorno') start = rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone();
   else if (vista === 'settimana') start = (rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone()).startOf('isoWeek');
   else start = rawMese ? moment(rawMese + '-01', 'YYYY-MM-DD', true) : oggi.clone().startOf('month');
@@ -5393,8 +5416,8 @@ app.get('/planning', async (req, res) => {
   const mese = (rawMese && /^\d{4}-\d{2}$/.test(rawMese)) ? rawMese : start.format('YYYY-MM');
   const prec = vista === 'giorno' ? start.clone().subtract(1,'day') : (vista === 'settimana' ? start.clone().subtract(1,'week') : start.clone().subtract(1,'month'));
   const succ = vista === 'giorno' ? start.clone().add(1,'day') : (vista === 'settimana' ? start.clone().add(1,'week') : start.clone().add(1,'month'));
-  const navParam = vista === 'mese' ? `mese=${prec.format('YYYY-MM')}` : `data=${prec.format('YYYY-MM-DD')}&mese=${prec.format('YYYY-MM')}`;
-  const navParam2 = vista === 'mese' ? `mese=${succ.format('YYYY-MM')}` : `data=${succ.format('YYYY-MM-DD')}&mese=${succ.format('YYYY-MM')}`;
+  const navParam = vista === 'mese' ? `nav=1&mese=${prec.format('YYYY-MM')}` : `nav=1&data=${prec.format('YYYY-MM-DD')}&mese=${prec.format('YYYY-MM')}`;
+  const navParam2 = vista === 'mese' ? `nav=1&mese=${succ.format('YYYY-MM')}` : `nav=1&data=${succ.format('YYYY-MM-DD')}&mese=${succ.format('YYYY-MM')}`;
   const titleRange = vista === 'mese' ? start.format('MM/YYYY') : `${start.format('DD/MM/YYYY')} - ${endDate.format('DD/MM/YYYY')}`;
 
   let mezziSql = `SELECT * FROM mezzi`;
@@ -5468,9 +5491,10 @@ app.get('/planning', async (req, res) => {
   res.send(page('Planning PRO', `
     <div class="planning-pro-head">
       <div><div class="dp-kicker">DP RENT</div><h2>Planning PRO ${titleRange}</h2><p style="margin:8px 0 0">Vista ${esc(vista)}. Tocca una casella: verde libero, giallo prenotato, blu in corso, viola storico, nero officina.</p></div>
-      <div class="planning-pro-tools"><a href="/planning?vista=settimana&data=${moment().format('YYYY-MM-DD')}&categoria=${encodeURIComponent(categoriaFiltro)}">Oggi</a><a href="/planning?${navParam}&${keepCat}">← Prima</a><a href="/planning?${navParam2}&${keepCat}">Dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
+      <div class="planning-pro-tools"><a href="/planning?vista=settimana&categoria=${encodeURIComponent(categoriaFiltro)}">Oggi</a><a href="/planning?${navParam}&${keepCat}">← Prima</a><a href="/planning?${navParam2}&${keepCat}">Dopo →</a><a href="/nuova-prenotazione">+ Nuova</a></div>
     </div>
     <form class="box pl-filter-form" method="GET" action="/planning">
+      <input type="hidden" name="manual" value="1">
       <input type="month" name="mese" value="${esc(mese)}">
       <input type="date" name="data" value="${esc(start.format('YYYY-MM-DD'))}">
       <select name="categoria">${catOptions}</select>
@@ -6093,7 +6117,7 @@ app.get('/checkin/:id', async (req, res) => {
   if (!p) return res.send('Contratto non trovato');
   const nowTime = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
   const kmOut = Number(p.km_uscita || 0);
-  const kmIncl = Number(p.km_inclusi || 0);
+  const kmIncl = Math.max(1, Number(p.giorni || 1)) * Number(p.km_inclusi || kmCategoria(p.categoria || p.tipo) || 150);
   res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><p><b>Km uscita:</b> ${esc(kmOut||'-')} &nbsp; <b>Km inclusi contratto:</b> ${esc(kmIncl||'-')} &nbsp; <b>Extra km:</b> €${esc(EXTRA_KM)} + IVA/km</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Orario check-in</label><input type="time" name="check_in_orario" value="${esc(p.check_in_orario || p.ora_fine || nowTime)}"></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}" required></div></div><div class="notice"><b>Calcolo automatico:</b> se i km percorsi superano i km inclusi, il sistema calcola il supplemento cliente e aggiorna i km del mezzo.</div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.check_in_note || p.note)}</textarea><button>Salva check-in e calcola extra km</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
 });
 app.post('/checkin/:id', async (req, res) => {
@@ -7616,6 +7640,8 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Orario check-in<input type="time" name="check_in_orario" value="${esc(p.check_in_orario || '')}"></label>
           <label>Km previsti<input type="number" name="km_previsti" value="${esc(p.km_previsti || 150)}"></label>
           <label>Totale attuale<input name="totale" value="${esc(p.totale)}" readonly></label>
+          <label>Prezzo manuale IVA inclusa<input type="number" step="0.01" name="prezzo_manual_totale" value="${esc(p.prezzo_manual_totale || '')}" placeholder="Lascia vuoto = automatico"></label>
+          <label>Nota tariffa manuale<input name="tariffa_manuale_note" value="${esc(p.tariffa_manuale_note || '')}" placeholder="Es. prezzo concordato"></label>
           <label>Stato<select name="stato"><option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option><option value="bozza" ${p.stato==='bozza'?'selected':''}>Bozza</option><option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option><option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option><option value="in_corso" ${p.stato==='in_corso'?'selected':''}>In corso/check-out</option><option value="rientrato" ${p.stato==='rientrato'?'selected':''}>Rientrato/check-in</option><option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option></select></label>
           <label>Cauzione ricevuta<select name="cauzione_ricevuta"><option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option></select></label>
           <label>Importo cauzione<input name="cauzione_importo" value="${esc(p.cauzione_importo || p.cauzione || 0)}"></label>
@@ -7657,7 +7683,13 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
       const oraInizio = v62Val(b.ora_inizio || oldP.ora_inizio || '08:30');
       const oraFine = v62Val(b.ora_fine || oldP.ora_fine || '18:00');
       const kmPrevisti = Number(b.km_previsti || oldP.km_previsti || 0);
-      const calc = calcolaTotale(mezzo, dataInizio, dataFine, oraInizio, oraFine, kmPrevisti);
+      let calc = calcolaTotale(mezzo, dataInizio, dataFine, oraInizio, oraFine, kmPrevisti);
+      const prezzoManualTot = Number(String(b.prezzo_manual_totale || '').replace(',', '.')) || 0;
+      const prezzoManualeAttivo = prezzoManualTot > 0;
+      if (prezzoManualeAttivo) {
+        const manualImponibile = prezzoManualTot / (1 + IVA);
+        calc = Object.assign({}, calc, { imponibile: manualImponibile, iva: prezzoManualTot - manualImponibile, totale: prezzoManualTot, prezzo_manual_enabled: 'si' });
+      }
       const cauzioneStd = v62Money(mezzo.cauzione || oldP.cauzione || oldP.cauzione_importo || CAUZIONE);
       const cauzioneImporto = (String(b.cauzione_importo || '').trim() !== '') ? v62Money(b.cauzione_importo) : cauzioneStd;
 
@@ -7667,7 +7699,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?, documento_tipo=?, documento_numero=?, documento_scadenza=?,
         patente_numero=?, patente_scadenza=?, conducente2_nome=?, conducente2_cognome=?, conducente2=?, conducente2_cf=?, conducente2_doc_numero=?, conducente2_doc_scadenza=?, conducente2_patente_numero=?, conducente2_patente=?, conducente2_patente_scadenza=?, conducente2_categoria_patente=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
         data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?,
-        giorni=?, km_previsti=?, km_inclusi=?, extra_fuori_orario=?, extra_km=?, imponibile=?, iva=?, totale=?, cauzione=?, stato=?,
+        giorni=?, km_previsti=?, km_inclusi=?, extra_fuori_orario=?, extra_km=?, imponibile=?, iva=?, totale=?, prezzo_manual_enabled=?, prezzo_manual_imponibile=?, prezzo_manual_totale=?, tariffa_manuale_note=?, cauzione=?, stato=?,
         cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, note=?
         WHERE id=?`, [
           mezzoDb?.id || null, mezzoDb?.targa || null, mezzoDb?.marca || null, mezzoDb?.modello || null, mezzoDb?.tipo || null, mezzoDb?.categoria || mezzoDb?.tipo || null,
@@ -7675,7 +7707,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
           v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
           dataInizio, oraInizio, dataFine, oraFine, v62Val(b.check_out_orario), v62Val(b.check_in_orario),
-          calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, cauzioneStd, v62Val(b.stato || 'contratto'),
+          calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, prezzoManualeAttivo ? 'si' : '', prezzoManualeAttivo ? v180Money(calc.imponibile) : '', prezzoManualeAttivo ? v180Money(calc.totale) : '', v62Val(b.tariffa_manuale_note), cauzioneStd, v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_ricevuta || 'no'), cauzioneImporto, v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
       ]);
       try{ if (typeof v163AfterContractChange === 'function') { await v163AfterContractChange(req.params.id); } else { await syncContrattoDriveV63(req.params.id); } }catch(e){ console.log('V170 sync dopo modifica warning:', e.message); }
@@ -8714,13 +8746,20 @@ function v115MergeDocs(list){
   const out = {};
   for (const o of (list||[])) {
     if (!o || typeof o !== 'object') continue;
+    const tipo = String(o.tipo_documento || '').toLowerCase();
+    const isPatente = tipo.includes('patente') || !!o.numero_patente || !!o.patente_numero || !!o.categoria_patente;
     const map = {
       nome:'nome', cognome:'cognome', codice_fiscale:'codice_fiscale', data_nascita:'data_nascita', luogo_nascita:'luogo_nascita', indirizzo:'indirizzo',
-      numero_documento:'documento_numero', documento_numero:'documento_numero', scadenza_documento:'documento_scadenza', data_scadenza:'documento_scadenza',
       numero_patente:'patente_numero', patente_numero:'patente_numero', scadenza_patente:'patente_scadenza', categoria_patente:'categoria_patente'
     };
     for (const [src,dst] of Object.entries(map)) if (!out[dst] && o[src]) out[dst] = v115Date(o[src]);
-    if (!out.documento_scadenza && o.tipo_documento && String(o.tipo_documento).toLowerCase().includes('patente') && o.data_scadenza) out.patente_scadenza = v115Date(o.data_scadenza);
+    if (!isPatente) {
+      if (!out.documento_numero && (o.numero_documento || o.documento_numero)) out.documento_numero = v115Date(o.numero_documento || o.documento_numero);
+      if (!out.documento_scadenza && (o.scadenza_documento || o.data_scadenza)) out.documento_scadenza = v115Date(o.scadenza_documento || o.data_scadenza);
+    } else {
+      if (!out.patente_numero && (o.numero_patente || o.patente_numero || o.numero_documento)) out.patente_numero = v115Date(o.numero_patente || o.patente_numero || o.numero_documento);
+      if (!out.patente_scadenza && (o.scadenza_patente || o.data_scadenza)) out.patente_scadenza = v115Date(o.scadenza_patente || o.data_scadenza);
+    }
   }
   return out;
 }
@@ -9606,6 +9645,7 @@ app.get('/admin/migra-db', v169DbFixPage);
 
 // Lo faccio anche all'avvio, cosi non devi aprire nulla a mano dopo il deploy.
 setTimeout(()=>{ v169EnsureDbColumns().then(r=>console.log('DP RENT V169 migrazione DB OK:', r.filter(x=>x.added).length, 'colonne aggiunte')).catch(e=>console.log('DP RENT V169 migrazione DB errore:', e.message)); }, 2500);
+console.log('DP RENT V187: OCR PDF scanner + km extra corretti + prezzo manuale');
 console.log('DP RENT V169: route /admin/update-db /admin/fix-db aggiunte + migrazione automatica colonne secondo conducente');
 
 
@@ -10033,7 +10073,7 @@ app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
 console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
 
 
-console.log('DP RENT V184: fix sintassi drive update + planning mobile compatto');
+console.log('DP RENT V186: planning sempre oggi salvo filtro manuale + UI compatta');
 
 
 // V178: blocco duplicati Drive.
