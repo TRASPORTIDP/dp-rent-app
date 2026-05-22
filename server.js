@@ -1456,6 +1456,11 @@ function v180CheckinKmCalc(p, kmRientro){
   return { kmOut, kmIn, kmPercorsi, giorni, kmGiorno, inclusi, extraKm, imponibile, iva, supplemento };
 }
 function v180Money(n){ return (Number(n||0)).toFixed(2); }
+// V188: totale finale corretto. Se c'e tariffa manuale, il manuale e gia IVA inclusa.
+// Totale finale = totale noleggio IVA inclusa + extra rientro IVA inclusa.
+function v188TotaleFinale(baseTotaleIvato, supplementoRientroIvato){
+  return Number(baseTotaleIvato || 0) + Number(supplementoRientroIvato || 0);
+}
 function v180StatoMezzoOff(m){
   const st = String(m.stato_operativo || m.stato || '').toLowerCase();
   return st.includes('officina') || st.includes('fermo') || st.includes('manutenzione');
@@ -2075,7 +2080,7 @@ async function generaPdfContratto(id, opts = {}) {
     ['Imponibile', euroTxt(p.imponibile)],
     ['IVA 22%', euroTxt(p.iva)],
     ['Totale IVA incl.', euroTxt(p.totale)],
-    ['Tariffa manuale', p.prezzo_manual_enabled === 'si' ? (p.tariffa_manuale_note || 'Applicata') : '-'],
+    ['Tariffa manuale', p.prezzo_manual_enabled === 'si' ? `${euroTxt(p.prezzo_manual_totale || p.totale)} IVA incl.` : '-'],
     ['Totale finale', p.totale_finale ? euroTxt(p.totale_finale) : euroTxt(p.totale)],
     ['Deposito cauzionale', euroTxt(p.cauzione || CAUZIONE)]
   ], M + COL_W + GAP, startCols2, COL_W, BLACK);
@@ -6128,7 +6133,7 @@ app.post('/checkin/:id', async (req, res) => {
   const noteExtra = c.extraKm > 0 ? `
 EXTRA KM RIENTRO: percorsi ${c.kmPercorsi}, inclusi ${c.inclusi}, extra ${c.extraKm}, supplemento €${v180Money(c.supplemento)} IVA inclusa.` : `
 KM RIENTRO: percorsi ${c.kmPercorsi}, inclusi ${c.inclusi}, nessun extra km.`;
-  await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, km_percorsi=?, km_extra_rientro=?, supplemento_km_rientro=?, totale_finale=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, c.kmIn, c.kmPercorsi, c.extraKm, v180Money(c.supplemento), v180Money(Number(p.totale||0)+c.supplemento), noteBase + noteExtra, noteBase + noteExtra, req.params.id]);
+  await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, km_percorsi=?, km_extra_rientro=?, supplemento_km_rientro=?, totale_finale=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, c.kmIn, c.kmPercorsi, c.extraKm, v180Money(c.supplemento), v180Money(v188TotaleFinale(p.totale, c.supplemento)), noteBase + noteExtra, noteBase + noteExtra, req.params.id]);
   if (p && c.kmIn) await run(`UPDATE mezzi SET km_attuali=?, km=? WHERE id=?`, [c.kmIn, c.kmIn, p.mezzo_id]);
   try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
   const msg = c.extraKm > 0 ? `Check-in salvato. Km percorsi ${c.kmPercorsi}. Extra km ${c.extraKm}. Supplemento cliente: €${v180Money(c.supplemento)} IVA inclusa.` : `Check-in salvato. Km percorsi ${c.kmPercorsi}. Nessun supplemento km.`;
@@ -7699,7 +7704,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?, documento_tipo=?, documento_numero=?, documento_scadenza=?,
         patente_numero=?, patente_scadenza=?, conducente2_nome=?, conducente2_cognome=?, conducente2=?, conducente2_cf=?, conducente2_doc_numero=?, conducente2_doc_scadenza=?, conducente2_patente_numero=?, conducente2_patente=?, conducente2_patente_scadenza=?, conducente2_categoria_patente=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
         data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?,
-        giorni=?, km_previsti=?, km_inclusi=?, extra_fuori_orario=?, extra_km=?, imponibile=?, iva=?, totale=?, prezzo_manual_enabled=?, prezzo_manual_imponibile=?, prezzo_manual_totale=?, tariffa_manuale_note=?, cauzione=?, stato=?,
+        giorni=?, km_previsti=?, km_inclusi=?, extra_fuori_orario=?, extra_km=?, imponibile=?, iva=?, totale=?, totale_finale=?, prezzo_manual_enabled=?, prezzo_manual_imponibile=?, prezzo_manual_totale=?, tariffa_manuale_note=?, cauzione=?, stato=?,
         cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, note=?
         WHERE id=?`, [
           mezzoDb?.id || null, mezzoDb?.targa || null, mezzoDb?.marca || null, mezzoDb?.modello || null, mezzoDb?.tipo || null, mezzoDb?.categoria || mezzoDb?.tipo || null,
@@ -7707,7 +7712,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
           v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
           dataInizio, oraInizio, dataFine, oraFine, v62Val(b.check_out_orario), v62Val(b.check_in_orario),
-          calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, prezzoManualeAttivo ? 'si' : '', prezzoManualeAttivo ? v180Money(calc.imponibile) : '', prezzoManualeAttivo ? v180Money(calc.totale) : '', v62Val(b.tariffa_manuale_note), cauzioneStd, v62Val(b.stato || 'contratto'),
+          calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, (Number(oldP.supplemento_km_rientro||0) > 0 || oldP.km_rientro ? v180Money(v188TotaleFinale(calc.totale, oldP.supplemento_km_rientro)) : null), prezzoManualeAttivo ? 'si' : '', prezzoManualeAttivo ? v180Money(calc.imponibile) : '', prezzoManualeAttivo ? v180Money(calc.totale) : '', v62Val(b.tariffa_manuale_note), cauzioneStd, v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_ricevuta || 'no'), cauzioneImporto, v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
       ]);
       try{ if (typeof v163AfterContractChange === 'function') { await v163AfterContractChange(req.params.id); } else { await syncContrattoDriveV63(req.params.id); } }catch(e){ console.log('V170 sync dopo modifica warning:', e.message); }
@@ -9645,7 +9650,7 @@ app.get('/admin/migra-db', v169DbFixPage);
 
 // Lo faccio anche all'avvio, cosi non devi aprire nulla a mano dopo il deploy.
 setTimeout(()=>{ v169EnsureDbColumns().then(r=>console.log('DP RENT V169 migrazione DB OK:', r.filter(x=>x.added).length, 'colonne aggiunte')).catch(e=>console.log('DP RENT V169 migrazione DB errore:', e.message)); }, 2500);
-console.log('DP RENT V187: OCR PDF scanner + km extra corretti + prezzo manuale');
+console.log('DP RENT V188: totale finale manuale corretto + OCR PDF + km extra');
 console.log('DP RENT V169: route /admin/update-db /admin/fix-db aggiunte + migrazione automatica colonne secondo conducente');
 
 
