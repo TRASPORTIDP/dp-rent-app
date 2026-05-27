@@ -8038,6 +8038,22 @@ function dpCategoryFromChoice(txt){
   return null;
 }
 
+// V189 - correzione intelligente mezzo durante il flusso noleggio.
+// Se il cliente scrive "no furgone cargo", "volevo pulmino", "non golf ma dacia"
+// anche mentre il bot sta aspettando date/km, aggiorna il mezzo e non interpreta il testo come data.
+function dpVehicleCorrectionFromText(txt){
+  const raw = String(txt || '');
+  const t = dpNorm(raw);
+  if(!t) return null;
+  // non usare singoli numeri come correzione fuori dalla schermata di scelta mezzo,
+  // altrimenti una data/anno può cambiare categoria per errore.
+  if(/^\d+$/.test(t)) return null;
+  const hasVehicleWord = /(furgone|furgoni|cargo|merci|van|pulmino|minibus|pulman|pullman|9\s*posti|8\s*posti|8\s*\/\s*9|dacia|sandero|golf|escavatore|mezzo speciale)/.test(t);
+  if(!hasVehicleWord) return null;
+  const cat = dpCategoryFromChoice(raw);
+  return cat || null;
+}
+
 // V145 - riconoscimento frasi naturali WhatsApp: non rimanda il menu se il cliente scrive "volevo noleggiare" ecc.
 function dpServiceIntentFromText(text){
   const t = dpNorm(text).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -8354,7 +8370,7 @@ async function dpHandleWhatsApp(req,res){
   let session = dpSession(from, profileName);
 
   const tGlobal = dpNorm(body);
-  if(['indietro','torna','torna menu','menu principale','annulla','annullare','ho sbagliato','sbagliato','ricomincia','restart'].includes(tGlobal)){
+  if(['menu','menù','indietro','torna','torna menu','menu principale','annulla','annullare','ho sbagliato','sbagliato','ricomincia','restart'].includes(tGlobal)){
     dpReset(from, profileName);
     return dpTwimlResponse(res, 'Nessun problema 👍\n\n' + dpMenu(profileName));
   }
@@ -8529,6 +8545,17 @@ async function dpHandleWhatsApp(req,res){
   }
 
   if(session.state === 'noleggio_km'){
+    const correctionCat = dpVehicleCorrectionFromText(body);
+    if(correctionCat){
+      session.data.cat = correctionCat;
+      session.state = 'noleggio_dates';
+      session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.ok} Corretto 👍
+Hai scelto: *${correctionCat.label}*
+
+Indicami le date noleggio.
+Esempio: 20/05 - 22/05 oppure solo 14/06`);
+    }
     const km = dpExtractKm(body);
     const startIso = dpDateIso(session.data.start);
     const endIso = dpDateIso(session.data.end);
@@ -9651,6 +9678,7 @@ app.get('/admin/migra-db', v169DbFixPage);
 // Lo faccio anche all'avvio, cosi non devi aprire nulla a mano dopo il deploy.
 setTimeout(()=>{ v169EnsureDbColumns().then(r=>console.log('DP RENT V169 migrazione DB OK:', r.filter(x=>x.added).length, 'colonne aggiunte')).catch(e=>console.log('DP RENT V169 migrazione DB errore:', e.message)); }, 2500);
 console.log('DP RENT V188: totale finale manuale corretto + OCR PDF + km extra');
+console.log('DP RENT V189: WhatsApp noleggio correzione mezzo + MENU reset');
 console.log('DP RENT V169: route /admin/update-db /admin/fix-db aggiunte + migrazione automatica colonne secondo conducente');
 
 
