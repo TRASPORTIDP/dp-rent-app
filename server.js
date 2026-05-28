@@ -1950,10 +1950,10 @@ async function generaPdfContratto(id, opts = {}) {
     font(true, 11.5, '#ffffff');
     doc.text(AZIENDA.nome || 'Trasporti DP S.R.L. - DP RENT', ax, 20, { width:238 });
     font(false, 7, '#e6e6e6');
-    doc.text(`LOC ${AZIENDA.indirizzo || 'Via Tuderte 466, Narni (TR)'}`, ax, 39, { width:238 });
-    doc.text(`DOC P.IVA / CF ${AZIENDA.piva || ''}`, ax, 53, { width:238 });
-    doc.text(`TEL ${AZIENDA.telefono || ''}`, ax, 67, { width:238 });
-    doc.text(`MAIL ${AZIENDA.email || ''}`, ax, 81, { width:238 });
+    doc.text(`${AZIENDA.indirizzo || 'Via Tuderte 466, Narni (TR)'}`, ax, 39, { width:238 });
+    doc.text(`P.IVA / CF ${AZIENDA.piva || ''}`, ax, 53, { width:238 });
+    doc.text(`Tel. ${AZIENDA.telefono || ''}`, ax, 67, { width:238 });
+    doc.text(`${AZIENDA.email || ''}`, ax, 81, { width:238 });
     y = 138;
   }
   function sectionTitle() {
@@ -2030,18 +2030,19 @@ async function generaPdfContratto(id, opts = {}) {
   }
   function bottomLinksAndFooter() {
     const fy = H - 78;
-    doc.roundedRect(M, fy - 42, CW, 36, 6).fillAndStroke('#ffffff', LINE);
-    fitText('CONDIZIONI E PRIVACY', M + 14, fy - 33, 150, 10, 7.2, true, RED);
+    doc.roundedRect(M, fy - 46, CW, 40, 6).fillAndStroke('#ffffff', LINE);
+    fitText('CONDIZIONI E PRIVACY', M + 14, fy - 37, 160, 10, 7.2, true, RED);
     font(false, 7, TEXT);
-    doc.text('Il cliente dichiara di aver letto e accettato ', M + 14, fy - 19, { continued:true });
-    font(true, 7, RED);
-    doc.text('Condizioni di noleggio', { link: termsLink, underline: true, continued:true });
-    font(false, 7, TEXT);
-    doc.text(' e ', { continued:true });
-    font(true, 7, RED);
-    doc.text('Privacy GDPR', { link: privacyLink, underline: true, continued:false });
-    font(false, 6.4, MUTED);
-    doc.text(`Link: ${termsLink}  |  ${privacyLink}`, M + 14, fy - 8, { width: CW - 28, height: 8, ellipsis:true });
+    doc.text('Il cliente dichiara di aver letto e accettato i documenti collegati:', M + 14, fy - 23, { width: 300, height: 10 });
+    doc.roundedRect(M + 340, fy - 31, 92, 18, 6).fill(RED);
+    doc.roundedRect(M + 440, fy - 31, 74, 18, 6).fill(RED);
+    font(true, 6.7, '#ffffff');
+    doc.text('CONDIZIONI', M + 340, fy - 25, { width: 92, align:'center', link: termsLink });
+    doc.text('PRIVACY', M + 440, fy - 25, { width: 74, align:'center', link: privacyLink });
+    doc.link(M + 340, fy - 31, 92, 18, termsLink);
+    doc.link(M + 440, fy - 31, 74, 18, privacyLink);
+    font(false, 5.7, MUTED);
+    doc.text('Tocca i pulsanti rossi nel PDF per aprire condizioni e privacy.', M + 14, fy - 10, { width: CW - 28, height: 8, ellipsis:true });
 
     doc.rect(0, H - 32, W, 32).fill(BLACK);
     doc.polygon([W - 205, H - 32], [W, H - 32], [W, H], [W - 230, H]).fill(RED);
@@ -2109,7 +2110,7 @@ async function generaPdfContratto(id, opts = {}) {
   fitText('TOTALE FINALE', M + COL + GAP + 22, totalY + 7, 110, 11, 8.5, true, '#fff');
   fitText(euroTxt(totaleFinale), M + COL + GAP + 142, totalY + 4, COL - 164, 16, 15, true, '#fff', {align:'right'});
 
-  const bottomY = Math.min(y + 5, H - 205);
+  const bottomY = y + 8;
   box(M, bottomY, COL, 'CONDIZIONI', [
     ['Note', 'Il mezzo deve essere riconsegnato nelle stesse condizioni di partenza. Danni, ritardi, smarrimenti, franchigie, multe, pedaggi e costi accessori restano a carico del cliente.']
   ], RED);
@@ -5379,7 +5380,7 @@ app.get('/prenotazione/:id', async (req, res) => {
       ${p.nexi_link ? `<p><b>Link Nexi:</b> <a target="_blank" href="${esc(p.nexi_link)}">${esc(p.nexi_link)}</a></p>` : ''}
       <div class="actions">
         <a class="btn dp-primary" href="/contratto/${p.id}">👁 Vedi contratto</a>
-        <a class="btn dp-danger" href="/pdf/${p.id}" target="_blank">📄 PDF</a>
+        <a class="btn dp-danger" href="/pdf-view/${p.id}">📄 PDF</a>
         <a class="btn btn2" href="/firma/${p.id}">Firma</a>
         <a class="btn btn2" href="/email/${p.id}">Email</a>
         <a class="btn btn3" href="/documenti/${p.id}">Foto/documenti</a>
@@ -6174,10 +6175,10 @@ app.get('/pdf-view/:id', async (req, res) => {
     <div class="box dp-pdf-toolbar">
       <h2>📄 PDF ${esc(titolo)}</h2>
       <div class="actions contract-secondary-actions">
-        <a class="btn btn2" href="javascript:history.back()">⬅️ Indietro</a>
+        <a class="btn btn2" href="/contratto/${req.params.id}/gestisci">⬅️ Indietro</a>
         <a class="btn" href="/contratto/${req.params.id}/gestisci">⚙️ Gestisci contratto</a>
         <a class="btn dp-primary" href="/contratto/${req.params.id}">👁 Vedi contratto</a>
-        <a class="btn dp-danger" href="/pdf/${req.params.id}" target="_blank">⬇️ Apri/Scarica PDF</a>
+        <a class="btn dp-danger" href="/pdf/${req.params.id}?download=1">⬇️ Scarica PDF</a>
         <a class="btn btn2" href="/prenotazioni">📚 Storico</a>
         <a class="btn btn2" href="/">🏠 Dashboard</a>
       </div>
@@ -6199,7 +6200,7 @@ app.get('/pdf/:id', async (req, res) => {
     const file = await generaPdfContratto(req.params.id, { forceDrive: false, skipDrive: true });
     if (!file || !fs.existsSync(file)) throw new Error('PDF non generato');
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', 'inline; filename="contratto-dp-rent.pdf"');
+    res.setHeader('Content-Disposition', req.query.download ? 'attachment; filename="contratto-dp-rent.pdf"' : 'inline; filename="contratto-dp-rent.pdf"');
     return res.sendFile(path.resolve(file));
   } catch (e) {
     res.status(500).send(page('Errore PDF', `<div class="box"><h2 class="bad">Errore PDF</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/prenotazioni">Storico</a></div>`));
