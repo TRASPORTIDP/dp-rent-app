@@ -2028,28 +2028,29 @@ async function generaPdfContratto(id, opts = {}) {
     });
     return yy + h + 10;
   }
-  function bottomLinksAndFooter() {
-    const fy = H - 78;
-    doc.roundedRect(M, fy - 46, CW, 40, 6).fillAndStroke('#ffffff', LINE);
-    fitText('CONDIZIONI E PRIVACY', M + 14, fy - 37, 160, 10, 7.2, true, RED);
-    font(false, 7, TEXT);
-    doc.text('Il cliente dichiara di aver letto e accettato i documenti collegati:', M + 14, fy - 23, { width: 300, height: 10 });
-    doc.roundedRect(M + 340, fy - 31, 92, 18, 6).fill(RED);
-    doc.roundedRect(M + 440, fy - 31, 74, 18, 6).fill(RED);
-    font(true, 6.7, '#ffffff');
-    doc.text('CONDIZIONI', M + 340, fy - 25, { width: 92, align:'center', link: termsLink });
-    doc.text('PRIVACY', M + 440, fy - 25, { width: 74, align:'center', link: privacyLink });
-    doc.link(M + 340, fy - 31, 92, 18, termsLink);
-    doc.link(M + 440, fy - 31, 74, 18, privacyLink);
-    font(false, 5.7, MUTED);
-    doc.text('Tocca i pulsanti rossi nel PDF per aprire condizioni e privacy.', M + 14, fy - 10, { width: CW - 28, height: 8, ellipsis:true });
-
+  function drawFooter() {
     doc.rect(0, H - 32, W, 32).fill(BLACK);
     doc.polygon([W - 205, H - 32], [W, H - 32], [W, H], [W - 230, H]).fill(RED);
     fitText('www.trasportidp.it', M + 2, H - 20, 160, 9, 6.8, true, '#fff');
     fitText('GRAZIE PER AVER SCELTO DP RENT', W - 190, H - 20, 160, 9, 6.8, true, '#fff', {align:'center'});
     font(false, 5.8, '#777');
     doc.text(`Documento generato automaticamente - Contratto ${safe(p.codice || p.id)} - Pagina 1/1`, M, H - 48, { width:CW, align:'center' });
+  }
+
+  function drawCondizioniBox(x, yy, w) {
+    const h = 70;
+    doc.roundedRect(x, yy, w, h, 6).fillAndStroke('#ffffff', LINE);
+    doc.polygon([x, yy], [x + Math.min(170,w-25), yy], [x + Math.min(150,w-45), yy + 22], [x, yy + 22]).fill(RED);
+    fitText('CONDIZIONI', x + 10, yy + 7, 140, 10, 7, true, '#fff');
+    fitText('Note', x + 10, yy + 32, 56, 10, 6.2, true, BLACK);
+    fitText('Il mezzo deve essere riconsegnato nelle stesse condizioni. Danni, ritardi, smarrimenti, franchigie, multe, pedaggi e costi accessori restano a carico del cliente.', x + 72, yy + 31, w - 84, 22, 6.1, false, TEXT);
+    fitText('Link:', x + 10, yy + 55, 28, 9, 5.8, true, MUTED);
+    font(true, 6.2, RED);
+    doc.text('Condizioni di noleggio', x + 42, yy + 55, { width: 92, height: 9, link: termsLink, underline: true });
+    doc.text('Privacy GDPR', x + 144, yy + 55, { width: 72, height: 9, link: privacyLink, underline: true });
+    doc.link(x + 42, yy + 54, 92, 10, termsLink);
+    doc.link(x + 144, yy + 54, 72, 10, privacyLink);
+    return yy + h + 8;
   }
 
   const nomeCliente = safe(`${p.nome || ''} ${p.cognome || ''}`);
@@ -2110,20 +2111,20 @@ async function generaPdfContratto(id, opts = {}) {
   fitText('TOTALE FINALE', M + COL + GAP + 22, totalY + 7, 110, 11, 8.5, true, '#fff');
   fitText(euroTxt(totaleFinale), M + COL + GAP + 142, totalY + 4, COL - 164, 16, 15, true, '#fff', {align:'right'});
 
-  const bottomY = y + 8;
-  box(M, bottomY, COL, 'CONDIZIONI', [
-    ['Note', 'Il mezzo deve essere riconsegnato nelle stesse condizioni di partenza. Danni, ritardi, smarrimenti, franchigie, multe, pedaggi e costi accessori restano a carico del cliente.']
-  ], RED);
+  const reservedBottom = H - 92; // lascia spazio fisso per dicitura pagina + footer nero/rosso
+  const blockH = 72;
+  const bottomY = Math.min(y + 8, reservedBottom - blockH);
+  drawCondizioniBox(M, bottomY, COL);
   const fy = bottomY;
-  doc.roundedRect(M + COL + GAP, fy, COL, 72, 6).fillAndStroke('#ffffff', LINE);
+  doc.roundedRect(M + COL + GAP, fy, COL, blockH, 6).fillAndStroke('#ffffff', LINE);
   fitText('FIRME', M + COL + GAP + 12, fy + 14, 100, 10, 7.4, true, RED);
-  doc.moveTo(M + COL + GAP + 55, fy + 49).lineTo(M + COL + GAP + 178, fy + 49).strokeColor('#222').lineWidth(0.6).stroke();
-  doc.moveTo(M + COL + GAP + 210, fy + 49).lineTo(M + COL + GAP + COL - 20, fy + 49).strokeColor('#222').lineWidth(0.6).stroke();
-  fitText('Firma Cliente / Conducente', M + COL + GAP + 60, fy + 54, 110, 9, 5.5, false, BLACK, {align:'center'});
-  fitText('Firma DP RENT', M + COL + GAP + 220, fy + 54, 90, 9, 5.5, false, BLACK, {align:'center'});
-  if (p.firma_path && fs.existsSync(p.firma_path)) { try { doc.image(p.firma_path, M + COL + GAP + 58, fy + 28, { fit: [115, 20] }); } catch(e){} }
+  doc.moveTo(M + COL + GAP + 52, fy + 49).lineTo(M + COL + GAP + 176, fy + 49).strokeColor('#222').lineWidth(0.6).stroke();
+  doc.moveTo(M + COL + GAP + 205, fy + 49).lineTo(M + COL + GAP + COL - 22, fy + 49).strokeColor('#222').lineWidth(0.6).stroke();
+  fitText('Firma Cliente / Conducente', M + COL + GAP + 58, fy + 54, 112, 9, 5.5, false, BLACK, {align:'center'});
+  fitText('Firma DP RENT', M + COL + GAP + 214, fy + 54, 90, 9, 5.5, false, BLACK, {align:'center'});
+  if (p.firma_path && fs.existsSync(p.firma_path)) { try { doc.image(p.firma_path, M + COL + GAP + 56, fy + 27, { fit: [115, 20] }); } catch(e){} }
 
-  bottomLinksAndFooter();
+  drawFooter();
 
   doc.end();
   await new Promise((resolve, reject) => { stream.on('finish', resolve); stream.on('error', reject); });
@@ -6178,11 +6179,12 @@ app.get('/pdf-view/:id', async (req, res) => {
         <a class="btn btn2" href="/contratto/${req.params.id}/gestisci">⬅️ Indietro</a>
         <a class="btn" href="/contratto/${req.params.id}/gestisci">⚙️ Gestisci contratto</a>
         <a class="btn dp-primary" href="/contratto/${req.params.id}">👁 Vedi contratto</a>
-        <a class="btn dp-danger" href="/pdf/${req.params.id}?download=1">⬇️ Scarica PDF</a>
+        <a class="btn dp-danger" href="/pdf/${req.params.id}?download=1" target="dp_pdf_download_frame" download>⬇️ Scarica PDF</a>
         <a class="btn btn2" href="/prenotazioni">📚 Storico</a>
         <a class="btn btn2" href="/">🏠 Dashboard</a>
       </div>
     </div>
+    <iframe name="dp_pdf_download_frame" style="display:none;width:0;height:0;border:0"></iframe>
     <div class="box dp-pdf-framebox">
       <iframe class="dp-pdf-frame" src="/pdf/${req.params.id}#toolbar=1&navpanes=0"></iframe>
     </div>
@@ -10153,15 +10155,3 @@ v176UpdateOrCreatePdfDrive = async function v178UpdateOrCreatePdfDriveNoDuplicat
       const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false, skipDrive:true });
       await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
       console.log('V178 Drive update non riuscito: mantengo PDF Drive esistente, NO duplicato:', e.message);
-      return { ok:false, pdf, keptExisting:true, error:e.message };
-    }
-    throw e;
-  }
-};
-
-syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId){
-  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
-  catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
-};
-
-console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
