@@ -1455,11 +1455,20 @@ function v180CheckinKmCalc(p, kmRientro){
   const supplemento = imponibile + iva;
   return { kmOut, kmIn, kmPercorsi, giorni, kmGiorno, inclusi, extraKm, imponibile, iva, supplemento };
 }
-function v180Money(n){ return (Number(n||0)).toFixed(2); }
-// V188: totale finale corretto. Se c'e tariffa manuale, il manuale e gia IVA inclusa.
-// Totale finale = totale noleggio IVA inclusa + extra rientro IVA inclusa.
+function dpMoneyNum(v){
+  if (v === null || v === undefined || v === '') return 0;
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  let t = String(v).trim().replace(/€/g,'').replace(/\s+/g,'');
+  if (t.includes(',') && t.includes('.')) t = t.replace(/\./g,'').replace(',', '.');
+  else if (t.includes(',')) t = t.replace(',', '.');
+  const n = Number(t);
+  return Number.isFinite(n) ? n : 0;
+}
+function v180Money(n){ return dpMoneyNum(n).toFixed(2); }
+// V190 PRO: totale finale corretto anche con valori stringa/virgola.
+// Totale finale = totale noleggio IVA inclusa + supplemento km rientro IVA inclusa. Cauzione separata.
 function v188TotaleFinale(baseTotaleIvato, supplementoRientroIvato){
-  return Number(baseTotaleIvato || 0) + Number(supplementoRientroIvato || 0);
+  return dpMoneyNum(baseTotaleIvato) + dpMoneyNum(supplementoRientroIvato);
 }
 function v180StatoMezzoOff(m){
   const st = String(m.stato_operativo || m.stato || '').toLowerCase();
@@ -1897,251 +1906,272 @@ async function generaPdfContratto(id, opts = {}) {
   const W = doc.page.width;
   const H = doc.page.height;
   const M = 28;
-  const CW = W - (M * 2);
-  const GAP = 12;
-  const RED = '#d90000';
-  const RED_DARK = '#aa0000';
-  const BLACK = '#090909';
-  const DARK = '#151515';
-  const TEXT = '#111827';
-  const MUTED = '#5f6673';
-  const LIGHT = '#f6f7fb';
-  const LINE = '#d8dde7';
-  const WHITE = '#ffffff';
+  const CONTENT_W = W - M * 2;
+  const GAP = 10;
+  const COL_W = (CONTENT_W - GAP) / 2;
+  const RED = '#e00000';
+  const RED_DARK = '#b70000';
+  const BLACK = '#050505';
+  const DARK = '#101010';
+  const LIGHT = '#fafbfe';
+  const LINE = '#d9dde7';
+  const TEXT = '#111522';
+  const MUTED = '#5d6572';
   let y = 0;
 
-  const euroTxt = (v) => `€ ${euro(Number(v || 0))}`;
-  const clean = (v) => String(v || '').replace(/\s+/g, ' ').trim();
-  const safe = (v, fallback = '/') => {
-    const t = clean(v);
-    return t || fallback;
-  };
-  const short = (v, max = 42) => {
-    const t = safe(v, '');
-    return t.length > max ? t.slice(0, max - 1) + '…' : t;
-  };
-  const font = (bold = false, size = 8, color = TEXT) => {
-    doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size).fillColor(color);
-  };
-  const line = (x1, y1, x2, y2, color = LINE, width = 0.6) => {
-    doc.save().strokeColor(color).lineWidth(width).moveTo(x1, y1).lineTo(x2, y2).stroke().restore();
-  };
-  const fillRound = (x, yy, w, h, r, fill, stroke = null) => {
+  function clean(v) { return String(v ?? '').replace(/\s+/g, ' ').trim(); }
+  function safe(v, fallback = '/') { const t = clean(v); return t || fallback; }
+  function money(v) { return dpMoneyNum(v).toFixed(2).replace('.', ','); }
+  function euroTxt(v) { return `€ ${money(v)}`; }
+  function font(bold = false, size = 9, color = TEXT) { doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size).fillColor(color); }
+  function dt(d, o) { return `${safe(d, '')}${o ? ' - ' + safe(o, '') : ''}`.trim() || '/'; }
+  function drawIcon(txt, x, yy, color = RED) { font(false, 9, color); doc.text(txt, x, yy - 1, { width: 12, align: 'center' }); }
+  function trunc(txt, max=80) { txt = safe(txt); return txt.length > max ? txt.slice(0, max-1) + '...' : txt; }
+  function ensure(h) {
+    if (y + h <= H - 35) return;
+    doc.addPage({ margin: 0, size: 'A4' });
+    miniHeader();
+    y = 58;
+  }
+  function miniHeader() {
+    doc.rect(0, 0, W, 38).fill(BLACK);
+    doc.rect(0, 38, W, 4).fill(RED);
+    font(true, 8, '#fff'); doc.text(`DP RENT | Contratto ${safe(p.codice || p.id)}`, M, 14, { width: CONTENT_W });
+  }
+  function slantedTab(x, yy, w, title, color = RED, icon = '') {
     doc.save();
-    if (stroke) doc.roundedRect(x, yy, w, h, r).fillAndStroke(fill, stroke);
-    else doc.roundedRect(x, yy, w, h, r).fill(fill);
+    doc.polygon([x, yy], [x + w - 18, yy], [x + w - 33, yy + 20], [x, yy + 20]).fill(color);
     doc.restore();
-  };
-  const logoPath = fs.existsSync(path.join(publicDir, 'logo-dp-rent-premium.jpg'))
-    ? path.join(publicDir, 'logo-dp-rent-premium.jpg')
-    : (fs.existsSync(path.join(publicDir, 'logo.png')) ? path.join(publicDir, 'logo.png') : '');
+    font(true, 7.5, '#fff');
+    const tx = icon ? x + 25 : x + 11;
+    if (icon) { font(false, 9, '#fff'); doc.text(icon, x + 8, yy + 5, { width: 13 }); font(true, 7.5, '#fff'); }
+    doc.text(title, tx, yy + 6.5, { width: w - 42, height: 9, ellipsis: true });
+  }
+  function rowHeight(value, w, labelW = 92) {
+    doc.font('Helvetica').fontSize(7.2);
+    const hh = doc.heightOfString(safe(value), { width: w - labelW - 21, lineGap: 0 });
+    return Math.max(13, Math.min(25, Math.ceil(hh) + 3));
+  }
+  function boxHeight(rows, w, compact = false) {
+    let h = 27;
+    for (const r of rows) h += compact ? 12 : rowHeight(r[1], w, r[3] || 92);
+    return h + 7;
+  }
+  function dataBox(title, rows, x, yy, w, accent = RED, icon = '', opts = {}) {
+    const compact = !!opts.compact;
+    const h = Math.max(opts.minH || 0, boxHeight(rows, w, compact));
+    const oldY = y; y = yy; ensure(h + 8); yy = y;
+    doc.roundedRect(x, yy, w, h, 7).fillAndStroke('#ffffff', LINE);
+    slantedTab(x, yy, Math.min(w * 0.72, 210), title, accent, icon);
+    let cy = yy + 30;
+    rows.forEach(([label, value, rowIcon, labelW], idx) => {
+      const lw = labelW || 92;
+      const rh = compact ? 12 : rowHeight(value, w, lw);
+      if (idx > 0) doc.moveTo(x + 11, cy - 3).lineTo(x + w - 11, cy - 3).strokeColor('#edf0f4').lineWidth(0.55).stroke();
+      if (rowIcon) drawIcon(rowIcon, x + 8, cy, MUTED);
+      font(true, 6.4, TEXT); doc.text(safe(label, ''), x + (rowIcon ? 24 : 11), cy, { width: lw - (rowIcon ? 14 : 0), height: rh, ellipsis: true });
+      font(false, 7.15, TEXT); doc.text(trunc(value, 95), x + lw + 12, cy, { width: w - lw - 24, height: rh, lineGap: 0, ellipsis: true });
+      cy += rh;
+    });
+    y = Math.max(oldY, yy + h + 8);
+    return yy + h + 8;
+  }
+  function lineCard(x, yy, w, items) {
+    const h = 55; ensure(h + 8);
+    doc.roundedRect(x, yy, w, h, 8).fillAndStroke('#ffffff', LINE);
+    const part = w / items.length;
+    items.forEach((it, i) => {
+      const xx = x + i * part;
+      if (i > 0) doc.moveTo(xx, yy + 12).lineTo(xx, yy + h - 12).strokeColor('#e7e9ef').lineWidth(0.8).stroke();
+      if (it.icon) drawIcon(it.icon, xx + 12, yy + 17, it.color || RED);
+      font(true, 6.4, MUTED); doc.text(it.label, xx + 30, yy + 14, { width: part - 38, height: 8, ellipsis: true });
+      font(true, it.big ? 10.5 : 7.1, it.color || TEXT); doc.text(safe(it.value), xx + 30, yy + 27, { width: part - 38, height: 17, ellipsis: true });
+    });
+    y = yy + h + 8;
+  }
+  function totalBanner(x, yy, w, total) {
+    doc.roundedRect(x, yy, w, 28, 6).fill(RED);
+    font(true, 8.5, '#fff'); doc.text('TOTALE FINALE', x + 12, yy + 9, { width: w / 2 });
+    font(true, 16, '#fff'); doc.text(euroTxt(total), x + w / 2 - 4, yy + 5, { width: w / 2 - 8, align: 'right' });
+  }
+  function header() {
+    doc.rect(0, 0, W, 116).fill(BLACK);
+    // puntinato a destra stile premium
+    doc.save(); doc.fillColor('#171717');
+    for (let ix = 395; ix < W - 20; ix += 9) for (let iy = 14; iy < 92; iy += 9) doc.circle(ix, iy, 0.7).fill();
+    doc.restore();
+    doc.rect(0, 113, W, 4).fill(RED);
+    try {
+      const logoPremium = path.join(publicDir, 'logo-dp-rent-premium.jpg');
+      const logoBase = path.join(publicDir, 'logo.png');
+      const lp = fs.existsSync(logoPremium) ? logoPremium : logoBase;
+      if (fs.existsSync(lp)) doc.image(lp, M, 18, { fit: [110, 72] });
+    } catch(e) {}
+    font(true, 11.5, '#fff'); doc.text('NOLEGGIO VEICOLI\nFURGONI E AUTO', M + 120, 32, { width: 190, lineGap: 2 });
+    font(false, 6.8, '#e7e7e7'); doc.text('Soluzioni di mobilità, sempre al tuo fianco.', M + 120, 71, { width: 210 });
+    doc.rect(M + 110, 27, 2, 52).fill(RED);
+    const ax = W - M - 190;
+    font(true, 11, '#fff'); doc.text(AZIENDA.nome || 'Trasporti DP S.R.L.', ax, 20, { width: 190 });
+    font(false, 7.0, '#eeeeee');
+    doc.text(`LOC ${AZIENDA.indirizzo || 'Via Tuderte 466, Narni (TR)'}`, ax, 38, { width: 190 });
+    doc.text(`DOC P.IVA / CF ${AZIENDA.piva || ''}`, ax, 53, { width: 190 });
+    doc.text(`TEL Tel. ${AZIENDA.telefono || ''}`, ax, 68, { width: 190 });
+    doc.text(`MAIL ${AZIENDA.email || ''}`, ax, 83, { width: 190 });
+    y = 138;
+  }
+  function titleArea() {
+    font(true, 24, BLACK); doc.text('CONTRATTO DI ', M, y, { continued: true });
+    font(true, 24, RED); doc.text('NOLEGGIO');
+    const midY = y + 42;
+    doc.moveTo(M, midY).lineTo(M + 170, midY).strokeColor('#242424').lineWidth(0.8).stroke();
+    doc.circle(M + 203, midY, 13).fill(RED); font(true, 9, '#fff'); doc.text('CAR', M + 195, midY - 6, { width: 16, align: 'center' });
+    doc.moveTo(M + 236, midY).lineTo(M + 380, midY).strokeColor('#242424').lineWidth(0.8).stroke();
+    doc.roundedRect(W - M - 156, y - 4, 156, 60, 7).fillAndStroke('#ffffff', LINE);
+    drawIcon('DOC', W - M - 141, y + 16, RED);
+    font(true, 5.8, RED); doc.text('TIPO DOCUMENTO', W - M - 118, y + 11, { width: 120 });
+    font(true, 8.5, RED_DARK); doc.text('CONTRATTO', W - M - 118, y + 22, { width: 120 });
+    font(true, 5.8, MUTED); doc.text('DATA EMISSIONE', W - M - 118, y + 38, { width: 120 });
+    font(true, 7.5, BLACK); doc.text(dt(p.data_creazione || p.created_at || p.data_stipula, p.ora_creazione), W - M - 118, y + 49, { width: 120, ellipsis: true });
+    y += 76;
+  }
+  function footer() {
+    doc.rect(0, H - 31, W, 31).fill(BLACK);
+    doc.polygon([W - 205, H - 31], [W, H - 31], [W, H], [W - 225, H]).fill(RED);
+    font(true, 6.5, '#fff'); doc.text(AZIENDA.sito || 'www.trasportidp.it', M, H - 20, { width: 160 });
+    font(true, 7, '#fff'); doc.text('GRAZIE PER AVER SCELTO DP RENT', W - 210, H - 20, { width: 190, align: 'center' });
+  }
 
-  const tipoFatt = safe(p.tipo_cliente || p.fatturazione || 'Privato', 'Privato');
-  const isAzienda = tipoFatt.toLowerCase().includes('azienda');
   const nomeCliente = safe(`${p.nome || ''} ${p.cognome || ''}`);
   const indirizzoPrivato = safe(`${p.indirizzo || ''} ${p.cap || ''} ${p.citta || ''} ${p.provincia || ''}`);
-  const indirizzoFatt = safe(`${p.fatt_indirizzo || p.indirizzo_fatturazione || p.azienda_indirizzo || ''} ${p.fatt_cap || p.cap_fatturazione || p.azienda_cap || ''} ${p.fatt_citta || p.citta_fatturazione || p.azienda_citta || ''} ${p.fatt_provincia || p.provincia_fatturazione || p.azienda_provincia || ''}`);
-  const pecSdi = safe(`${p.pec || ''}${p.pec && p.sdi ? ' | ' : ''}${p.sdi || ''}`);
+  const tipoFatt = safe(p.tipo_cliente || p.fatturazione || 'Privato', 'Privato');
+  const isAzienda = tipoFatt.toLowerCase().includes('azienda');
   const docNum = safe(p.documento_numero || p.doc_numero || p.c_documento_numero || '');
   const docScad = safe(p.documento_scadenza || p.c_documento_scadenza || '');
   const patNum = safe(p.patente1 || p.patente_numero || p.c_patente_numero || '');
   const patScad = safe(p.patente1_scadenza || p.patente_scadenza || p.c_patente_scadenza || '');
   const catPat = safe(p.categoria_patente || p.c_categoria_patente || '');
-  const giorni = Math.max(1, Number(p.giorni || (p.data_inizio && p.data_fine ? moment(p.data_fine).diff(moment(p.data_inizio), 'days') + 1 : 1) || 1));
-  const kmGiorno = Number(p.km_inclusi || kmCategoria(p.categoria || p.tipo) || 150);
+  const dataIn = p.data_inizio || p.check_out_data || p.data_checkout || '';
+  const dataFi = p.data_fine || p.check_in_data || p.data_checkin || '';
+  const oraIn = p.ora_inizio || p.check_out_ora || '08:30';
+  const oraFi = p.ora_fine || p.check_in_ora || '18:00';
+  const giorni = Math.max(1, Number(p.giorni || (dataIn && dataFi ? moment(dataFi).diff(moment(dataIn), 'days') + 1 : 1) || 1));
+  const kmGiorno = Number(p.km_inclusi || p.km_inclusi_giorno || kmCategoria(p.categoria || p.tipo) || 150);
   const kmInclusiTot = giorni * kmGiorno;
-  const manualActive = String(p.prezzo_manual_enabled || '').toLowerCase() === 'si' || Number(p.prezzo_manual_totale || 0) > 0;
-  const baseIvato = manualActive ? Number(p.prezzo_manual_totale || p.totale || 0) : Number(p.totale || 0);
-  const extraRientroIvato = Number(p.supplemento_km_rientro || 0);
-  const totaleFinale = v188TotaleFinale(baseIvato, extraRientroIvato);
-  const imponibileBase = baseIvato / (1 + Number(IVA || 0.22));
-  const ivaBase = baseIvato - imponibileBase;
-  const extraOrario = Number(p.extra_fuori_orario || 0);
-  const extraKmPrev = Number(p.extra_km || 0);
-  const kmOut = Number(p.km_uscita || 0);
-  const kmIn = Number(p.km_rientro || p.km_checkin || 0);
-  const kmPercorsi = (kmOut > 0 && kmIn >= kmOut) ? (kmIn - kmOut) : Number(p.km_percorsi || 0);
-  const kmExtraRientro = Number(p.km_extra_rientro || Math.max(0, kmPercorsi - kmInclusiTot) || 0);
-  const stato = safe(p.stato || 'CONTRATTO').toUpperCase();
+  const kmPreventivo = dpMoneyNum(p.km_previsti || p.km_preventivo || p.km_totali_previsti || 0);
+  const kmPercorsi = (dpMoneyNum(p.km_rientro) > 0 && dpMoneyNum(p.km_uscita) > 0) ? Math.max(0, dpMoneyNum(p.km_rientro) - dpMoneyNum(p.km_uscita)) : 0;
+  const kmExtraRientro = Math.max(0, Number(p.km_extra_rientro || 0));
+  const extraRientroIvato = dpMoneyNum(p.supplemento_km_rientro || 0);
+  const baseTotale = dpMoneyNum(p.totale || 0);
+  const totaleFinale = p.totale_finale ? dpMoneyNum(p.totale_finale) : v188TotaleFinale(baseTotale, extraRientroIvato);
+  const tariffaManualeAttiva = String(p.prezzo_manual_enabled || '').toLowerCase() === 'si' || dpMoneyNum(p.prezzo_manual_totale) > 0;
+  const imponibile = dpMoneyNum(p.imponibile || (baseTotale ? baseTotale / 1.22 : 0));
+  const iva = dpMoneyNum(p.iva || (baseTotale - imponibile));
+  const indirizzoAz = safe(`${p.fatt_indirizzo || p.indirizzo_fatturazione || p.azienda_indirizzo || ''} ${p.fatt_cap || p.cap_fatturazione || p.azienda_cap || ''} ${p.fatt_citta || p.citta_fatturazione || p.azienda_citta || ''} ${p.fatt_provincia || p.provincia_fatturazione || p.azienda_provincia || ''}`);
+  const pecSdi = safe(`${p.pec || ''}${p.pec && p.sdi ? ' | ' : ''}${p.sdi || ''}`);
 
-  // HEADER PREMIUM
-  doc.rect(0, 0, W, 116).fill(BLACK);
-  doc.save().fillColor('#171717');
-  for (let i = 0; i < 19; i++) {
-    for (let j = 0; j < 7; j++) doc.circle(W - 145 + i * 7, 14 + j * 9, 0.75).fill();
-  }
-  doc.restore();
-  if (logoPath) {
-    try { doc.image(logoPath, M, 18, { fit: [88, 72] }); } catch(e) {}
-  }
-  line(M + 110, 25, M + 110, 91, RED, 1.5);
-  font(true, 13, WHITE); doc.text('NOLEGGIO VEICOLI', M + 124, 31, { width: 190 });
-  font(true, 13, WHITE); doc.text('FURGONI E AUTO', M + 124, 48, { width: 190 });
-  font(false, 7.5, '#d7d7d7'); doc.text('Soluzioni di mobilita, sempre al tuo fianco.', M + 124, 71, { width: 220 });
-  font(true, 13, WHITE); doc.text('Trasporti DP S.R.L.', W - 190, 18, { width: 162, align: 'left' });
-  font(false, 8, WHITE);
-  doc.text('Via Tuderte 466, Narni (TR)', W - 190, 40, { width: 162 });
-  doc.text('P.IVA / CF 01385450554', W - 190, 55, { width: 162 });
-  doc.text('Tel. 0744817108', W - 190, 70, { width: 162 });
-  doc.text('contabilita@trasportidp.com', W - 190, 85, { width: 162 });
-  doc.rect(0, 113, W, 4).fill(RED);
+  header();
+  titleArea();
 
-  // TITOLO
-  y = 145;
-  font(true, 26, BLACK); doc.text('CONTRATTO DI', M, y, { continued: true });
-  font(true, 26, RED); doc.text(' NOLEGGIO');
-  line(M, y + 45, M + 162, y + 45, BLACK, 0.8);
-  fillRound(M + 178, y + 31, 28, 28, 14, RED);
-  font(true, 13, WHITE); doc.text('DP', M + 183, y + 39, { width: 20, align: 'center' });
-  line(M + 222, y + 45, M + 365, y + 45, BLACK, 0.8);
-  fillRound(W - M - 152, y - 5, 152, 66, 6, WHITE, '#cfd5df');
-  font(true, 6.8, RED); doc.text('TIPO DOCUMENTO', W - M - 128, y + 8, { width: 110 });
-  font(true, 9.5, TEXT); doc.text('CONTRATTO', W - M - 128, y + 21, { width: 110 });
-  font(true, 6.8, MUTED); doc.text('DATA EMISSIONE', W - M - 128, y + 39, { width: 110 });
-  font(true, 8.3, TEXT); doc.text(moment().format('DD/MM/YYYY - HH:mm'), W - M - 128, y + 51, { width: 120 });
-  y += 78;
-
-  // Numero contratto
-  fillRound(M, y, CW, 45, 6, '#fffdfd', '#e5a6a6');
-  font(true, 8.8, RED); doc.text('NUMERO CONTRATTO', M + 14, y + 9, { width: 220 });
-  font(true, 18, BLACK); doc.text(safe(p.codice || p.id), M + 14, y + 23, { width: 350 });
-  font(true, 7, '#ffffff'); fillRound(W - M - 106, y + 13, 92, 19, 9, stato.includes('FIRM') ? '#14883f' : RED_DARK);
-  doc.text(short(stato, 18), W - M - 101, y + 18, { width: 82, align: 'center' });
+  doc.roundedRect(M, y, CONTENT_W, 45, 7).fillAndStroke('#fffafa', '#efbfc1');
+  font(true, 6.4, RED); doc.text('NUMERO CONTRATTO', M + 14, y + 11, { width: 150 });
+  font(true, 15, BLACK); doc.text(safe(p.codice || p.id), M + 14, y + 23, { width: 270 });
+  doc.roundedRect(W - M - 108, y + 15, 94, 18, 9).fill(RED_DARK);
+  font(true, 6, '#fff'); doc.text(safe(p.stato || 'CONTRATTO').toUpperCase(), W - M - 102, y + 21, { width: 82, align: 'center' });
   y += 55;
 
-  function sectionHeader(x, yy, w, title, accent = BLACK) {
-    doc.save();
-    doc.moveTo(x, yy).lineTo(x + w, yy).lineTo(x + w - 22, yy + 20).lineTo(x, yy + 20).closePath().fill(accent);
-    doc.restore();
-    font(true, 8.5, WHITE); doc.text(title, x + 11, yy + 6, { width: w - 28, height: 10, ellipsis: true });
-  }
-  function kvRows(rows, x, yy, w, opts = {}) {
-    const labelW = opts.labelW || 82;
-    const rh = opts.rh || 14.5;
-    let cy = yy;
-    for (const [lab, val, boldVal] of rows) {
-      font(true, 7.2, TEXT); doc.text(safe(lab, ''), x, cy + 1, { width: labelW, height: rh, ellipsis: true });
-      font(!!boldVal, 7.4, TEXT); doc.text(safe(val), x + labelW + 4, cy + 1, { width: w - labelW - 4, height: rh, ellipsis: true });
-      line(x, cy + rh - 1, x + w, cy + rh - 1, '#eceff5', 0.45);
-      cy += rh;
-    }
-    return cy;
-  }
-  function card(x, yy, w, h, title, rows, accent = BLACK, opts = {}) {
-    fillRound(x, yy, w, h, 6, WHITE, LINE);
-    sectionHeader(x, yy, Math.min(w * 0.63, opts.headerW || w), title, accent);
-    kvRows(rows, x + 12, yy + 32, w - 24, opts);
-  }
+  slantedTab(M, y, 190, 'DATI CONTRATTO', BLACK, 'DOC');
+  lineCard(M, y, CONTENT_W, [
+    { icon:'DOC', label:'DATA CREAZIONE', value: dt(p.data_creazione || p.created_at || p.data_stipula, p.ora_creazione) },
+    { icon:'OR', label:'PERIODO NOLEGGIO', value: `${dt(dataIn, oraIn)}  >  ${dt(dataFi, oraFi)}` },
+    { icon:'€', label:'TOTALE', value: euroTxt(totaleFinale), color: RED, big: true },
+    { icon:'DEP', label:'CAUZIONE', value: euroTxt(p.cauzione || CAUZIONE), big: false }
+  ]);
 
-  // DATI CONTRATTO
-  fillRound(M, y, CW, 70, 6, WHITE, LINE);
-  sectionHeader(M, y, 158, 'DATI CONTRATTO', BLACK);
-  const dataCreazione = safe(p.created_at || moment().format('YYYY-MM-DD HH:mm:ss'), '');
-  const periodo = `${safe(p.data_inizio, '')} ${safe(p.ora_inizio, '')}  >  ${safe(p.data_fine, '')} ${safe(p.ora_fine, '')}`;
-  const boxW = (CW - 28) / 4;
-  const bx = [M + 12, M + 12 + boxW, M + 12 + boxW * 2, M + 12 + boxW * 3];
-  const labels = [ ['DATA CREAZIONE', dataCreazione], ['PERIODO NOLEGGIO', periodo], ['TOTALE', euroTxt(totaleFinale)], ['CAUZIONE', euroTxt(p.cauzione || CAUZIONE)] ];
-  for (let i = 0; i < 4; i++) {
-    if (i > 0) line(bx[i] - 7, y + 28, bx[i] - 7, y + 58, '#e2e6ef', 0.7);
-    font(true, 7.1, MUTED); doc.text(labels[i][0], bx[i], y + 30, { width: boxW - 12 });
-    font(true, i === 2 ? 12 : 8.6, i === 2 ? RED : BLACK); doc.text(labels[i][1], bx[i], y + 44, { width: boxW - 12, height: 18, ellipsis: true });
-  }
-  y += 82;
+  const yClienti = y;
+  const left1 = dataBox('ANAGRAFICA CLIENTE', [
+    ['Cliente', nomeCliente, 'CLI'],
+    ['Telefono', p.telefono || '', 'TEL'],
+    ['Email', p.email || '', 'MAIL'],
+    ['Codice fiscale', p.codice_fiscale || p.cf || '', 'DOC'],
+    ['Indirizzo', indirizzoPrivato, 'LOC']
+  ], M, yClienti, COL_W, RED, 'CLI', { compact: true, minH: 95 });
+  const right1 = dataBox('CONDUCENTI', [
+    ['Conducente 1', p.conducente1 || nomeCliente, '', 95],
+    ['Documento', `${docNum}${docScad !== '/' ? ' scad. ' + docScad : ''}`, '', 95],
+    ['Patente 1', `${patNum}${patScad !== '/' ? ' scad. ' + patScad : ''}`, '', 95],
+    ['Categoria', catPat, '', 95],
+    ['Conducente 2', p.conducente2 || `${safe(p.conducente2_nome,'')} ${safe(p.conducente2_cognome,'')}`.trim(), '', 95],
+    ['Patente 2', `${safe(p.conducente2_patente_numero || p.conducente2_patente || p.patente2, '')}${(p.conducente2_patente_scadenza || p.patente2_scadenza) ? ' scad. ' + (p.conducente2_patente_scadenza || p.patente2_scadenza) : ''}`, '', 95]
+  ], M + COL_W + GAP, yClienti, COL_W, RED, '2P', { compact: true, minH: 95 });
+  y = Math.max(left1, right1);
 
-  // ANAGRAFICA / CONDUCENTI
-  const half = (CW - GAP) / 2;
-  card(M, y, half, 140, 'ANAGRAFICA CLIENTE', [
-    ['Cliente', nomeCliente, true],
-    ['Telefono', p.telefono || ''],
-    ['Email', p.email || ''],
-    ['Codice fiscale', p.codice_fiscale || p.cf || ''],
-    ['Indirizzo', indirizzoPrivato]
-  ], RED, { labelW: 96, rh: 17 });
-  card(M + half + GAP, y, half, 140, 'CONDUCENTI', [
-    ['Conducente 1', p.conducente1 || nomeCliente, true],
-    ['Documento', `${docNum}${docScad !== '/' ? ' scad. ' + docScad : ''}`],
-    ['Patente 1', `${patNum}${patScad !== '/' ? ' scad. ' + patScad : ''}`],
-    ['Categoria', catPat],
-    ['Conducente 2', p.conducente2 || `${safe(p.conducente2_nome,'')} ${safe(p.conducente2_cognome,'')}`.trim()],
-    ['Documento 2', `${safe(p.conducente2_doc_numero, '')}${p.conducente2_doc_scadenza ? ' scad. ' + p.conducente2_doc_scadenza : ''}`],
-    ['Patente 2', `${safe(p.conducente2_patente_numero || p.conducente2_patente || p.patente2, '')}${(p.conducente2_patente_scadenza || p.patente2_scadenza) ? ' scad. ' + (p.conducente2_patente_scadenza || p.patente2_scadenza) : ''}`]
-  ], RED, { labelW: 92, rh: 14.6 });
-  y += 152;
-
-  // FATTURAZIONE
   const fattRows = isAzienda ? [
-    ['Tipo', 'Azienda', true],
+    ['Tipo', 'Azienda'],
     ['Ragione sociale', p.ragione_sociale || p.azienda || ''],
     ['P.IVA', p.piva || ''],
-    ['Indirizzo fatt.', indirizzoFatt],
+    ['Indirizzo fatt.', indirizzoAz],
     ['PEC / SDI', pecSdi]
   ] : [
-    ['Tipo', 'Privato', true],
+    ['Tipo', 'Privato'],
     ['Codice fiscale', p.codice_fiscale || p.cf || ''],
     ['Indirizzo', indirizzoPrivato]
   ];
-  card(M, y, CW, 74, isAzienda ? 'FATTURAZIONE AZIENDA' : 'FATTURAZIONE PRIVATO', fattRows, BLACK, { labelW: 115, rh: 12.5, headerW: 190 });
-  y += 86;
+  dataBox(isAzienda ? 'FATTURAZIONE AZIENDA' : 'FATTURAZIONE PRIVATO', fattRows, M, y, CONTENT_W, BLACK, 'FAT', { compact: true, minH: isAzienda ? 78 : 64 });
 
-  // VEICOLO + ECONOMICO
+  const yBottom = y;
+  const left2 = dataBox('VEICOLO E NOLEGGIO', [
+    ['Targa', p.targa || '', 'CAR'],
+    ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`), 'CAR'],
+    ['Categoria', p.categoria || '', '-'],
+    ['Giorni', String(giorni), '-'],
+    ['Km incl./prev.', `${kmInclusiTot}${kmPreventivo ? ' / ' + kmPreventivo : ''}`, 'KM'],
+    ['Km uscita/rientro', `${safe(p.km_uscita,'')} / ${safe(p.km_rientro,'')}`, 'KM'],
+    ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/', 'KM'],
+    ['Orari check', `OUT ${safe(oraIn)} / IN ${safe(oraFi)}`, 'OR']
+  ], M, yBottom, COL_W, BLACK, 'CAR', { compact: true, minH: 130 });
+
   const econRows = [];
-  econRows.push(['Extra orario', `${euroTxt(extraOrario)} + IVA`]);
-  econRows.push(['Extra km preventivo', `${euroTxt(extraKmPrev)} + IVA`]);
-  econRows.push(['Extra km rientro', kmExtraRientro > 0 ? `${kmExtraRientro} km / ${euroTxt(extraRientroIvato)} IVA incl.` : '-']);
-  econRows.push(['Imponibile', euroTxt(imponibileBase)]);
-  econRows.push(['IVA 22%', euroTxt(ivaBase)]);
-  if (manualActive) econRows.push(['Tariffa manuale', `${euroTxt(baseIvato)} IVA incl.`, true]);
-  else econRows.push(['Noleggio automatico', `${euroTxt(baseIvato)} IVA incl.`, true]);
-  econRows.push(['Cauzione separata', `${euroTxt(p.cauzione || CAUZIONE)} fuori totale`]);
-
-  card(M, y, half, 152, 'VEICOLO E NOLEGGIO', [
-    ['Targa', p.targa || '', true],
-    ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`)],
-    ['Categoria', p.categoria || ''],
-    ['Giorni', String(giorni)],
-    ['Km incl./prev.', `${kmInclusiTot} / ${safe(p.km_previsti, '0')}`],
-    ['Km uscita/rientro', `${safe(p.km_uscita, '')} / ${safe(p.km_rientro, '')}`],
-    ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/'],
-    ['Orari check', `OUT ${safe(p.check_out_orario || p.ora_inizio, '')} / IN ${safe(p.check_in_orario || p.ora_fine, '')}`]
-  ], BLACK, { labelW: 96, rh: 14.3 });
-  card(M + half + GAP, y, half, 152, 'RIEPILOGO ECONOMICO', econRows, RED, { labelW: 116, rh: 13.5 });
-  fillRound(M + half + GAP + 12, y + 117, half - 24, 25, 5, RED);
-  font(true, 10, WHITE); doc.text('TOTALE FINALE', M + half + GAP + 24, y + 124, { width: 130 });
-  font(true, 16, WHITE); doc.text(euroTxt(totaleFinale), M + half + GAP + 145, y + 121, { width: half - 170, align: 'right' });
-  y += 164;
-
-  // CONDIZIONI + FIRME
-  fillRound(M, y, CW, 74, 6, WHITE, LINE);
-  font(true, 8.5, RED); doc.text('CONDIZIONI PRINCIPALI', M + 40, y + 14, { width: 170 });
-  font(false, 7.5, TEXT);
-  doc.text('Il mezzo deve essere riconsegnato nelle stesse condizioni di partenza e con carburante equivalente. Eventuali danni, multe, pedaggi, franchigie, ritardi, smarrimenti, lavaggi straordinari e costi accessori restano a carico del cliente. Privacy e condizioni complete disponibili in allegato o su richiesta.', M + 40, y + 30, { width: 250, height: 34, lineGap: 1 });
-  line(M + 310, y + 12, M + 310, y + 62, '#e2e6ef', 0.8);
-  font(true, 8.5, RED); doc.text('FIRME', M + 330, y + 14, { width: 160 });
-  font(false, 7.2, TEXT); doc.text('Firma Cliente / Conducente', M + 335, y + 54, { width: 145, align: 'center' });
-  doc.text('Firma DP RENT', M + 465, y + 54, { width: 80, align: 'center' });
-  if (p.firma_path && fs.existsSync(p.firma_path)) {
-    try { doc.image(p.firma_path, M + 335, y + 28, { fit: [120, 22] }); }
-    catch(e) { line(M + 340, y + 47, M + 465, y + 47, BLACK, 0.7); }
+  econRows.push(['Extra orario', `${euroTxt(p.extra_fuori_orario)} + IVA`, 'OR', 110]);
+  econRows.push(['Extra km preventivo', `${euroTxt(p.extra_km)} + IVA`, 'KM', 110]);
+  econRows.push(['Extra km rientro', kmExtraRientro > 0 ? `${kmExtraRientro} km - ${euroTxt(extraRientroIvato)}` : '-', 'KM', 110]);
+  if (tariffaManualeAttiva) {
+    econRows.push(['Tariffa manuale', euroTxt(p.prezzo_manual_totale || baseTotale), '-', 110]);
   } else {
-    line(M + 335, y + 47, M + 465, y + 47, BLACK, 0.7);
+    econRows.push(['Imponibile', euroTxt(imponibile), '-', 110]);
+    econRows.push(['IVA 22%', euroTxt(iva), '-', 110]);
+    econRows.push(['Noleggio automatico', `${euroTxt(baseTotale)} IVA incl.`, '-', 110]);
   }
-  line(M + 480, y + 47, M + 555, y + 47, BLACK, 0.7);
-  y += 86;
+  econRows.push(['Cauzione separata', `${euroTxt(p.cauzione || CAUZIONE)} fuori totale`, 'DOC', 110]);
+  const right2Start = yBottom;
+  const right2 = dataBox('RIEPILOGO ECONOMICO', econRows, M + COL_W + GAP, right2Start, COL_W, RED, '€', { compact: true, minH: 130 });
+  totalBanner(M + COL_W + GAP + 12, right2 - 40, COL_W - 24, totaleFinale);
+  y = Math.max(left2, right2);
 
-  // BARRA FINALE
-  doc.save();
-  doc.moveTo(0, H - 34).lineTo(395, H - 34).lineTo(380, H).lineTo(0, H).closePath().fill(BLACK);
-  doc.moveTo(395, H - 34).lineTo(W, H - 34).lineTo(W, H).lineTo(380, H).closePath().fill(RED);
-  doc.restore();
-  font(true, 7.5, WHITE); doc.text('www.trasportidp.com', M, H - 23, { width: 220 });
-  doc.text('GRAZIE PER AVER SCELTO DP RENT', 395, H - 23, { width: W - 420, align: 'center' });
+  ensure(90);
+  const condY = y;
+  const condW = (CONTENT_W - GAP) / 2;
+  doc.roundedRect(M, condY, condW, 74, 7).fillAndStroke('#ffffff', LINE);
+  font(false, 15, RED); doc.text('OK', M + 14, condY + 18, { width: 20 });
+  font(true, 7.5, RED_DARK); doc.text('CONDIZIONI', M + 43, condY + 16, { width: condW - 55 });
+  font(false, 6.7, TEXT); doc.text('Il mezzo deve essere riconsegnato nelle stesse condizioni di partenza, con il pieno di carburante. Eventuali danni, ritardi, smarrimenti, franchigie, multe, pedaggi e costi accessori restano a carico del cliente.', M + 43, condY + 31, { width: condW - 55, height: 37, lineGap: 0.5, ellipsis: true });
 
-  // Pagine extra solo se PDFKit le ha create per overflow: footer semplice e formula extra km.
+  doc.roundedRect(M + condW + GAP, condY, condW, 74, 7).fillAndStroke('#ffffff', LINE);
+  font(true, 7.5, RED_DARK); doc.text('FIRME', M + condW + GAP + 18, condY + 16, { width: condW - 36 });
+  doc.moveTo(M + condW + GAP + 38, condY + 51).lineTo(M + condW + GAP + 160, condY + 51).strokeColor('#444').lineWidth(0.7).stroke();
+  doc.moveTo(M + condW + GAP + 190, condY + 51).lineTo(M + condW + GAP + condW - 26, condY + 51).strokeColor('#444').lineWidth(0.7).stroke();
+  font(false, 5.8, TEXT); doc.text('Firma Cliente / Conducente', M + condW + GAP + 46, condY + 57, { width: 110, align: 'center' });
+  doc.text('Firma DP RENT', M + condW + GAP + 197, condY + 57, { width: 110, align: 'center' });
+  if (p.firma_path && fs.existsSync(p.firma_path)) {
+    try { doc.image(p.firma_path, M + condW + GAP + 45, condY + 25, { fit: [110, 24] }); } catch {}
+  }
+  y = condY + 82;
+
   const range = doc.bufferedPageRange();
   for (let i = range.start; i < range.start + range.count; i++) {
     doc.switchToPage(i);
-    font(false, 6.7, '#777777');
-    doc.text(`DP RENT - Trasporti DP S.R.L. - Contratto ${p.codice || p.id} - Pagina ${i + 1 - range.start}/${range.count}`, M, H - 48, { width: CW, align: 'center' });
+    footer();
+    font(false, 5.5, '#777');
+    doc.text(`Documento generato automaticamente - Contratto ${safe(p.codice || p.id)} - Pagina ${i + 1 - range.start}/${range.count}`, M, H - 41, { width: CONTENT_W, align: 'center' });
   }
 
   doc.end();
@@ -4742,7 +4772,7 @@ function cargosHumanTable(p) {
 
 function cargosMissingHtml(missing) {
   if (!missing || !missing.length) return '<p class="ok">Nessun campo obbligatorio mancante.</p>';
-  return `<div class="alert"><b>Campi obbligatori mancanti:</b><br>${missing.map(x => '• ' + esc(x)).join('<br>')}</div>`;
+  return `<div class="alert"><b>Campi obbligatori mancanti:</b><br>${missing.map(x => '- ' + esc(x)).join('<br>')}</div>`;
 }
 
 function cargosApiConfigured() {
@@ -6233,15 +6263,15 @@ app.get('/contratto/:id', async (req, res) => {
   if (!p) return res.status(404).send(page('Contratto non trovato', `<div class="box"><h2 class="bad">Contratto non trovato</h2><a class="btn btn2" href="/prenotazioni">Storico</a></div>`));
   res.send(page('Vedi contratto', `<div class="dp-contract-hero">
     <div>
-      <div class="dp-kicker">DP RENT • Contratto</div>
+      <div class="dp-kicker">DP RENT - Contratto</div>
       <h2>${esc(p.codice || ('DPR-' + p.id))}</h2>
-      <p>${esc((p.nome||'')+' '+(p.cognome||''))} • ${esc(p.telefono||'')}</p>
+      <p>${esc((p.nome||'')+' '+(p.cognome||''))} - ${esc(p.telefono||'')}</p>
     </div>
     <div class="dp-amount">€ ${euro(p.totale||0)}</div>
   </div>
   <div class="dp-card-grid">
     <div class="dp-info-card"><h3>👤 Cliente</h3><p><b>Nome:</b> ${esc((p.nome||'')+' '+(p.cognome||''))}</p><p><b>Telefono:</b> ${esc(p.telefono||'')}</p><p><b>Email:</b> ${esc(p.email||'')}</p><p><b>CF:</b> ${esc(p.codice_fiscale||'')}</p></div>
-    <div class="dp-info-card"><h3>🚗 Mezzo</h3><p><b>Mezzo:</b> ${esc((p.targa||'')+' '+descrizionePubblica(p))}</p><p><b>Periodo:</b> ${esc(dpDateTimeLabel(p.data_inizio,p.ora_inizio))} → ${esc(dpDateTimeLabel(p.data_fine,p.ora_fine))}</p><p><b>Km previsti:</b> ${esc(p.km_previsti||'')}</p></div>
+    <div class="dp-info-card"><h3>CAR Mezzo</h3><p><b>Mezzo:</b> ${esc((p.targa||'')+' '+descrizionePubblica(p))}</p><p><b>Periodo:</b> ${esc(dpDateTimeLabel(p.data_inizio,p.ora_inizio))} → ${esc(dpDateTimeLabel(p.data_fine,p.ora_fine))}</p><p><b>Km previsti:</b> ${esc(p.km_previsti||'')}</p></div>
     <div class="dp-info-card"><h3>💳 Pagamenti</h3><p><b>Totale:</b> € ${euro(p.totale||0)}</p>${cauzioneHtml(p)}<p><b>Nexi:</b> <span class="badge ${p.nexi_stato==='pagato'?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.nexi_stato||'non pagato'))}</span></p></div>
     <div class="dp-info-card"><h3>✅ Stato</h3><p><b>Contratto:</b> <span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.stato||'bozza'))}</span></p><p><b>Firma:</b> <span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'Firmato':'Manca firma'}</span></p><p><b>Ca.R.G.O.S.:</b> <span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(dpLabelStatus(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare')))}</span></p></div>
   </div>
