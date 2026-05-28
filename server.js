@@ -8418,52 +8418,59 @@ async function dpHandleWhatsApp(req,res){
 
   if(session.state === 'menu'){
     const known = await dpFindClienteWhatsApp(from).catch(()=>null);
+
+    // V190 FIX MENU WHATSAPP:
+    // Nel menu principale i numeri 1-5 sono SERVIZI, non categorie mezzo.
+    // Prima il numero "2" veniva letto da dpNaturalRentalRequest come Pulmino 8/9 posti.
+    // Ora "2" apre sempre il sotto-menu noleggio e resetta eventuali dati vecchi.
+    if(body === '1'){
+      session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
+    }
+    if(body === '2'){
+      session.state = 'noleggio_model'; session.data = {}; session.ts = Date.now();
+      return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n\n' : ''}` + dpPromptNoleggioCategorie());
+    }
+    if(body === '3'){
+      session.state = 'vendita'; session.data = {}; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.auto} *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi:\n- modello\n- budget\n- permuta si/no\n- finanziamento si/no`);
+    }
+    if(body === '4'){
+      session.state = 'trasporto'; session.data = {}; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.truck} *Trasporto veicoli*\n\nScrivi in un solo messaggio:\n- marca e modello auto\n- marciante o non marciante\n- da dove ritirare\n- dove consegnare\n- quando serve\n\nEsempio:\nFiat Panda marciante, ritiro Roma, consegna Narni, prossima settimana`);
+    }
+    if(body === '5'){
+      session.state = 'altro'; session.data = {}; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.chat} *Altre richieste*\n\nScrivi pure la tua richiesta. Ti rispondo subito e la inoltro allo staff DP.`);
+    }
+
     const natural = dpNaturalRentalRequest(body);
     const serviceIntent = dpServiceIntentFromText(body);
 
     if(natural){
+      session.data = {};
       dpMergeRentalData(session, natural);
       session.ts = Date.now();
       return dpTwimlResponse(res, dpAskNextRental(session, profileName, known));
     } else if(serviceIntent === 'noleggio'){
       session.state = 'noleggio_model';
-      session.data = session.data || {};
+      session.data = {};
       session.ts = Date.now();
       return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Perfetto, iniziamo il noleggio.\n\n` + dpPromptNoleggioCategorie());
     } else if(serviceIntent === 'officina'){
       session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
     } else if(serviceIntent === 'vendita'){
-      session.state = 'vendita'; session.ts = Date.now();
+      session.state = 'vendita'; session.data = {}; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.auto} *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi modello, budget, permuta o finanziamento.`);
     } else if(serviceIntent === 'trasporto'){
-      session.state = 'trasporto'; session.ts = Date.now();
+      session.state = 'trasporto'; session.data = {}; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.truck} *Trasporto veicoli*\n\nScrivi marca/modello, ritiro, consegna e periodo desiderato.`);
     } else if(serviceIntent === 'altro'){
-      session.state = 'altro'; session.ts = Date.now();
+      session.state = 'altro'; session.data = {}; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.chat} Certo 👍\n\nScrivi pure la tua richiesta o domanda. Se serve la giro subito allo staff DP e ti rispondiamo appena possibile.`);
     }
 
-    if(body === '1'){
-      session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
-      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
-    }
-    if(body === '2'){
-      session.state = 'noleggio_model'; session.ts = Date.now();
-      return dpTwimlResponse(res, dpPromptNoleggioCategorie());
-    }
-    if(body === '3'){
-      session.state = 'vendita'; session.ts = Date.now();
-      return dpTwimlResponse(res, `${EMJ.auto} *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi:\n- modello\n- budget\n- permuta si/no\n- finanziamento si/no`);
-    }
-    if(body === '4'){
-      session.state = 'trasporto'; session.ts = Date.now();
-      return dpTwimlResponse(res, `${EMJ.truck} *Trasporto veicoli*\n\nScrivi in un solo messaggio:\n- marca e modello auto\n- marciante o non marciante\n- da dove ritirare\n- dove consegnare\n- quando serve\n\nEsempio:\nFiat Panda marciante, ritiro Roma, consegna Narni, prossima settimana`);
-    }
-    if(body === '5'){
-      session.state = 'altro'; session.ts = Date.now();
-      return dpTwimlResponse(res, `${EMJ.chat} *Altre richieste*\n\nScrivi pure la tua richiesta. Ti rispondo subito e la inoltro allo staff DP.`);
-    }
     // V167: se il testo non è un numero/menu ma una frase libera,
     // risponde ChatGPT invece di ributtare sempre il menu.
     if(body && !['1','2','3','4','5'].includes(body)){
@@ -8537,7 +8544,17 @@ async function dpHandleWhatsApp(req,res){
 
   if(session.state === 'noleggio_dates'){
     const natural = dpNaturalRentalRequest(body);
-    if(natural?.cat && !session.data.cat) session.data.cat = natural.cat;
+
+    // V190: se il cliente cambia idea sul mezzo mentre il bot aspetta le date
+    // ("no furgone cargo", "anzi pulmino", "auto golf"), aggiorno il mezzo
+    // e NON provo a leggere quella frase come data.
+    if(natural?.cat && !natural?.range){
+      session.data.cat = natural.cat;
+      session.ts = Date.now();
+      return dpTwimlResponse(res, `Ok 👍 ho cambiato mezzo: *${session.data.cat.label}*\n\nOra indicami le date noleggio.\nEsempio: 20/05 - 22/05`);
+    }
+
+    if(natural?.cat) session.data.cat = natural.cat;
     const range = natural?.range || dpExtractRange(body);
     if(!range) return dpTwimlResponse(res, 'Non riesco a leggere le date. Scrivile cosi: 20/05 - 22/05 oppure dal 18 al 19 maggio');
     session.data.start = range.start; session.data.end = range.end; session.state = 'noleggio_km'; session.ts = Date.now();
