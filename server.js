@@ -2038,18 +2038,17 @@ async function generaPdfContratto(id, opts = {}) {
   }
 
   function drawCondizioniBox(x, yy, w) {
-    const h = 70;
+    const h = 56;
     doc.roundedRect(x, yy, w, h, 6).fillAndStroke('#ffffff', LINE);
     doc.polygon([x, yy], [x + Math.min(170,w-25), yy], [x + Math.min(150,w-45), yy + 22], [x, yy + 22]).fill(RED);
     fitText('CONDIZIONI', x + 10, yy + 7, 140, 10, 7, true, '#fff');
-    fitText('Note', x + 10, yy + 32, 56, 10, 6.2, true, BLACK);
-    fitText('Il mezzo deve essere riconsegnato nelle stesse condizioni. Danni, ritardi, smarrimenti, franchigie, multe, pedaggi e costi accessori restano a carico del cliente.', x + 72, yy + 31, w - 84, 22, 6.1, false, TEXT);
-    fitText('Link:', x + 10, yy + 55, 28, 9, 5.8, true, MUTED);
-    font(true, 6.2, RED);
-    doc.text('Condizioni di noleggio', x + 42, yy + 55, { width: 92, height: 9, link: termsLink, underline: true });
-    doc.text('Privacy GDPR', x + 144, yy + 55, { width: 72, height: 9, link: privacyLink, underline: true });
-    doc.link(x + 42, yy + 54, 92, 10, termsLink);
-    doc.link(x + 144, yy + 54, 72, 10, privacyLink);
+    fitText('Note', x + 10, yy + 29, 42, 9, 5.8, true, BLACK);
+    fitText('Riconsegna nelle stesse condizioni. Danni, ritardi, franchigie, multe, pedaggi e costi accessori restano a carico del cliente.', x + 55, yy + 28, w - 67, 17, 5.5, false, TEXT);
+    font(true, 5.9, RED);
+    doc.text('Condizioni di noleggio', x + 55, yy + 45, { width: 88, height: 8, link: termsLink, underline: true });
+    doc.text('Privacy GDPR', x + 151, yy + 45, { width: 68, height: 8, link: privacyLink, underline: true });
+    doc.link(x + 55, yy + 44, 88, 9, termsLink);
+    doc.link(x + 151, yy + 44, 68, 9, privacyLink);
     return yy + h + 8;
   }
 
@@ -2105,24 +2104,31 @@ async function generaPdfContratto(id, opts = {}) {
   else { econRows.push(['Imponibile', euroTxt(p.imponibile)]); econRows.push(['IVA 22%', euroTxt(p.iva)]); econRows.push(['Noleggio automatico', `${euroTxt(baseTotale)} IVA incl.`]); }
   econRows.push(['Cauzione separata', `${euroTxt(p.cauzione || CAUZIONE)} fuori totale`]);
   const r2 = box(M + COL + GAP, y2, COL, 'RIEPILOGO ECONOMICO', econRows, RED);
+  // Il totale finale deve rimanere dentro il box economico: se il box veicolo è più alto,
+  // non deve scendere e invadere firme/condizioni.
   y = Math.max(l2, r2);
-  const totalY = y - 38;
+  const totalY = r2 - 38;
   doc.roundedRect(M + COL + GAP + 12, totalY, COL - 24, 24, 6).fill(RED);
   fitText('TOTALE FINALE', M + COL + GAP + 22, totalY + 7, 110, 11, 8.5, true, '#fff');
   fitText(euroTxt(totaleFinale), M + COL + GAP + 142, totalY + 4, COL - 164, 16, 15, true, '#fff', {align:'right'});
 
-  const reservedBottom = H - 92; // lascia spazio fisso per dicitura pagina + footer nero/rosso
-  const blockH = 72;
-  const bottomY = Math.min(y + 8, reservedBottom - blockH);
+  // Blocco finale compatto: deve stare sempre sopra al footer e dentro pagina A4.
+  const reservedBottom = H - 86;
+  const blockH = 56;
+  const bottomY = Math.min(y + 5, reservedBottom - blockH);
   drawCondizioniBox(M, bottomY, COL);
   const fy = bottomY;
   doc.roundedRect(M + COL + GAP, fy, COL, blockH, 6).fillAndStroke('#ffffff', LINE);
-  fitText('FIRME', M + COL + GAP + 12, fy + 14, 100, 10, 7.4, true, RED);
-  doc.moveTo(M + COL + GAP + 52, fy + 49).lineTo(M + COL + GAP + 176, fy + 49).strokeColor('#222').lineWidth(0.6).stroke();
-  doc.moveTo(M + COL + GAP + 205, fy + 49).lineTo(M + COL + GAP + COL - 22, fy + 49).strokeColor('#222').lineWidth(0.6).stroke();
-  fitText('Firma Cliente / Conducente', M + COL + GAP + 58, fy + 54, 112, 9, 5.5, false, BLACK, {align:'center'});
-  fitText('Firma DP RENT', M + COL + GAP + 214, fy + 54, 90, 9, 5.5, false, BLACK, {align:'center'});
-  if (p.firma_path && fs.existsSync(p.firma_path)) { try { doc.image(p.firma_path, M + COL + GAP + 56, fy + 27, { fit: [115, 20] }); } catch(e){} }
+  fitText('FIRME', M + COL + GAP + 12, fy + 9, 100, 9, 6.8, true, RED);
+  const sigX = M + COL + GAP;
+  const sig1X = sigX + 28;
+  const sig2X = sigX + 158;
+  const sigW = 92;
+  doc.moveTo(sig1X, fy + 35).lineTo(sig1X + sigW, fy + 35).strokeColor('#222').lineWidth(0.6).stroke();
+  doc.moveTo(sig2X, fy + 35).lineTo(sig2X + sigW, fy + 35).strokeColor('#222').lineWidth(0.6).stroke();
+  fitText('Firma Cliente / Conducente', sig1X - 4, fy + 39, sigW + 8, 8, 4.9, false, BLACK, {align:'center'});
+  fitText('Firma DP RENT', sig2X - 4, fy + 39, sigW + 8, 8, 4.9, false, BLACK, {align:'center'});
+  if (p.firma_path && fs.existsSync(p.firma_path)) { try { doc.image(p.firma_path, sig1X, fy + 17, { fit: [sigW, 16] }); } catch(e){} }
 
   drawFooter();
 
@@ -6179,12 +6185,11 @@ app.get('/pdf-view/:id', async (req, res) => {
         <a class="btn btn2" href="/contratto/${req.params.id}/gestisci">⬅️ Indietro</a>
         <a class="btn" href="/contratto/${req.params.id}/gestisci">⚙️ Gestisci contratto</a>
         <a class="btn dp-primary" href="/contratto/${req.params.id}">👁 Vedi contratto</a>
-        <a class="btn dp-danger" href="/pdf/${req.params.id}?download=1" target="dp_pdf_download_frame" download>⬇️ Scarica PDF</a>
+        <a class="btn dp-danger" href="/pdf/${req.params.id}?download=1" target="_blank" rel="noopener">⬇️ Scarica PDF</a>
         <a class="btn btn2" href="/prenotazioni">📚 Storico</a>
         <a class="btn btn2" href="/">🏠 Dashboard</a>
       </div>
     </div>
-    <iframe name="dp_pdf_download_frame" style="display:none;width:0;height:0;border:0"></iframe>
     <div class="box dp-pdf-framebox">
       <iframe class="dp-pdf-frame" src="/pdf/${req.params.id}#toolbar=1&navpanes=0"></iframe>
     </div>
