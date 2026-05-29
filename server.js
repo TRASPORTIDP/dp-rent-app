@@ -2013,6 +2013,28 @@ async function generaPdfContratto(id, opts = {}) {
     });
     return yy + h + 9;
   }
+  function econBox(x, yy, w, title, rows, totale) {
+    // Box economico dedicato: il totale finale ha spazio riservato e non copre mai le righe IVA/imponibile.
+    const rowH = 12;
+    const totalH = 25;
+    const gapBeforeTotal = 8;
+    const h = 25 + rows.length * rowH + gapBeforeTotal + totalH + 8;
+    doc.roundedRect(x, yy, w, h, 6).fillAndStroke('#ffffff', LINE);
+    doc.polygon([x, yy], [x + Math.min(170,w-25), yy], [x + Math.min(150,w-45), yy + 22], [x, yy + 22]).fill(RED);
+    fitText(title, x + 10, yy + 7, Math.min(145,w-20), 10, 7, true, '#fff');
+    let cy = yy + 31;
+    rows.forEach((r, idx) => {
+      if (idx > 0) doc.moveTo(x + 10, cy - 3).lineTo(x + w - 10, cy - 3).strokeColor('#eef0f4').lineWidth(0.5).stroke();
+      fitText(r[0], x + 10, cy, 98, 9, 5.9, true, BLACK);
+      fitText(r[1], x + 115, cy, w - 127, 9, 6.1, false, TEXT);
+      cy += rowH;
+    });
+    const totalY = yy + 25 + rows.length * rowH + gapBeforeTotal;
+    doc.roundedRect(x + 12, totalY, w - 24, totalH, 6).fill(RED);
+    fitText('TOTALE FINALE', x + 22, totalY + 7, 112, 11, 8.3, true, '#fff');
+    fitText(euroTxt(totale), x + 140, totalY + 4, w - 162, 16, 15, true, '#fff', {align:'right'});
+    return yy + h + 9;
+  }
   function fullBox(yy, title, rows, accent=DARK) {
     const rowH = 13;
     const h = 25 + rows.length * rowH + 8;
@@ -2102,15 +2124,9 @@ async function generaPdfContratto(id, opts = {}) {
   econRows.push(['Extra km rientro', kmExtraRientro > 0 ? `${kmExtraRientro} km - ${euroTxt(extraRientroIvato)} IVA incl.` : '-']);
   if (tariffaManualeAttiva) econRows.push(['Tariffa manuale', `${euroTxt(p.prezzo_manual_totale || baseTotale)} IVA incl.`]);
   else { econRows.push(['Imponibile', euroTxt(p.imponibile)]); econRows.push(['IVA 22%', euroTxt(p.iva)]); econRows.push(['Noleggio automatico', `${euroTxt(baseTotale)} IVA incl.`]); }
-  econRows.push(['Cauzione separata', `${euroTxt(p.cauzione || CAUZIONE)} fuori totale`]);
-  const r2 = box(M + COL + GAP, y2, COL, 'RIEPILOGO ECONOMICO', econRows, RED);
-  // Il totale finale deve rimanere dentro il box economico: se il box veicolo è più alto,
-  // non deve scendere e invadere firme/condizioni.
+  // La cauzione è già evidenziata nella barra in alto: non la ripetiamo qui per lasciare spazio al totale.
+  const r2 = econBox(M + COL + GAP, y2, COL, 'RIEPILOGO ECONOMICO', econRows, totaleFinale);
   y = Math.max(l2, r2);
-  const totalY = r2 - 38;
-  doc.roundedRect(M + COL + GAP + 12, totalY, COL - 24, 24, 6).fill(RED);
-  fitText('TOTALE FINALE', M + COL + GAP + 22, totalY + 7, 110, 11, 8.5, true, '#fff');
-  fitText(euroTxt(totaleFinale), M + COL + GAP + 142, totalY + 4, COL - 164, 16, 15, true, '#fff', {align:'right'});
 
   // Blocco finale compatto: deve stare sempre sopra al footer e dentro pagina A4.
   const reservedBottom = H - 86;
@@ -6205,28 +6221,21 @@ app.get('/pdf-view/:id', async (req, res) => {
       @media(max-width:700px){.dp-pdf-frame{height:72vh}.dp-pdf-toolbar{position:relative}.dp-pdf-toolbar .btn{width:100%;margin:6px 0}}
     </style>
     <script>
-      async function dpDownloadPdf(){
+      function dpDownloadPdf(){
         const msg = document.getElementById('dpDownloadMsg');
         const url = ${JSON.stringify(pdfUrl)};
-        const fileName = ${JSON.stringify(fileName)};
-        try{
-          if(msg) msg.textContent = 'Preparo il download...';
-          const r = await fetch(url, { credentials:'same-origin', cache:'no-store' });
-          if(!r.ok) throw new Error('PDF non disponibile');
-          const blob = await r.blob();
-          const objectUrl = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = objectUrl;
-          a.download = fileName;
-          a.style.display = 'none';
-          document.body.appendChild(a);
-          a.click();
-          setTimeout(()=>{ URL.revokeObjectURL(objectUrl); a.remove(); }, 2500);
-          if(msg) msg.textContent = 'Download avviato. La pagina resta aperta: usa Indietro per tornare al contratto.';
-        }catch(e){
-          if(msg) msg.textContent = 'Apro il PDF in una nuova scheda. Chiudila per tornare qui.';
-          window.open(url, '_blank', 'noopener');
+        // iPhone/Safari: non cambiamo window.location e non apriamo il PDF nella stessa pagina.
+        // Usiamo un iframe nascosto: la pagina PDF resta aperta, quindi Indietro/Gestisci funziona sempre.
+        let fr = document.getElementById('dpHiddenPdfDownload');
+        if(!fr){
+          fr = document.createElement('iframe');
+          fr.id = 'dpHiddenPdfDownload';
+          fr.name = 'dpHiddenPdfDownload';
+          fr.style.display = 'none';
+          document.body.appendChild(fr);
         }
+        fr.src = url + '&t=' + Date.now();
+        if(msg) msg.textContent = 'Download avviato. Questa pagina resta aperta: usa Indietro o Gestisci contratto.';
       }
     </script>
   `));
