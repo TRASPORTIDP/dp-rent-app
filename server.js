@@ -6178,6 +6178,8 @@ app.post('/mezzi/:id/officina', async (req,res)=>{
 app.get('/pdf-view/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   const titolo = p ? (p.codice || ('DPR-' + p.id)) : ('Contratto ' + req.params.id);
+  const pdfUrl = `/pdf/${req.params.id}?download=1`;
+  const fileName = `${String(titolo || 'contratto-dp-rent').replace(/[^a-zA-Z0-9_-]+/g, '_')}.pdf`;
   res.send(page('PDF contratto', `
     <div class="box dp-pdf-toolbar">
       <h2>📄 PDF ${esc(titolo)}</h2>
@@ -6185,10 +6187,11 @@ app.get('/pdf-view/:id', async (req, res) => {
         <a class="btn btn2" href="/contratto/${req.params.id}/gestisci">⬅️ Indietro</a>
         <a class="btn" href="/contratto/${req.params.id}/gestisci">⚙️ Gestisci contratto</a>
         <a class="btn dp-primary" href="/contratto/${req.params.id}">👁 Vedi contratto</a>
-        <a class="btn dp-danger" href="/pdf/${req.params.id}?download=1" target="_blank" rel="noopener">⬇️ Scarica PDF</a>
+        <button class="btn dp-danger" type="button" onclick="dpDownloadPdf()">⬇️ Scarica PDF</button>
         <a class="btn btn2" href="/prenotazioni">📚 Storico</a>
         <a class="btn btn2" href="/">🏠 Dashboard</a>
       </div>
+      <div id="dpDownloadMsg" class="dp-download-msg"></div>
     </div>
     <div class="box dp-pdf-framebox">
       <iframe class="dp-pdf-frame" src="/pdf/${req.params.id}#toolbar=1&navpanes=0"></iframe>
@@ -6197,8 +6200,35 @@ app.get('/pdf-view/:id', async (req, res) => {
       .dp-pdf-toolbar{position:sticky;top:0;z-index:20;border:2px solid #ddd}
       .dp-pdf-framebox{padding:0;overflow:hidden;background:#777}
       .dp-pdf-frame{width:100%;height:82vh;border:0;background:#fff;display:block}
+      .dp-download-msg{font-weight:800;margin-top:8px;color:#111}
+      .dp-pdf-toolbar button.btn{border:0;cursor:pointer;font-family:inherit}
       @media(max-width:700px){.dp-pdf-frame{height:72vh}.dp-pdf-toolbar{position:relative}.dp-pdf-toolbar .btn{width:100%;margin:6px 0}}
     </style>
+    <script>
+      async function dpDownloadPdf(){
+        const msg = document.getElementById('dpDownloadMsg');
+        const url = ${JSON.stringify(pdfUrl)};
+        const fileName = ${JSON.stringify(fileName)};
+        try{
+          if(msg) msg.textContent = 'Preparo il download...';
+          const r = await fetch(url, { credentials:'same-origin', cache:'no-store' });
+          if(!r.ok) throw new Error('PDF non disponibile');
+          const blob = await r.blob();
+          const objectUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = objectUrl;
+          a.download = fileName;
+          a.style.display = 'none';
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(()=>{ URL.revokeObjectURL(objectUrl); a.remove(); }, 2500);
+          if(msg) msg.textContent = 'Download avviato. La pagina resta aperta: usa Indietro per tornare al contratto.';
+        }catch(e){
+          if(msg) msg.textContent = 'Apro il PDF in una nuova scheda. Chiudila per tornare qui.';
+          window.open(url, '_blank', 'noopener');
+        }
+      }
+    </script>
   `));
 });
 
