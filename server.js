@@ -6203,7 +6203,7 @@ app.get('/pdf-view/:id', async (req, res) => {
         <a class="btn btn2" href="/contratto/${req.params.id}/gestisci">⬅️ Indietro</a>
         <a class="btn" href="/contratto/${req.params.id}/gestisci">⚙️ Gestisci contratto</a>
         <a class="btn dp-primary" href="/contratto/${req.params.id}">👁 Vedi contratto</a>
-        <a class="btn dp-danger" href="/pdf/${req.params.id}" target="_blank" rel="noopener">⬇️ Scarica / Apri PDF</a>
+        <button type="button" class="btn dp-danger" id="dpSharePdfBtn">⬇️ Scarica / Condividi PDF</button>
         <a class="btn btn2" href="/prenotazioni">📚 Storico</a>
         <a class="btn btn2" href="/">🏠 Dashboard</a>
       </div>
@@ -6221,10 +6221,44 @@ app.get('/pdf-view/:id', async (req, res) => {
       @media(max-width:700px){.dp-pdf-frame{height:72vh}.dp-pdf-toolbar{position:relative}.dp-pdf-toolbar .btn{width:100%;margin:6px 0}}
     </style>
     <script>
-      // IMPORTANTE iPhone/Safari/PWA:
-      // il PDF NON viene forzato come download attachment.
-      // Si apre inline in una nuova scheda/webview, così la pagina Gestisci PDF resta sotto
-      // e il pulsante Indietro continua a funzionare senza chiudere l'app.
+      (function(){
+        const btn = document.getElementById('dpSharePdfBtn');
+        const msg = document.getElementById('dpDownloadMsg');
+        const pdfUrl = '/pdf/${req.params.id}';
+        const fileName = '${esc(fileName)}';
+        if (!btn) return;
+        btn.addEventListener('click', async function(ev){
+          ev.preventDefault();
+          btn.disabled = true;
+          const oldText = btn.textContent;
+          btn.textContent = 'Preparo PDF...';
+          if (msg) msg.textContent = '';
+          try {
+            const r = await fetch(pdfUrl, { cache: 'no-store' });
+            if (!r.ok) throw new Error('PDF non disponibile');
+            const blob = await r.blob();
+            const file = new File([blob], fileName || 'contratto-dp-rent.pdf', { type: 'application/pdf' });
+            if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
+              await navigator.share({ files: [file], title: 'Contratto DP RENT' });
+              if (msg) msg.textContent = 'PDF pronto. Sei rimasto nella pagina: puoi premere Indietro.';
+            } else {
+              const a = document.createElement('a');
+              const url = URL.createObjectURL(blob);
+              a.href = url;
+              a.download = fileName || 'contratto-dp-rent.pdf';
+              document.body.appendChild(a);
+              a.click();
+              setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+              if (msg) msg.textContent = 'Download avviato. Usa Indietro per tornare alla gestione.';
+            }
+          } catch (e) {
+            if (msg) msg.innerHTML = 'Su questo dispositivo non posso aprire il pannello di condivisione. <a href="' + pdfUrl + '" target="_blank" rel="noopener">Apri PDF</a>';
+          } finally {
+            btn.disabled = false;
+            btn.textContent = oldText;
+          }
+        });
+      })();
     </script>
   `));
 });
@@ -10197,5 +10231,3 @@ syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId
   try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
   catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
 };
-
-console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
