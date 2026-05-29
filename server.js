@@ -6194,7 +6194,7 @@ app.post('/mezzi/:id/officina', async (req,res)=>{
 app.get('/pdf-view/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   const titolo = p ? (p.codice || ('DPR-' + p.id)) : ('Contratto ' + req.params.id);
-  const pdfUrl = `/pdf/${req.params.id}?download=1`;
+  const pdfUrl = `/pdf/${req.params.id}`;
   const fileName = `${String(titolo || 'contratto-dp-rent').replace(/[^a-zA-Z0-9_-]+/g, '_')}.pdf`;
   res.send(page('PDF contratto', `
     <div class="box dp-pdf-toolbar">
@@ -6203,7 +6203,7 @@ app.get('/pdf-view/:id', async (req, res) => {
         <a class="btn btn2" href="/contratto/${req.params.id}/gestisci">⬅️ Indietro</a>
         <a class="btn" href="/contratto/${req.params.id}/gestisci">⚙️ Gestisci contratto</a>
         <a class="btn dp-primary" href="/contratto/${req.params.id}">👁 Vedi contratto</a>
-        <button class="btn dp-danger" type="button" onclick="dpDownloadPdf()">⬇️ Scarica PDF</button>
+        <a class="btn dp-danger" href="/pdf/${req.params.id}" target="_blank" rel="noopener">⬇️ Scarica / Apri PDF</a>
         <a class="btn btn2" href="/prenotazioni">📚 Storico</a>
         <a class="btn btn2" href="/">🏠 Dashboard</a>
       </div>
@@ -6221,22 +6221,10 @@ app.get('/pdf-view/:id', async (req, res) => {
       @media(max-width:700px){.dp-pdf-frame{height:72vh}.dp-pdf-toolbar{position:relative}.dp-pdf-toolbar .btn{width:100%;margin:6px 0}}
     </style>
     <script>
-      function dpDownloadPdf(){
-        const msg = document.getElementById('dpDownloadMsg');
-        const url = ${JSON.stringify(pdfUrl)};
-        // iPhone/Safari: non cambiamo window.location e non apriamo il PDF nella stessa pagina.
-        // Usiamo un iframe nascosto: la pagina PDF resta aperta, quindi Indietro/Gestisci funziona sempre.
-        let fr = document.getElementById('dpHiddenPdfDownload');
-        if(!fr){
-          fr = document.createElement('iframe');
-          fr.id = 'dpHiddenPdfDownload';
-          fr.name = 'dpHiddenPdfDownload';
-          fr.style.display = 'none';
-          document.body.appendChild(fr);
-        }
-        fr.src = url + '&t=' + Date.now();
-        if(msg) msg.textContent = 'Download avviato. Questa pagina resta aperta: usa Indietro o Gestisci contratto.';
-      }
+      // IMPORTANTE iPhone/Safari/PWA:
+      // il PDF NON viene forzato come download attachment.
+      // Si apre inline in una nuova scheda/webview, così la pagina Gestisci PDF resta sotto
+      // e il pulsante Indietro continua a funzionare senza chiudere l'app.
     </script>
   `));
 });
