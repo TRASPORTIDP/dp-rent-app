@@ -8129,13 +8129,22 @@ function dpVehicleCorrectionFromText(txt){
   // non usare singoli numeri come correzione fuori dalla schermata di scelta mezzo,
   // altrimenti una data/anno può cambiare categoria per errore.
   if(/^\d+$/.test(t)) return null;
-  const hasVehicleWord = /(furgone|furgoni|cargo|merci|van|pulmino|minibus|pulman|pullman|9\s*posti|8\s*posti|8\s*\/\s*9|dacia|sandero|golf|escavatore|mezzo speciale)/.test(t);
+  const hasVehicleWord = /\b(furgone|furgoni|cargo|merci|van|pulmino|minibus|pulman|pullman|9\s*posti|8\s*posti|8\s*\/\s*9|dacia|sandero|golf|escavatore|mezzo speciale)\b/.test(t);
   if(!hasVehicleWord) return null;
   const cat = dpCategoryFromChoice(raw);
   return cat || null;
 }
 
 // V145 - riconoscimento frasi naturali WhatsApp: non rimanda il menu se il cliente scrive "volevo noleggiare" ecc.
+
+// V192 - evita cambio mezzo se il cliente sta negando/correggendo una scelta.
+// Esempio: "Non ho scelto pulmino" NON deve confermare Pulmino.
+function dpHasVehicleNegation(txt){
+  const t = dpNorm(txt || '');
+  if(!t) return false;
+  return /\b(non|no|sbagliato|errore|errato|annulla|annullare|cancella|cancellare|non ho scelto|non volevo|non voglio|ho sbagliato)\b/.test(t);
+}
+
 function dpServiceIntentFromText(text){
   const t = dpNorm(text).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if(!t) return '';
@@ -8630,9 +8639,30 @@ async function dpHandleWhatsApp(req,res){
     // ("no furgone cargo", "anzi pulmino", "auto golf"), aggiorno il mezzo
     // e NON provo a leggere quella frase come data.
     if(natural?.cat && !natural?.range){
+      // V192: se scrive frasi tipo "non ho scelto pulmino", non confermo il pulmino.
+      // Chiedo invece quale mezzo vuole davvero.
+      if(dpHasVehicleNegation(body)){
+        session.data.cat = null;
+        session.state = 'noleggio_model';
+        session.ts = Date.now();
+        return dpTwimlResponse(res, `Ok 👍 nessun problema.
+
+Quale mezzo desideri?
+
+1 Furgone cargo/merci
+2 Pulmino 8/9 posti
+3 Auto economica tipo Dacia
+4 Auto categoria Golf
+5 Escavatore / mezzo speciale
+
+Scrivi il numero o il tipo di mezzo.`);
+      }
       session.data.cat = natural.cat;
       session.ts = Date.now();
-      return dpTwimlResponse(res, `Ok 👍 ho cambiato mezzo: *${session.data.cat.label}*\n\nOra indicami le date noleggio.\nEsempio: 20/05 - 22/05`);
+      return dpTwimlResponse(res, `Ok 👍 ho cambiato mezzo: *${session.data.cat.label}*
+
+Ora indicami le date noleggio.
+Esempio: 20/05 - 22/05`);
     }
 
     if(natural?.cat) session.data.cat = natural.cat;
@@ -8645,6 +8675,22 @@ async function dpHandleWhatsApp(req,res){
   if(session.state === 'noleggio_km'){
     const correctionCat = dpVehicleCorrectionFromText(body);
     if(correctionCat){
+      if(dpHasVehicleNegation(body)){
+        session.data.cat = null;
+        session.state = 'noleggio_model';
+        session.ts = Date.now();
+        return dpTwimlResponse(res, `Ok 👍 nessun problema.
+
+Quale mezzo desideri?
+
+1 Furgone cargo/merci
+2 Pulmino 8/9 posti
+3 Auto economica tipo Dacia
+4 Auto categoria Golf
+5 Escavatore / mezzo speciale
+
+Scrivi il numero o il tipo di mezzo.`);
+      }
       session.data.cat = correctionCat;
       session.state = 'noleggio_dates';
       session.ts = Date.now();
@@ -8670,8 +8716,6 @@ Esempio: 20/05 - 22/05 oppure solo 14/06`);
           savedLong.id
         ]).catch(()=>{});
       }
-      const appBaseLong = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
-      const longAdminLink = (savedLong && savedLong.ok && savedLong.id) ? `${appBaseLong}/prenotazione/${savedLong.id}` : `${appBaseLong}/richieste-attesa`;
       try {
         await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} RICHIESTA NOLEGGIO OLTRE 15 GIORNI - TARIFFA RISERVATA
 
@@ -8682,9 +8726,10 @@ Date: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}
 Giorni: ${giorniRichiesti}
 Km previsti: ${km}
 
-Il cliente NON ha ricevuto link. Ricontattarlo per tariffa riservata.
+Il cliente NON ha ricevuto link e NON deve ricevere link automatici.
+Ricontattarlo per tariffa riservata.
 
-Apri in app: ${longAdminLink}`);
+Richiesta salvata in app tra le richieste/prenotazioni in attesa.`);
       } catch(e) { console.log('Notifica noleggio lungo warning:', e.message); }
       delete DP_BOT_SESSIONS[from];
       return dpTwimlResponse(res, `${EMJ.ok} Richiesta ricevuta.
