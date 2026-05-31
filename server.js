@@ -8655,6 +8655,45 @@ Indicami le date noleggio.
 Esempio: 20/05 - 22/05 oppure solo 14/06`);
     }
     const km = dpExtractKm(body);
+    const giorniRichiesti = dpDays(session.data.start, session.data.end);
+
+    // V191 - noleggi oltre 15 giorni: niente preventivo automatico e niente link cliente.
+    // La richiesta resta in app/staff per tariffa riservata manuale.
+    if(giorniRichiesti > 15){
+      session.data.km = km;
+      session.data.calc = { giorni: giorniRichiesti, totale: 0, imponibile: 0, iva: 0 };
+      session.data.mezzo = {};
+      const savedLong = await dpSaveWhatsAppQuote(session, from, profileName, 'richiesta_cliente');
+      if(savedLong && savedLong.id){
+        await run(`UPDATE prenotazioni SET note=COALESCE(note,'') || ? WHERE id=?`, [
+          '\nNOLEGGIO OLTRE 15 GIORNI: non inviato link cliente, tariffa riservata da comunicare manualmente.',
+          savedLong.id
+        ]).catch(()=>{});
+      }
+      const appBaseLong = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
+      const longAdminLink = (savedLong && savedLong.ok && savedLong.id) ? `${appBaseLong}/prenotazione/${savedLong.id}` : `${appBaseLong}/richieste-attesa`;
+      try {
+        await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} RICHIESTA NOLEGGIO OLTRE 15 GIORNI - TARIFFA RISERVATA
+
+Cliente: ${profileName}
+WhatsApp: ${from}
+Mezzo richiesto: ${session.data.cat?.label || ''}
+Date: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}
+Giorni: ${giorniRichiesti}
+Km previsti: ${km}
+
+Il cliente NON ha ricevuto link. Ricontattarlo per tariffa riservata.
+
+Apri in app: ${longAdminLink}`);
+      } catch(e) { console.log('Notifica noleggio lungo warning:', e.message); }
+      delete DP_BOT_SESSIONS[from];
+      return dpTwimlResponse(res, `${EMJ.ok} Richiesta ricevuta.
+
+Per noleggi superiori a 15 giorni prepariamo una tariffa riservata.
+
+Verrai ricontattato dallo staff DP RENT per scoprire la tariffa a te riservata.`);
+    }
+
     const startIso = dpDateIso(session.data.start);
     const endIso = dpDateIso(session.data.end);
     const mezzo = await dpFindAvailableVehicle(session.data.cat, startIso, endIso);
@@ -10231,3 +10270,5 @@ syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId
   try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
   catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
 };
+
+console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
