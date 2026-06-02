@@ -5444,7 +5444,9 @@ app.get('/prenotazione/:id', async (req, res) => {
         <a class="btn btn3" href="/ocr-documenti/${p.id}">OCR patente/documento</a>
         <a class="btn btn3" href="/checkout/${p.id}">Check-out</a>
         <a class="btn btn3" href="/checkin/${p.id}">Check-in</a>
-        <a class="btn btnWarn" href="/nexi/${p.id}">Nexi Pay Link</a> <a class="btn btn3" href="/nexi/${p.id}/invia-whatsapp">Invia pagamento WhatsApp</a>
+        <a class="btn btnWarn" href="/nexi/${p.id}">Nexi Pay Link</a> <a class="btn btn3" href="/nexi/${p.id}/invia-whatsapp">Invia Nexi WhatsApp</a>
+        <a class="btn btn2" href="/bonifico/${p.id}">IBAN Bonifico</a> <a class="btn btn3" href="/bonifico/${p.id}/invia-whatsapp">Invia IBAN WhatsApp</a>
+        <a class="btn btn3" href="/pagamento/${p.id}/invia-whatsapp">Invia scelta Nexi/Bonifico</a>
         <a class="btn btn3" href="/firma-link/${p.id}">Link firma WhatsApp</a> <a class="btn btn3" href="/firma-whatsapp/${p.id}">Invia firma WhatsApp diretto</a>
         <a class="btn btn3" href="/whatsapp-contratto/${p.id}">Invia contratto WhatsApp</a>
         <a class="btn btn2" href="/cargos/export/${p.id}">Export Ca.R.G.O.S.</a>
@@ -6605,6 +6607,117 @@ app.get('/nexi/:id', async (req, res) => {
 });
 
 // V110 FIX: invio link pagamento Nexi via Twilio WhatsApp diretto
+
+// V196 - pulsanti manuali pagamento da Gestisci contratto: IBAN o scelta pagamento
+function dpBankMessage(p){
+  const codice = p.codice || ('DPR-' + p.id);
+  return `${EMJ.ok} DP RENT - Bonifico Bancario
+
+` +
+    `Contratto: ${codice}
+` +
+    `Importo: Euro ${euro(p.totale || 0)}
+
+` +
+    `Intestatario: ${DP_BANK_HOLDER}
+` +
+    `Banca: ${DP_BANK_NAME}
+` +
+    `IBAN: ${DP_BANK_IBAN}
+
+` +
+    `Causale: Noleggio ${codice}
+
+` +
+    `Dopo il pagamento invia qui la ricevuta del bonifico (foto, screenshot o PDF).
+` +
+    `La prenotazione sara confermata dopo verifica dello staff DP RENT.`;
+}
+
+app.get('/bonifico/:id', async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+    res.send(page('Bonifico bancario', `
+      <div class="box">
+        <h2>Bonifico bancario</h2>
+        <p><b>Contratto:</b> ${esc(p.codice || p.id)}</p>
+        <p><b>Totale:</b> € ${euro(p.totale || 0)}</p>
+        <p><b>Intestatario:</b> ${esc(DP_BANK_HOLDER)}</p>
+        <p><b>Banca:</b> ${esc(DP_BANK_NAME)}</p>
+        <p><b>IBAN:</b></p>
+        <input value="${esc(DP_BANK_IBAN)}" readonly onclick="this.select()">
+        <p><b>Causale:</b> Noleggio ${esc(p.codice || p.id)}</p>
+        <textarea readonly onclick="this.select()" style="height:210px">${esc(dpBankMessage(p))}</textarea>
+        <a class="btn btn3" href="/bonifico/${p.id}/invia-whatsapp">Invia IBAN WhatsApp</a>
+        <a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a>
+      </div>
+    `));
+  } catch (e) {
+    res.status(500).send(page('Errore bonifico', `<div class="box"><h2 class="bad">Errore bonifico</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a></div>`));
+  }
+});
+
+app.get('/bonifico/:id/invia-whatsapp', async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+    const tel = normalizzaWa(p.telefono || p.telefono_cliente || '');
+    if (!tel) return res.send(page('Invio IBAN WhatsApp', `<div class="box"><h2 class="bad">Telefono cliente mancante</h2><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a></div>`));
+    await run(`UPDATE prenotazioni SET pagamento_metodo='bonifico', pagamento_stato='attesa_ricevuta', stato=COALESCE(stato,'contratto') WHERE id=?`, [p.id]).catch(()=>{});
+    const r = await dpNotify([tel], dpBankMessage(p));
+    res.send(page('Invio IBAN WhatsApp', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'IBAN inviato su WhatsApp' : 'Invio IBAN non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Coordinate bonifico inviate tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a><a class="btn" href="/bonifico/${p.id}">Apri pagina bonifico</a></div>`));
+  } catch (e) {
+    res.status(500).send(page('Errore invio IBAN WhatsApp', `<div class="box"><h2 class="bad">Errore WhatsApp/IBAN</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a></div>`));
+  }
+});
+
+app.get('/pagamento/:id/invia-whatsapp', async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.send('Contratto non trovato');
+    const tel = normalizzaWa(p.telefono || p.telefono_cliente || '');
+    if (!tel) return res.send(page('Invio scelta pagamento', `<div class="box"><h2 class="bad">Telefono cliente mancante</h2><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a></div>`));
+
+    let link = p.nexi_link || '';
+    if (!link) {
+      try {
+        const pagamento = await createNexiLink(Number(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
+        link = pagamento.link;
+        await run(`UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', nexi_raw=? WHERE id=?`, [link, pagamento.raw, p.id]);
+      } catch(e) { link = ''; }
+    }
+    const codice = p.codice || ('DPR-' + p.id);
+    const testo = `${EMJ.ok} DP RENT - scelta pagamento
+
+` +
+      `Contratto: ${codice}
+` +
+      `Importo: Euro ${euro(p.totale || 0)}
+
+` +
+      `1) Nexi carta${link ? '\n' + link : ' - link non disponibile, contattaci'}
+
+` +
+      `2) Bonifico bancario
+` +
+      `Intestatario: ${DP_BANK_HOLDER}
+` +
+      `Banca: ${DP_BANK_NAME}
+` +
+      `IBAN: ${DP_BANK_IBAN}
+` +
+      `Causale: Noleggio ${codice}
+
+` +
+      `Se paghi con bonifico invia qui la ricevuta.`;
+    const r = await dpNotify([tel], testo);
+    res.send(page('Invio scelta pagamento', `<div class="box"><h2 class="${r.ok ? 'ok' : 'bad'}">${r.ok ? 'Scelta pagamento inviata' : 'Invio non riuscito'}</h2><p><b>Cliente:</b> ${esc(tel)}</p><p>${r.ok ? 'Messaggio con Nexi e Bonifico inviato tramite Twilio.' : esc((r.errors || []).join(' | '))}</p><a class="btn btn2" href="/contratto/${p.id}/gestisci">Torna contratto</a></div>`));
+  } catch (e) {
+    res.status(500).send(page('Errore invio scelta pagamento', `<div class="box"><h2 class="bad">Errore WhatsApp pagamento</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${req.params.id}/gestisci">Torna contratto</a></div>`));
+  }
+});
+
 app.get('/nexi/:id/invia-whatsapp', async (req, res) => {
   try {
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
