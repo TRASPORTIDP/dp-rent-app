@@ -109,6 +109,10 @@ function v63ContractButtons(p){
       <a class="btn dp-danger" href="/pdf-view/${id}">📄 PDF</a>
       <a class="btn dp-dark" href="/cargos/check/${id}">🚚 Ca.R.G.O.S.</a>
       <a class="btn dp-green" href="/nexi/${id}">💳 Nexi</a>
+      <a class="btn dp-dark" href="/bonifico/${id}">🏦 Bonifico</a>
+      <a class="btn dp-green" href="/nexi/${id}/invia-whatsapp">📲 Invia Nexi WhatsApp</a>
+      <a class="btn dp-dark" href="/bonifico/${id}/invia-whatsapp">📲 Invia IBAN WhatsApp</a>
+      <a class="btn dp-green" href="/pagamento/${id}/invia-whatsapp">💳🏦 Invia scelta pagamento</a>
       <a class="btn dp-dark" href="/preventivo/nuovo">➕ Nuovo preventivo</a>
       <a class="btn bad" href="/prenotazione/${id}/elimina">🗑 Elimina</a>
     </div>
@@ -1725,13 +1729,33 @@ function nexiMacPayMail({ apiKey, codiceTransazione, importo, timeStamp }) {
   return crypto.createHash('sha1').update(source).digest('hex');
 }
 
+function dpParseMoneyToNumber(v) {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+  let s = String(v ?? '').trim();
+  if (!s) return 0;
+  s = s.replace(/EUR/gi, '').replace(/€/g, '').replace(/\s+/g, '');
+  // Gestisce formati italiani tipo 1.234,56 e formati standard tipo 1234.56
+  if (s.includes(',') && s.includes('.')) s = s.replace(/\./g, '').replace(',', '.');
+  else if (s.includes(',')) s = s.replace(',', '.');
+  s = s.replace(/[^0-9.-]/g, '');
+  const n = Number(s);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function dpNexiAmountCents(v) {
+  return String(Math.round(dpParseMoneyToNumber(v) * 100));
+}
+
 async function createNexiLink(amount, description, p) {
   if (!nexiConfigured()) {
     throw new Error('Nexi non configurato: servono NEXI_ALIAS, NEXI_MAC_KEY, APP_BASE_URL');
   }
 
-  const amountCents = String(Math.round(Number(amount || 0) * 100));
-  if (!amountCents || Number(amountCents) <= 0) throw new Error('Totale contratto non valido');
+  const amountCents = dpNexiAmountCents(amount);
+  if (!amountCents || Number(amountCents) <= 0) {
+    const rawTot = p ? (p.totale ?? p.totale_finale ?? p.importo ?? '') : amount;
+    throw new Error('Totale contratto non valido. Valore letto: ' + String(rawTot || amount || 'vuoto'));
+  }
 
   const codiceTransazione = buildNexiOrderId('DPR');
   const timeStamp = Date.now().toString();
@@ -4698,7 +4722,7 @@ app.get('/cliente/nexi/:id', async (req, res) => {
   try {
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
     if (!p) return res.status(404).send('Pratica non trovata');
-    const pagamento = await createNexiLink(Number(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
+    const pagamento = await createNexiLink(dpParseMoneyToNumber(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
     await run(`UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', stato='attesa_pagamento_nexi' WHERE id=?`, [pagamento.link, p.id]);
     try {
       await dpNotifyOncePren(p.id, 'cliente_scelto_nexi', DP_STAFF_NUMBERS || [], `💳 CLIENTE HA SCELTO NEXI\n\nCodice: ${p.codice || p.id}\nCliente: ${(p.nome||'')+' '+(p.cognome||'')}\nTel: ${p.telefono || ''}\nTotale: EUR ${euro(p.totale || 0)}\nStato: ATTESA PAGAMENTO NEXI`);
@@ -6563,7 +6587,7 @@ app.get('/nexi/:id', async (req, res) => {
     if (!p) return res.send('Contratto non trovato');
 
     const pagamento = await createNexiLink(
-      Number(p.totale || 0),
+      dpParseMoneyToNumber(p.totale || 0),
       `DP RENT ${p.codice || p.id}`,
       p
     );
@@ -6600,7 +6624,7 @@ app.get('/nexi/:id', async (req, res) => {
         <h2 class="bad">Errore Nexi</h2>
         <pre>${esc(e.message)}</pre>
         <p>Servono su Render: <b>NEXI_ALIAS</b>, <b>NEXI_MAC_KEY</b>, <b>NEXI_ENV</b>, <b>APP_BASE_URL</b>. Il PayMail attuale invia solo apiKey, codiceTransazione, importo, timeStamp, mac, url.</p>
-        <a class="btn" href="/prenotazioni">Torna allo storico</a>
+        <a class="btn" href="/contratto/${req.params.id}/gestisci">Torna contratto</a>
       </div>
     `));
   }
@@ -6682,7 +6706,7 @@ app.get('/pagamento/:id/invia-whatsapp', async (req, res) => {
     let link = p.nexi_link || '';
     if (!link) {
       try {
-        const pagamento = await createNexiLink(Number(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
+        const pagamento = await createNexiLink(dpParseMoneyToNumber(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
         link = pagamento.link;
         await run(`UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', nexi_raw=? WHERE id=?`, [link, pagamento.raw, p.id]);
       } catch(e) { link = ''; }
@@ -6726,7 +6750,7 @@ app.get('/nexi/:id/invia-whatsapp', async (req, res) => {
     let link = p.nexi_link || '';
     let raw = p.nexi_raw || '';
     if (!link) {
-      const pagamento = await createNexiLink(Number(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
+      const pagamento = await createNexiLink(dpParseMoneyToNumber(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
       link = pagamento.link;
       raw = pagamento.raw;
       await run(`UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', nexi_raw=? WHERE id=?`, [link, raw, p.id]);
