@@ -6194,7 +6194,7 @@ app.post('/mezzi/:id/officina', async (req,res)=>{
 app.get('/pdf-view/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   const titolo = p ? (p.codice || ('DPR-' + p.id)) : ('Contratto ' + req.params.id);
-  const pdfUrl = `/pdf/${req.params.id}`;
+  const pdfUrl = `/pdf/${req.params.id}?download=1`;
   const fileName = `${String(titolo || 'contratto-dp-rent').replace(/[^a-zA-Z0-9_-]+/g, '_')}.pdf`;
   res.send(page('PDF contratto', `
     <div class="box dp-pdf-toolbar">
@@ -6203,7 +6203,7 @@ app.get('/pdf-view/:id', async (req, res) => {
         <a class="btn btn2" href="/contratto/${req.params.id}/gestisci">⬅️ Indietro</a>
         <a class="btn" href="/contratto/${req.params.id}/gestisci">⚙️ Gestisci contratto</a>
         <a class="btn dp-primary" href="/contratto/${req.params.id}">👁 Vedi contratto</a>
-        <button type="button" class="btn dp-danger" id="dpSharePdfBtn">⬇️ Scarica / Condividi PDF</button>
+        <button class="btn dp-danger" type="button" onclick="dpDownloadPdf()">⬇️ Scarica PDF</button>
         <a class="btn btn2" href="/prenotazioni">📚 Storico</a>
         <a class="btn btn2" href="/">🏠 Dashboard</a>
       </div>
@@ -6221,44 +6221,22 @@ app.get('/pdf-view/:id', async (req, res) => {
       @media(max-width:700px){.dp-pdf-frame{height:72vh}.dp-pdf-toolbar{position:relative}.dp-pdf-toolbar .btn{width:100%;margin:6px 0}}
     </style>
     <script>
-      (function(){
-        const btn = document.getElementById('dpSharePdfBtn');
+      function dpDownloadPdf(){
         const msg = document.getElementById('dpDownloadMsg');
-        const pdfUrl = '/pdf/${req.params.id}';
-        const fileName = '${esc(fileName)}';
-        if (!btn) return;
-        btn.addEventListener('click', async function(ev){
-          ev.preventDefault();
-          btn.disabled = true;
-          const oldText = btn.textContent;
-          btn.textContent = 'Preparo PDF...';
-          if (msg) msg.textContent = '';
-          try {
-            const r = await fetch(pdfUrl, { cache: 'no-store' });
-            if (!r.ok) throw new Error('PDF non disponibile');
-            const blob = await r.blob();
-            const file = new File([blob], fileName || 'contratto-dp-rent.pdf', { type: 'application/pdf' });
-            if (navigator.canShare && navigator.canShare({ files: [file] }) && navigator.share) {
-              await navigator.share({ files: [file], title: 'Contratto DP RENT' });
-              if (msg) msg.textContent = 'PDF pronto. Sei rimasto nella pagina: puoi premere Indietro.';
-            } else {
-              const a = document.createElement('a');
-              const url = URL.createObjectURL(blob);
-              a.href = url;
-              a.download = fileName || 'contratto-dp-rent.pdf';
-              document.body.appendChild(a);
-              a.click();
-              setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
-              if (msg) msg.textContent = 'Download avviato. Usa Indietro per tornare alla gestione.';
-            }
-          } catch (e) {
-            if (msg) msg.innerHTML = 'Su questo dispositivo non posso aprire il pannello di condivisione. <a href="' + pdfUrl + '" target="_blank" rel="noopener">Apri PDF</a>';
-          } finally {
-            btn.disabled = false;
-            btn.textContent = oldText;
-          }
-        });
-      })();
+        const url = ${JSON.stringify(pdfUrl)};
+        // iPhone/Safari: non cambiamo window.location e non apriamo il PDF nella stessa pagina.
+        // Usiamo un iframe nascosto: la pagina PDF resta aperta, quindi Indietro/Gestisci funziona sempre.
+        let fr = document.getElementById('dpHiddenPdfDownload');
+        if(!fr){
+          fr = document.createElement('iframe');
+          fr.id = 'dpHiddenPdfDownload';
+          fr.name = 'dpHiddenPdfDownload';
+          fr.style.display = 'none';
+          document.body.appendChild(fr);
+        }
+        fr.src = url + '&t=' + Date.now();
+        if(msg) msg.textContent = 'Download avviato. Questa pagina resta aperta: usa Indietro o Gestisci contratto.';
+      }
     </script>
   `));
 });
@@ -7924,6 +7902,47 @@ function dpYesNo(v){
   if(['no','n','annulla'].includes(t)) return 'NO';
   return '';
 }
+
+// V194 - pagamento finale Nexi/Bonifico + noleggi lunghi
+const DP_OVER15_LIMIT_DAYS = 15;
+const DP_BANK_IBAN = process.env.DP_BANK_IBAN || 'IT78Q0200814413000104798294';
+const DP_BANK_HOLDER = process.env.DP_BANK_HOLDER || 'Trasporti DP SRL';
+const DP_BANK_NAME = process.env.DP_BANK_NAME || 'UniCredit';
+function dpHasNegation(v){
+  const t = dpNorm(v);
+  return /(^|\b)(non|no|sbagliato|errore|errato|annulla|cambia|cambiare|non ho scelto|non voglio)(\b|$)/.test(t);
+}
+function dpPaymentChoice(v){
+  const t = dpNorm(v);
+  if(['1','nexi','carta','card'].includes(t) || /pag.*carta|nexi/.test(t)) return 'NEXI';
+  if(['2','bonifico','banca','iban'].includes(t) || /bonifico|iban|bancari/.test(t)) return 'BONIFICO';
+  return '';
+}
+function dpPaymentMenu(calc){
+  return `${EMJ.ok} Preventivo confermato.
+
+Importo noleggio: *EUR ${euro(calc?.totale || 0)}*
+
+Scegli metodo di pagamento:
+
+${EMJ.one} *Nexi (carta)*
+${EMJ.two} *Bonifico bancario*
+
+Scrivi *1* oppure *2*.`;
+}
+function dpBankTransferMessage(codice, calc){
+  return `${EMJ.ok} Hai scelto *Bonifico Bancario*.
+
+Importo: *EUR ${euro(calc?.totale || 0)}*
+
+Intestatario: *${DP_BANK_HOLDER}*
+Banca: *${DP_BANK_NAME}*
+IBAN: *${DP_BANK_IBAN}*
+Causale: *Noleggio ${codice || 'DP RENT'}*
+
+Dopo il pagamento invia qui la ricevuta del bonifico (foto, screenshot o PDF).
+La prenotazione sara confermata dopo verifica dello staff DP RENT.`;
+}
 function dpSession(from, profileName){
   if(!DP_BOT_SESSIONS[from] || Date.now() - (DP_BOT_SESSIONS[from].ts || 0) > 2*60*60*1000){
     DP_BOT_SESSIONS[from] = { state:'menu', data:{}, profileName: profileName || 'Cliente', ts: Date.now() };
@@ -8129,22 +8148,13 @@ function dpVehicleCorrectionFromText(txt){
   // non usare singoli numeri come correzione fuori dalla schermata di scelta mezzo,
   // altrimenti una data/anno può cambiare categoria per errore.
   if(/^\d+$/.test(t)) return null;
-  const hasVehicleWord = /\b(furgone|furgoni|cargo|merci|van|pulmino|minibus|pulman|pullman|9\s*posti|8\s*posti|8\s*\/\s*9|dacia|sandero|golf|escavatore|mezzo speciale)\b/.test(t);
+  const hasVehicleWord = /(furgone|furgoni|cargo|merci|van|pulmino|minibus|pulman|pullman|9\s*posti|8\s*posti|8\s*\/\s*9|dacia|sandero|golf|escavatore|mezzo speciale)/.test(t);
   if(!hasVehicleWord) return null;
   const cat = dpCategoryFromChoice(raw);
   return cat || null;
 }
 
 // V145 - riconoscimento frasi naturali WhatsApp: non rimanda il menu se il cliente scrive "volevo noleggiare" ecc.
-
-// V192 - evita cambio mezzo se il cliente sta negando/correggendo una scelta.
-// Esempio: "Non ho scelto pulmino" NON deve confermare Pulmino.
-function dpHasVehicleNegation(txt){
-  const t = dpNorm(txt || '');
-  if(!t) return false;
-  return /\b(non|no|sbagliato|errore|errato|annulla|annullare|cancella|cancellare|non ho scelto|non volevo|non voglio|ho sbagliato)\b/.test(t);
-}
-
 function dpServiceIntentFromText(text){
   const t = dpNorm(text).replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   if(!t) return '';
@@ -8639,30 +8649,14 @@ async function dpHandleWhatsApp(req,res){
     // ("no furgone cargo", "anzi pulmino", "auto golf"), aggiorno il mezzo
     // e NON provo a leggere quella frase come data.
     if(natural?.cat && !natural?.range){
-      // V192: se scrive frasi tipo "non ho scelto pulmino", non confermo il pulmino.
-      // Chiedo invece quale mezzo vuole davvero.
-      if(dpHasVehicleNegation(body)){
-        session.data.cat = null;
+      if(dpHasNegation(body)){
         session.state = 'noleggio_model';
         session.ts = Date.now();
-        return dpTwimlResponse(res, `Ok 👍 nessun problema.
-
-Quale mezzo desideri?
-
-1 Furgone cargo/merci
-2 Pulmino 8/9 posti
-3 Auto economica tipo Dacia
-4 Auto categoria Golf
-5 Escavatore / mezzo speciale
-
-Scrivi il numero o il tipo di mezzo.`);
+        return dpTwimlResponse(res, `Ok, correggiamo il mezzo.\n\n${dpPromptNoleggioCategorie()}`);
       }
       session.data.cat = natural.cat;
       session.ts = Date.now();
-      return dpTwimlResponse(res, `Ok 👍 ho cambiato mezzo: *${session.data.cat.label}*
-
-Ora indicami le date noleggio.
-Esempio: 20/05 - 22/05`);
+      return dpTwimlResponse(res, `Ok 👍 ho cambiato mezzo: *${session.data.cat.label}*\n\nOra indicami le date noleggio.\nEsempio: 20/05 - 22/05`);
     }
 
     if(natural?.cat) session.data.cat = natural.cat;
@@ -8675,21 +8669,10 @@ Esempio: 20/05 - 22/05`);
   if(session.state === 'noleggio_km'){
     const correctionCat = dpVehicleCorrectionFromText(body);
     if(correctionCat){
-      if(dpHasVehicleNegation(body)){
-        session.data.cat = null;
+      if(dpHasNegation(body)){
         session.state = 'noleggio_model';
         session.ts = Date.now();
-        return dpTwimlResponse(res, `Ok 👍 nessun problema.
-
-Quale mezzo desideri?
-
-1 Furgone cargo/merci
-2 Pulmino 8/9 posti
-3 Auto economica tipo Dacia
-4 Auto categoria Golf
-5 Escavatore / mezzo speciale
-
-Scrivi il numero o il tipo di mezzo.`);
+        return dpTwimlResponse(res, `Ok, correggiamo il mezzo.\n\n${dpPromptNoleggioCategorie()}`);
       }
       session.data.cat = correctionCat;
       session.state = 'noleggio_dates';
@@ -8701,44 +8684,6 @@ Indicami le date noleggio.
 Esempio: 20/05 - 22/05 oppure solo 14/06`);
     }
     const km = dpExtractKm(body);
-    const giorniRichiesti = dpDays(session.data.start, session.data.end);
-
-    // V191 - noleggi oltre 15 giorni: niente preventivo automatico e niente link cliente.
-    // La richiesta resta in app/staff per tariffa riservata manuale.
-    if(giorniRichiesti > 15){
-      session.data.km = km;
-      session.data.calc = { giorni: giorniRichiesti, totale: 0, imponibile: 0, iva: 0 };
-      session.data.mezzo = {};
-      const savedLong = await dpSaveWhatsAppQuote(session, from, profileName, 'richiesta_cliente');
-      if(savedLong && savedLong.id){
-        await run(`UPDATE prenotazioni SET note=COALESCE(note,'') || ? WHERE id=?`, [
-          '\nNOLEGGIO OLTRE 15 GIORNI: non inviato link cliente, tariffa riservata da comunicare manualmente.',
-          savedLong.id
-        ]).catch(()=>{});
-      }
-      try {
-        await dpNotify(DP_STAFF_NUMBERS, `${EMJ.van} RICHIESTA NOLEGGIO OLTRE 15 GIORNI - TARIFFA RISERVATA
-
-Cliente: ${profileName}
-WhatsApp: ${from}
-Mezzo richiesto: ${session.data.cat?.label || ''}
-Date: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}
-Giorni: ${giorniRichiesti}
-Km previsti: ${km}
-
-Il cliente NON ha ricevuto link e NON deve ricevere link automatici.
-Ricontattarlo per tariffa riservata.
-
-Richiesta salvata in app tra le richieste/prenotazioni in attesa.`);
-      } catch(e) { console.log('Notifica noleggio lungo warning:', e.message); }
-      delete DP_BOT_SESSIONS[from];
-      return dpTwimlResponse(res, `${EMJ.ok} Richiesta ricevuta.
-
-Per noleggi superiori a 15 giorni prepariamo una tariffa riservata.
-
-Verrai ricontattato dallo staff DP RENT per scoprire la tariffa a te riservata.`);
-    }
-
     const startIso = dpDateIso(session.data.start);
     const endIso = dpDateIso(session.data.end);
     const mezzo = await dpFindAvailableVehicle(session.data.cat, startIso, endIso);
@@ -8749,7 +8694,22 @@ Verrai ricontattato dallo staff DP RENT per scoprire la tariffa a te riservata.`
     }
     let calc = { totale: 0, giorni: dpDays(session.data.start, session.data.end) };
     try{ calc = calcolaTotale(mezzo, startIso, endIso, '08:30', '18:00', km); }catch(e){ console.error(e.message); }
-    session.data.km = km; session.data.mezzo = mezzo; session.data.calc = calc; session.state = 'noleggio_confirm'; session.ts = Date.now();
+    session.data.km = km; session.data.mezzo = mezzo; session.data.calc = calc;
+
+    // V194: oltre 15 giorni niente link cliente e niente pagamento automatico.
+    // Si salva la richiesta e lo staff richiama il cliente con tariffa riservata.
+    if(Number(calc.giorni || dpDays(session.data.start, session.data.end)) > DP_OVER15_LIMIT_DAYS){
+      const savedLong = await dpSaveWhatsAppQuote(session, from, profileName, 'tariffa_riservata');
+      const appBaseLong = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
+      const adminLinkLong = savedLong.ok ? `${appBaseLong}/prenotazione/${savedLong.id}` : `${appBaseLong}/richieste-attesa`;
+      try {
+        await dpNotifyOncePren(savedLong.id, 'over15_tariffa_riservata', DP_STAFF_NUMBERS, `${EMJ.warn} RICHIESTA NOLEGGIO OLTRE 15 GIORNI - TARIFFA RISERVATA\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nGiorni: ${calc.giorni || dpDays(session.data.start, session.data.end)}\nKm: ${km}\nPreventivo automatico calcolato: EUR ${euro(calc.totale || 0)}\n\nNESSUN LINK CLIENTE INVIATO.\nRicontattare il cliente per tariffa personalizzata.\n\nApri in app: ${adminLinkLong}`);
+      } catch(e) { console.log('Notifica over15 warning:', e.message); }
+      delete DP_BOT_SESSIONS[from];
+      return dpTwimlResponse(res, `${EMJ.ok} Richiesta ricevuta.\n\nPer noleggi superiori a *15 giorni* verrai ricontattato dallo staff DP RENT per scoprire la *tariffa riservata* a te dedicata.\n\nLa richiesta e stata inviata al nostro ufficio. Nessun pagamento o link automatico viene generato in questa fase.`);
+    }
+
+    session.state = 'noleggio_confirm'; session.ts = Date.now();
     const savedQuote = await dpSaveWhatsAppQuote(session, from, profileName, 'attesa_si_no');
     const appBaseQuote = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
     const quoteAdminLink = savedQuote.ok ? `${appBaseQuote}/prenotazione/${savedQuote.id}` : `${appBaseQuote}/richieste-attesa`;
@@ -8769,6 +8729,16 @@ Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
       delete DP_BOT_SESSIONS[from]; return dpTwimlResponse(res, 'Preventivo annullato. Lo staff DP ha comunque ricevuto la richiesta, così non perdiamo il contatto. Scrivi MENU per ricominciare.');
     }
     if(yn !== 'SI') return dpTwimlResponse(res, 'Rispondi SI per confermare oppure NO per annullare.');
+    await dpUpdateWhatsAppQuote(session, 'scelta_pagamento');
+    session.state = 'noleggio_payment';
+    session.ts = Date.now();
+    return dpTwimlResponse(res, dpPaymentMenu(session.data.calc));
+  }
+
+  if(session.state === 'noleggio_payment'){
+    const choice = dpPaymentChoice(body);
+    if(!choice) return dpTwimlResponse(res, `Scegli il metodo di pagamento:\n\n${EMJ.one} Nexi (carta)\n${EMJ.two} Bonifico bancario\n\nScrivi *1* oppure *2*.`);
+
     const q = new URLSearchParams({
       ref: String(session.data.prenotazione_id || ''),
       categoria: session.data.cat.cats[0] || '',
@@ -8779,10 +8749,35 @@ Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
     });
     const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
     const link = `${base}/prenota?${q.toString()}`;
+
+    if(choice === 'BONIFICO'){
+      await dpUpdateWhatsAppQuote(session, 'attesa_verifica_bonifico');
+      const codice = session.data.codice || (session.data.prenotazione_id ? codicePratica(session.data.prenotazione_id) : 'DP RENT');
+      try {
+        await dpNotifyOncePren(session.data.prenotazione_id, 'bonifico_attesa_verifica', DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO - BONIFICO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\nMetodo pagamento: BONIFICO\nStato: ATTESA VERIFICA PAGAMENTO\nCausale: Noleggio ${codice}\n\nLink pratica app: ${base}/prenotazione/${session.data.prenotazione_id || ''}\n\nNOTA: attendere ricevuta/verifica prima della conferma definitiva.`);
+      } catch(e) {}
+      session.state = 'noleggio_bonifico_receipt';
+      session.ts = Date.now();
+      return dpTwimlResponse(res, dpBankTransferMessage(codice, session.data.calc));
+    }
+
     await dpUpdateWhatsAppQuote(session, 'richiesta_cliente');
-    await dpNotifyOncePren(session.data.prenotazione_id, 'preventivo_confermato', DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
+    await dpNotifyOncePren(session.data.prenotazione_id, 'preventivo_confermato_nexi', DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO - NEXI CARTA\n\nCliente: ${profileName}\nWhatsApp: ${from}\nMezzo richiesto: ${session.data.cat.label}\nDate: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}\nKm: ${session.data.km}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\nMetodo pagamento: NEXI/CARTA\n\nLink cliente:\n${link}\n\nNota interna mezzo assegnabile: ${session.data.mezzo?.marca || ''} ${session.data.mezzo?.modello || ''} ${session.data.mezzo?.targa || ''}`);
     delete DP_BOT_SESSIONS[from];
-    return dpTwimlResponse(res, `Perfetto ${EMJ.ok}\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verra preparato il contratto definitivo.`);
+    return dpTwimlResponse(res, `Perfetto ${EMJ.ok}\n\nHai scelto *Nexi (carta)*.\n\nOra completa i dati cliente, documento e patente da questo link:\n${link}\n\nDopo il controllo dell ufficio DP RENT verra preparato il contratto definitivo.`);
+  }
+
+  if(session.state === 'noleggio_bonifico_receipt'){
+    const numMedia = Number(req.body.NumMedia || 0);
+    if(numMedia > 0){
+      await dpUpdateWhatsAppQuote(session, 'ricevuta_bonifico_da_verificare');
+      try {
+        await dpNotifyOncePren(session.data.prenotazione_id, 'ricevuta_bonifico', DP_STAFF_NUMBERS, `${EMJ.ok} RICEVUTA BONIFICO RICEVUTA - DA VERIFICARE\n\nCliente: ${profileName}\nWhatsApp: ${from}\nPratica: ${session.data.codice || codicePratica(session.data.prenotazione_id || 0)}\nTotale: EUR ${euro(session.data.calc?.totale || 0)}\nAllegati WhatsApp ricevuti: ${numMedia}\n\nApri pratica: ${(process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'')}/prenotazione/${session.data.prenotazione_id || ''}`);
+      } catch(e) {}
+      delete DP_BOT_SESSIONS[from];
+      return dpTwimlResponse(res, `${EMJ.ok} Ricevuta ricevuta.\n\nLo staff DP RENT verifichera il pagamento e ti confermera il noleggio.`);
+    }
+    return dpTwimlResponse(res, `Per completare il bonifico invia qui la ricevuta del pagamento come foto, screenshot o PDF.\n\nIBAN: *${DP_BANK_IBAN}*`);
   }
 
   if(session.state === 'vendita'){
