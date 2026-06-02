@@ -10369,4 +10369,15 @@ v176UpdateOrCreatePdfDrive = async function v178UpdateOrCreatePdfDriveNoDuplicat
       const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false, skipDrive:true });
       await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
       console.log('V178 Drive update non riuscito: mantengo PDF Drive esistente, NO duplicato:', e.message);
-      return { ok:false, pdf, 
+      return { ok:false, pdf, keptExisting:true, error:e.message };
+    }
+    throw e;
+  }
+};
+
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId){
+  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
+  catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
+};
+
+console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
