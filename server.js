@@ -4687,12 +4687,43 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .contract-main-actions .btn{width:100%!important;}
 }
 
-</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Richiesta inviata</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>DP RENT controllerà i dati e ti confermerà contratto e disponibilità.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a><a class="btn" style="background:#1a73e8;margin-left:8px" target="_blank" href="${v148GoogleCalendarLink(Object.assign({}, data, {id: result.lastID, codice: cod}))}">📅 Google Calendar</a></div></div></body></html>`);
+</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Dati ricevuti</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>Ora scegli il metodo di pagamento per completare la richiesta.</p><p><b>Totale noleggio:</b> € ${euro(calc.totale)}</p><div style="margin-top:18px"><a class="btn" href="/cliente/nexi/${result.lastID}">💳 Nexi (carta)</a><a class="btn" style="background:#333;margin-left:8px" href="/cliente/bonifico/${result.lastID}">🏦 Bonifico bancario</a></div><p style="margin-top:16px;color:#555">La prenotazione sarà confermata dopo verifica del pagamento da parte dello staff DP RENT.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" style="background:#555" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a></div></div></body></html>`);
   } catch (e) {
     res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore invio dati</h1><pre>${esc(e.stack || e.message)}</pre><a href="javascript:history.back()">Torna</a>`);
   }
 });
 
+// V195 - pagamento DOPO compilazione dati cliente
+app.get('/cliente/nexi/:id', async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.status(404).send('Pratica non trovata');
+    const pagamento = await createNexiLink(Number(p.totale || 0), `DP RENT ${p.codice || p.id}`, p);
+    await run(`UPDATE prenotazioni SET nexi_link=?, nexi_stato='link_generato', stato='attesa_pagamento_nexi' WHERE id=?`, [pagamento.link, p.id]);
+    try {
+      await dpNotifyOncePren(p.id, 'cliente_scelto_nexi', DP_STAFF_NUMBERS || [], `💳 CLIENTE HA SCELTO NEXI\n\nCodice: ${p.codice || p.id}\nCliente: ${(p.nome||'')+' '+(p.cognome||'')}\nTel: ${p.telefono || ''}\nTotale: EUR ${euro(p.totale || 0)}\nStato: ATTESA PAGAMENTO NEXI`);
+    } catch(e) {}
+    return res.redirect(pagamento.link);
+  } catch (e) {
+    return res.status(500).send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Errore Nexi</h1><pre>${esc(e.message || e)}</pre><a href="javascript:history.back()">Torna</a>`);
+  }
+});
+
+app.get('/cliente/bonifico/:id', async (req, res) => {
+  try {
+    const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!p) return res.status(404).send('Pratica non trovata');
+    const codice = p.codice || codicePratica(p.id);
+    await run(`UPDATE prenotazioni SET stato='attesa_verifica_bonifico' WHERE id=?`, [p.id]).catch(()=>{});
+    try {
+      await dpNotifyOncePren(p.id, 'cliente_scelto_bonifico', DP_STAFF_NUMBERS || [], `🏦 CLIENTE HA SCELTO BONIFICO\n\nCodice: ${codice}\nCliente: ${(p.nome||'')+' '+(p.cognome||'')}\nTel: ${p.telefono || ''}\nTotale: EUR ${euro(p.totale || 0)}\nMetodo pagamento: BONIFICO\nStato: ATTESA RICEVUTA / VERIFICA\nCausale: Noleggio ${codice}\n\nApri pratica: ${(process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'')}/prenotazione/${p.id}`);
+    } catch(e) {}
+    res.setHeader('Content-Type','text/html; charset=utf-8');
+    return res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Arial;background:#eef4ff;margin:0;padding:22px;color:#111}.box{background:#fff;border-radius:24px;padding:24px;box-shadow:0 12px 35px #0001;max-width:760px;margin:auto}.ok{color:#157c2d;font-size:34px}.iban{font-size:30px;font-weight:900;word-break:break-all}.btn{display:block;background:#d70000;color:#fff;padding:16px 20px;border-radius:18px;text-align:center;text-decoration:none;font-weight:900;margin-top:18px}</style></head><body><div class="box"><h1 class="ok">✅ Bonifico bancario</h1><p><b>Importo:</b> € ${euro(p.totale || 0)}</p><p><b>Intestatario:</b> ${esc(DP_BANK_HOLDER)}</p><p><b>Banca:</b> ${esc(DP_BANK_NAME)}</p><p><b>IBAN:</b></p><p class="iban">${esc(DP_BANK_IBAN)}</p><p><b>Causale:</b> Noleggio ${esc(codice)}</p><p>Dopo il pagamento invia la ricevuta del bonifico su WhatsApp DP RENT. La prenotazione sarà confermata dopo verifica dello staff.</p><a class="btn" href="https://wa.me/390744817108?text=${encodeURIComponent('Buongiorno, invio ricevuta bonifico per noleggio '+codice)}">Invia ricevuta su WhatsApp</a></div></body></html>`);
+  } catch (e) {
+    return res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore bonifico</h1><pre>${esc(e.message || e)}</pre><a href="javascript:history.back()">Torna</a>`);
+  }
+});
 
 
 // =========================
@@ -8729,10 +8760,48 @@ Il cliente sta vedendo il preventivo e deve rispondere SI o NO.`);
       delete DP_BOT_SESSIONS[from]; return dpTwimlResponse(res, 'Preventivo annullato. Lo staff DP ha comunque ricevuto la richiesta, così non perdiamo il contatto. Scrivi MENU per ricominciare.');
     }
     if(yn !== 'SI') return dpTwimlResponse(res, 'Rispondi SI per confermare oppure NO per annullare.');
-    await dpUpdateWhatsAppQuote(session, 'scelta_pagamento');
-    session.state = 'noleggio_payment';
-    session.ts = Date.now();
-    return dpTwimlResponse(res, dpPaymentMenu(session.data.calc));
+
+    // V195 FIX: dopo il SI NON si chiede subito il pagamento su WhatsApp.
+    // Prima il cliente deve completare tutti i dati sul link cliente.
+    // La scelta pagamento Nexi/Bonifico viene mostrata solo alla fine della pagina dati.
+    await dpUpdateWhatsAppQuote(session, 'richiesta_cliente');
+    const q = new URLSearchParams({
+      ref: String(session.data.prenotazione_id || ''),
+      categoria: session.data.cat.cats[0] || '',
+      data_inizio: dpDateIso(session.data.start),
+      data_fine: dpDateIso(session.data.end),
+      km_previsti: String(session.data.km || 150),
+      telefono: from.replace('whatsapp:','')
+    });
+    const base = (process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,'') || 'https://dp-rent-app.onrender.com';
+    const link = `${base}/prenota?${q.toString()}`;
+    try {
+      await dpNotifyOncePren(session.data.prenotazione_id, 'preventivo_confermato_attesa_dati', DP_STAFF_NUMBERS, `${EMJ.van} PREVENTIVO NOLEGGIO CONFERMATO - LINK DATI INVIATO
+
+Cliente: ${profileName}
+WhatsApp: ${from}
+Mezzo richiesto: ${session.data.cat.label}
+Date: ${dpDateIt(session.data.start)} - ${dpDateIt(session.data.end)}
+Km: ${session.data.km}
+Totale: EUR ${euro(session.data.calc?.totale || 0)}
+
+Il cliente deve completare dati/documenti dal link.
+La scelta pagamento Nexi/Bonifico sara alla fine del modulo dati.
+
+Link cliente:
+${link}`);
+    } catch(e) {}
+    delete DP_BOT_SESSIONS[from];
+    return dpTwimlResponse(res, `Perfetto ${EMJ.ok}
+
+Preventivo confermato.
+
+Ora completa i dati cliente, documento e patente da questo link:
+${link}
+
+Alla fine del modulo potrai scegliere il pagamento:
+${EMJ.one} Nexi (carta)
+${EMJ.two} Bonifico bancario`);
   }
 
   if(session.state === 'noleggio_payment'){
@@ -10300,15 +10369,4 @@ v176UpdateOrCreatePdfDrive = async function v178UpdateOrCreatePdfDriveNoDuplicat
       const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false, skipDrive:true });
       await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
       console.log('V178 Drive update non riuscito: mantengo PDF Drive esistente, NO duplicato:', e.message);
-      return { ok:false, pdf, keptExisting:true, error:e.message };
-    }
-    throw e;
-  }
-};
-
-syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId){
-  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
-  catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
-};
-
-console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
+      return { ok:false, pdf, 
