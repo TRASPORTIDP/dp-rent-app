@@ -2030,7 +2030,7 @@ async function generaPdfContratto(id, opts = {}) {
     const labels = ['DATA CREAZIONE','PERIODO NOLEGGIO','TOTALE','CAUZIONE'];
     const vals = [
       itNow(),
-      `${itDateTime(p.data_inizio, p.ora_inizio)} →\n${itDateTime(p.data_fine, p.ora_fine)}`,
+      `Dal ${itDateTime(p.data_inizio, p.ora_inizio)}\nAl ${itDateTime(p.data_fine, p.ora_fine)}`,
       euroTxt(totaleFinale),
       euroTxt(p.cauzione || CAUZIONE)
     ];
