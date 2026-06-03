@@ -1445,19 +1445,32 @@ function fuelOptions(selected) {
   return vals.map(v => `<option value="${esc(v)}" ${selected===v?'selected':''}>${esc(v)}</option>`).join('');
 }
 
-// V180: calcolo supplemento km al rientro. Prezzo: EXTRA_KM + IVA.
+// V180/V201: calcolo supplemento km al rientro.
+// Prima usa i km concordati/preventivati nel contratto; se mancano usa giorni x km/giorno.
 function v180CheckinKmCalc(p, kmRientro){
   const kmOut = Number(p.km_uscita || 0);
   const kmIn = Number(kmRientro || 0);
   const kmPercorsi = (kmOut > 0 && kmIn >= kmOut) ? (kmIn - kmOut) : 0;
   const giorni = Math.max(1, Number(p.giorni || (p.data_inizio && p.data_fine ? moment(p.data_fine).diff(moment(p.data_inizio), 'days') + 1 : 1) || 1));
   const kmGiorno = Number(p.km_inclusi || p.km_inclusi_giorno || kmCategoria(p.categoria || p.tipo) || 150);
-  const inclusi = giorni * kmGiorno;
+  const inclusiStandard = giorni * kmGiorno;
+
+  // km_previsti / km_preventivo sono i km concordati col cliente nel preventivo.
+  // Se il cliente ha pagato km aggiuntivi (es. 700 invece di 600), il rientro va confrontato con 700.
+  const kmConcordati = Math.max(
+    dpMoneyNum(p.km_concordati),
+    dpMoneyNum(p.km_previsti),
+    dpMoneyNum(p.km_preventivo),
+    dpMoneyNum(p.km_previsti_cliente),
+    inclusiStandard
+  );
+
+  const inclusi = kmConcordati;
   const extraKm = Math.max(0, kmPercorsi - inclusi);
   const imponibile = extraKm * Number(EXTRA_KM || 0.15);
   const iva = imponibile * Number(IVA || 0.22);
   const supplemento = imponibile + iva;
-  return { kmOut, kmIn, kmPercorsi, giorni, kmGiorno, inclusi, extraKm, imponibile, iva, supplemento };
+  return { kmOut, kmIn, kmPercorsi, giorni, kmGiorno, inclusiStandard, kmConcordati, inclusi, extraKm, imponibile, iva, supplemento };
 }
 function dpMoneyNum(v){
   if (v === null || v === undefined || v === '') return 0;
@@ -6234,8 +6247,16 @@ app.get('/checkin/:id', async (req, res) => {
   if (!p) return res.send('Contratto non trovato');
   const nowTime = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
   const kmOut = Number(p.km_uscita || 0);
-  const kmIncl = Math.max(1, Number(p.giorni || 1)) * Number(p.km_inclusi || kmCategoria(p.categoria || p.tipo) || 150);
-  res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><p><b>Km uscita:</b> ${esc(kmOut||'-')} &nbsp; <b>Km inclusi contratto:</b> ${esc(kmIncl||'-')} &nbsp; <b>Extra km:</b> €${esc(EXTRA_KM)} + IVA/km</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Orario check-in</label><input type="time" name="check_in_orario" value="${esc(p.check_in_orario || p.ora_fine || nowTime)}"></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}" required></div></div><div class="notice"><b>Calcolo automatico:</b> se i km percorsi superano i km inclusi, il sistema calcola il supplemento cliente e aggiorna i km del mezzo.</div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.check_in_note || p.note)}</textarea><button>Salva check-in e calcola extra km</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
+  const giorniCheck = Math.max(1, Number(p.giorni || 1));
+  const kmStandard = giorniCheck * Number(p.km_inclusi || kmCategoria(p.categoria || p.tipo) || 150);
+  const kmIncl = Math.max(
+    dpMoneyNum(p.km_concordati),
+    dpMoneyNum(p.km_previsti),
+    dpMoneyNum(p.km_preventivo),
+    dpMoneyNum(p.km_previsti_cliente),
+    kmStandard
+  );
+  res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><p><b>Km uscita:</b> ${esc(kmOut||'-')} &nbsp; <b>Km concordati contratto:</b> ${esc(kmIncl||'-')} &nbsp; <b>Extra km:</b> €${esc(EXTRA_KM)} + IVA/km</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Orario check-in</label><input type="time" name="check_in_orario" value="${esc(p.check_in_orario || p.ora_fine || nowTime)}"></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}" required></div></div><div class="notice"><b>Calcolo automatico:</b> se i km percorsi superano i km concordati nel contratto/preventivo, il sistema calcola il supplemento cliente e aggiorna i km del mezzo.</div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.check_in_note || p.note)}</textarea><button>Salva check-in e calcola extra km</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
 });
 app.post('/checkin/:id', async (req, res) => {
   const p = await get(`SELECT p.*, m.km_attuali AS mezzo_km_attuali, m.tagliando_km AS mezzo_tagliando_km, m.tagliando_km_scadenza AS mezzo_tagliando_km_scadenza FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
@@ -6243,8 +6264,8 @@ app.post('/checkin/:id', async (req, res) => {
   const c = v180CheckinKmCalc(p, req.body.km_rientro);
   const noteBase = req.body.note || '';
   const noteExtra = c.extraKm > 0 ? `
-EXTRA KM RIENTRO: percorsi ${c.kmPercorsi}, inclusi ${c.inclusi}, extra ${c.extraKm}, supplemento €${v180Money(c.supplemento)} IVA inclusa.` : `
-KM RIENTRO: percorsi ${c.kmPercorsi}, inclusi ${c.inclusi}, nessun extra km.`;
+EXTRA KM RIENTRO: percorsi ${c.kmPercorsi}, concordati ${c.inclusi}, extra ${c.extraKm}, supplemento €${v180Money(c.supplemento)} IVA inclusa.` : `
+KM RIENTRO: percorsi ${c.kmPercorsi}, concordati ${c.inclusi}, nessun extra km.`;
   await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, km_percorsi=?, km_extra_rientro=?, supplemento_km_rientro=?, totale_finale=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, c.kmIn, c.kmPercorsi, c.extraKm, v180Money(c.supplemento), v180Money(v188TotaleFinale(p.totale, c.supplemento)), noteBase + noteExtra, noteBase + noteExtra, req.params.id]);
   if (p && c.kmIn) await run(`UPDATE mezzi SET km_attuali=?, km=? WHERE id=?`, [c.kmIn, c.kmIn, p.mezzo_id]);
   try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
