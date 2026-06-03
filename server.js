@@ -1947,6 +1947,25 @@ async function generaPdfContratto(id, opts = {}) {
   function safe(v, fallback = '/') { const t = clean(v); return t || fallback; }
   function money(v) { return dpMoneyNum(v).toFixed(2).replace('.', ','); }
   function euroTxt(v) { return `€ ${money(v)}`; }
+  function itDate(v, fallback='/') {
+    const raw = clean(v);
+    if (!raw) return fallback;
+    const m = moment(raw, ['YYYY-MM-DD HH:mm:ss','YYYY-MM-DD HH:mm','YYYY-MM-DD','DD/MM/YYYY HH:mm:ss','DD/MM/YYYY HH:mm','DD/MM/YYYY', moment.ISO_8601], true);
+    return m.isValid() ? m.format('DD/MM/YYYY') : raw;
+  }
+  function itTime(v, fallback='') {
+    const raw = clean(v);
+    if (!raw) return fallback;
+    const m = moment(raw, ['HH:mm:ss','HH:mm','YYYY-MM-DD HH:mm:ss','YYYY-MM-DD HH:mm', moment.ISO_8601], true);
+    return m.isValid() ? m.format('HH:mm') : raw.slice(0,5);
+  }
+  function itDateTime(dateVal, timeVal) {
+    const d = itDate(dateVal, '');
+    const t = itTime(timeVal || '', '');
+    if (!d) return '/';
+    return t ? `${d} ore ${t}` : d;
+  }
+  function itNow() { return moment().format('DD/MM/YYYY [ore] HH:mm'); }
   function font(bold=false, size=8, color=TEXT) { doc.font(bold ? 'Helvetica-Bold' : 'Helvetica').fontSize(size).fillColor(color); }
   function fitText(txt, x, yy, w, h, size=7.4, bold=false, color=TEXT, opt={}) {
     font(bold, size, color);
@@ -1994,7 +2013,7 @@ async function generaPdfContratto(id, opts = {}) {
     font(true, 5.6, RED); doc.text('TIPO DOCUMENTO', W - M - 132, y + 8, { width: 100, align:'center' });
     font(true, 8.5, RED_DARK); doc.text('CONTRATTO', W - M - 132, y + 20, { width: 100, align:'center' });
     font(true, 5.6, MUTED); doc.text('DATA EMISSIONE', W - M - 132, y + 34, { width: 100, align:'center' });
-    font(true, 6.8, BLACK); doc.text(moment().format('YYYY-MM-DD HH:mm:ss'), W - M - 132, y + 43, { width: 100, align:'center' });
+    font(true, 6.8, BLACK); doc.text(itNow(), W - M - 132, y + 43, { width: 100, align:'center' });
     y += 70;
   }
   function contractNumber() {
@@ -2129,7 +2148,7 @@ async function generaPdfContratto(id, opts = {}) {
     ['Cliente', nomeCliente], ['Telefono', p.telefono || ''], ['Email', p.email || ''], ['Codice fiscale', p.codice_fiscale || p.cf || ''], ['Indirizzo', indirizzoPrivato]
   ], RED);
   const r1 = box(M + COL + GAP, y1, COL, 'CONDUCENTI', [
-    ['Conducente 1', p.conducente1 || nomeCliente], ['Documento', `${docNum}${docScad !== '/' ? ' scad. ' + docScad : ''}`], ['Patente 1', `${patNum}${patScad !== '/' ? ' scad. ' + patScad : ''}`], ['Categoria', catPat], ['Conducente 2', p.conducente2 || `${safe(p.conducente2_nome,'')} ${safe(p.conducente2_cognome,'')}`.trim()], ['Patente 2', `${safe(p.conducente2_patente_numero || p.conducente2_patente || p.patente2, '')}${(p.conducente2_patente_scadenza || p.patente2_scadenza) ? ' scad. ' + (p.conducente2_patente_scadenza || p.patente2_scadenza) : ''}`]
+    ['Conducente 1', p.conducente1 || nomeCliente], ['Documento', `${docNum}${docScad !== '/' ? ' scad. ' + itDate(docScad) : ''}`], ['Patente 1', `${patNum}${patScad !== '/' ? ' scad. ' + itDate(patScad) : ''}`], ['Categoria', catPat], ['Conducente 2', p.conducente2 || `${safe(p.conducente2_nome,'')} ${safe(p.conducente2_cognome,'')}`.trim()], ['Patente 2', `${safe(p.conducente2_patente_numero || p.conducente2_patente || p.patente2, '')}${(p.conducente2_patente_scadenza || p.patente2_scadenza) ? ' scad. ' + itDate(p.conducente2_patente_scadenza || p.patente2_scadenza) : ''}`]
   ], RED);
   y = Math.max(l1, r1);
 
@@ -2140,7 +2159,7 @@ async function generaPdfContratto(id, opts = {}) {
 
   const y2 = y;
   const l2 = box(M, y2, COL, 'VEICOLO E NOLEGGIO', [
-    ['Targa', p.targa || ''], ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`)], ['Categoria', p.categoria || ''], ['Giorni', String(giorni)], ['Km incl./prev.', `${kmInclusiTot} / ${safe(p.km_previsti || p.km_preventivo || '')}`], ['Km uscita/rientro', `${safe(p.km_uscita,'')} / ${safe(p.km_rientro,'')}`], ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/'], ['Orari check', `OUT ${safe(p.ora_inizio,'')} / IN ${safe(p.ora_fine,'')}`]
+    ['Targa', p.targa || ''], ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`)], ['Categoria', p.categoria || ''], ['Giorni', String(giorni)], ['Km incl./prev.', `${kmInclusiTot} / ${safe(p.km_previsti || p.km_preventivo || '')}`], ['Km uscita/rientro', `${safe(p.km_uscita,'')} / ${safe(p.km_rientro,'')}`], ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/'], ['Orari check', `Uscita ${itTime(p.ora_inizio,'/')} / Rientro ${itTime(p.ora_fine,'/')}`]
   ], DARK);
   const econRows = [];
   econRows.push(['Extra orario', `${euroTxt(p.extra_fuori_orario)} + IVA`]);
