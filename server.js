@@ -2029,8 +2029,8 @@ async function generaPdfContratto(id, opts = {}) {
     const xs = [M+10, M+153, M+315, M+460];
     const labels = ['DATA CREAZIONE','PERIODO NOLEGGIO','TOTALE','CAUZIONE'];
     const vals = [
-      moment().format('YYYY-MM-DD HH:mm:ss'),
-      `${safe(p.data_inizio,'')} ${safe(p.ora_inizio,'')}  >\n${safe(p.data_fine,'')} ${safe(p.ora_fine,'')}`,
+      itNow(),
+      `${itDateTime(p.data_inizio, p.ora_inizio)} →\n${itDateTime(p.data_fine, p.ora_fine)}`,
       euroTxt(totaleFinale),
       euroTxt(p.cauzione || CAUZIONE)
     ];
