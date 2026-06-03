@@ -1448,20 +1448,40 @@ function fuelOptions(selected) {
 // V201: km extra al rientro calcolati sui KM CONCORDATI/PREVENTIVATI, non solo sui km standard.
 // Esempio: inclusi standard 600, cliente ha preventivato/pagato 700, percorsi 609 => extra 0.
 function v201KmConcordatiRientro(p, inclusiStandard){
+  const standard = Number(inclusiStandard || 0);
+
+  // 1) Se il contratto/preventivo ha un campo KM totale concordato, usa quello.
   const possibili = [
     p.km_concordati,
     p.kmConcordati,
+    p.km_concordati_tot,
+    p.kmConcordatiTot,
     p.km_previsti,
     p.km_preventivo,
     p.kmPrevisti,
-    p.kmPreventivo
+    p.kmPreventivo,
+    p.km_totali,
+    p.kmTotali
   ];
-  let kmPreventivati = 0;
+  let kmContratto = 0;
   for (const v of possibili) {
     const n = dpMoneyNum(v);
-    if (n > kmPreventivati) kmPreventivati = n;
+    if (n > kmContratto) kmContratto = n;
   }
-  return Math.max(Number(inclusiStandard || 0), Number(kmPreventivati || 0));
+
+  // 2) Fallback fondamentale per i contratti già creati:
+  // in questo gestionale il campo extra_km del preventivo è salvato come IMPORTO imponibile
+  // (es. €15,00 = 100 km acquistati a €0,15/km), non come numero km.
+  // Quindi i km concordati reali sono: km standard + km pagati nel preventivo.
+  const extraKmPreventivoEuro = dpMoneyNum(p.extra_km || p.extraKm || p.extra_km_preventivo || p.extraKmPreventivo);
+  const tariffaKm = Number(EXTRA_KM || 0.15);
+  let kmDaExtraPreventivo = 0;
+  if (extraKmPreventivoEuro > 0 && tariffaKm > 0) {
+    kmDaExtraPreventivo = Math.round(extraKmPreventivoEuro / tariffaKm);
+  }
+  const kmDaPreventivoPagato = standard + kmDaExtraPreventivo;
+
+  return Math.max(standard, kmContratto, kmDaPreventivoPagato);
 }
 
 // V180/V201: calcolo supplemento km al rientro. Prezzo: EXTRA_KM + IVA.
