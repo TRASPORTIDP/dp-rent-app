@@ -2147,13 +2147,18 @@ async function generaPdfContratto(id, opts = {}) {
     doc.roundedRect(x, yy, w, h, 6).fillAndStroke('#ffffff', LINE);
     doc.polygon([x, yy], [x + Math.min(170,w-25), yy], [x + Math.min(150,w-45), yy + 22], [x, yy + 22]).fill(RED);
     fitText('CONDIZIONI', x + 10, yy + 7, 140, 10, 7, true, '#fff');
-    fitText('Note', x + 10, yy + 29, 42, 9, 5.8, true, BLACK);
-    fitText('Riconsegna nelle stesse condizioni. Danni, ritardi, franchigie, multe, pedaggi e costi accessori restano a carico del cliente.', x + 55, yy + 28, w - 67, 17, 5.5, false, TEXT);
+
+    // Link documenti compatti: lasciano spazio al riquadro assistenza senza allungare il PDF.
     font(true, 5.9, RED);
-    doc.text('Condizioni di noleggio', x + 55, yy + 45, { width: 88, height: 8, link: termsLink, underline: true });
-    doc.text('Privacy GDPR', x + 151, yy + 45, { width: 68, height: 8, link: privacyLink, underline: true });
-    doc.link(x + 55, yy + 44, 88, 9, termsLink);
-    doc.link(x + 151, yy + 44, 68, 9, privacyLink);
+    doc.text('Condizioni di noleggio', x + 12, yy + 27, { width: 92, height: 8, link: termsLink, underline: true });
+    doc.text('Privacy GDPR', x + 112, yy + 27, { width: 70, height: 8, link: privacyLink, underline: true });
+    doc.link(x + 12, yy + 26, 92, 9, termsLink);
+    doc.link(x + 112, yy + 26, 70, 9, privacyLink);
+
+    // Riquadro giallo assistenza ACI: ben visibile e sempre dentro la pagina A4.
+    const ay = yy + 38;
+    doc.roundedRect(x + 10, ay, w - 20, 14, 4).fillAndStroke('#ffeb3b', '#d6a800');
+    fitText('ASSISTENZA H24  ACI 803116  -  Cell. 02 66165116', x + 14, ay + 4, w - 28, 7, 5.9, true, '#111111', { align:'center' });
     return yy + h + 8;
   }
 
@@ -3190,7 +3195,7 @@ app.get('/', async (req, res) => {
 app.get('/richieste-attesa', async (req, res) => {
   try {
     const rows = await v137AtteseRows();
-    const trs = rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc((p.data_inizio||'')+' - '+(p.data_fine||''))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a><form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Vuoi davvero eliminare questo cliente in attesa?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`;
+    const trs = rows.length ? rows.map(p=>`<tr><td>${esc(p.codice||p.id)}</td><td>${esc((p.nome||'')+' '+(p.cognome||''))}</td><td>${esc(p.telefono||'')}</td><td>${esc(p.categoria||p.tipo||'')}</td><td>${esc(dpDateIt(p.data_inizio)+' - '+dpDateIt(p.data_fine))}</td><td>EUR ${euro(p.totale||0)}</td><td><b>${esc(p.stato||'')}</b></td><td><a class="btn" href="/prenotazione/${p.id}">Apri</a> <a class="btn btn2" href="/contratto/${p.id}/gestisci">Contratto</a><form method="POST" action="/richieste-attesa/${p.id}/elimina" style="display:inline" onsubmit="return confirm('Vuoi davvero eliminare questo cliente in attesa?');"><button class="btn bad" type="submit">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8" class="ok">Nessun cliente in attesa.</td></tr>`;
     res.send(page('Clienti in attesa', `<div class="box dp-alert-wait"><h2>🚨 Clienti in attesa</h2><p>Qui trovi solo le richieste reali ancora da lavorare. I doppioni vengono nascosti automaticamente.</p></div><div class="box"><table><tr><th>ID</th><th>Cliente</th><th>Telefono</th><th>Mezzo</th><th>Periodo</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${trs}</table></div>`));
   } catch(e) { res.status(500).send(page('Errore attese', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
@@ -4745,7 +4750,7 @@ app.post('/prenota-cliente', upload.fields([
     try {
       if (typeof dpNotify === 'function') {
         await dpNotifyOncePren(result.lastID, 'dati_cliente_completati', DP_STAFF_NUMBERS || [], `NUOVA RICHIESTA NOLEGGIO CLIENTE\n\nCodice: ${cod}\nCliente: ${b.nome || ''} ${b.cognome || ''}\nTel: ${b.telefono || ''}\nMezzo richiesto: ${categoriaRichiesta || ''}
-Mezzo assegnato: ${(mezzo.targa || '') + ' ' + (mezzo.marca || '') + ' ' + (mezzo.modello || '')}\nPeriodo: ${b.data_inizio} - ${b.data_fine}\nTotale previsto: EUR ${euro(calc.totale)}\nAllegati: ${files.length}\n\nApri gestionale: ${(process.env.APP_BASE_URL || '').replace(/\/+$/,'')}/prenotazione/${result.lastID}`);
+Mezzo assegnato: ${(mezzo.targa || '') + ' ' + (mezzo.marca || '') + ' ' + (mezzo.modello || '')}\nPeriodo: ${dpDateIt(b.data_inizio)} - ${dpDateIt(b.data_fine)}\nTotale previsto: EUR ${euro(calc.totale)}\nAllegati: ${files.length}\n\nApri gestionale: ${(process.env.APP_BASE_URL || '').replace(/\/+$/,'')}/prenotazione/${result.lastID}`);
       }
     } catch(e) { console.log('Notifica cliente warning:', e.message); }
 
@@ -8314,7 +8319,18 @@ function dpExtractDate(text){
   return d;
 }
 function dpDateIso(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
-function dpDateIt(d){ return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; }
+function dpDateIt(d){
+  if(!d) return '';
+  let dt = d;
+  if(!(dt instanceof Date)){
+    const str = String(d).trim();
+    const m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if(m) dt = new Date(Number(m[1]), Number(m[2])-1, Number(m[3]), 12, 0, 0);
+    else dt = new Date(str);
+  }
+  if(!dt || isNaN(dt.getTime())) return String(d || '');
+  return `${String(dt.getDate()).padStart(2,'0')}/${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()}`;
+}
 function dpMonthFromWord(w){
   const t = dpNorm(w);
   const map = {
