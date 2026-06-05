@@ -483,16 +483,18 @@ function cargosHidden(nome, valore) {
   return `<input type="hidden" name="${esc(nome)}" value="${esc(valore || '')}">`;
 }
 
-app.get('/privacy.pdf', (req, res) => {
-  const p1 = path.join(publicDir, 'privacy.pdf');
-  const p2 = path.join(appPublicDir, 'privacy.pdf');
-  res.sendFile(fs.existsSync(p1) ? p1 : p2);
-});
-app.get('/clausole.pdf', (req, res) => {
-  const p1 = path.join(publicDir, 'clausole.pdf');
-  const p2 = path.join(appPublicDir, 'clausole.pdf');
-  res.sendFile(fs.existsSync(p1) ? p1 : p2);
-});
+function sendPdfDocumentoStatico(res, fileName, label) {
+  const candidates = [];
+  try { if (typeof publicDir !== 'undefined') candidates.push(path.join(publicDir, fileName)); } catch(e) {}
+  try { if (typeof appPublicDir !== 'undefined') candidates.push(path.join(appPublicDir, fileName)); } catch(e) {}
+  candidates.push(path.join(__dirname, 'public', fileName));
+  for (const f of candidates) {
+    try { if (f && fs.existsSync(f)) return res.sendFile(f); } catch(e) {}
+  }
+  res.status(404).type('text/plain; charset=utf-8').send(`${label} non disponibile: file ${fileName} non trovato sul server.`);
+}
+app.get('/privacy.pdf', (req, res) => sendPdfDocumentoStatico(res, 'privacy.pdf', 'Informativa privacy'));
+app.get('/clausole.pdf', (req, res) => sendPdfDocumentoStatico(res, 'clausole.pdf', 'Condizioni generali di noleggio'));
 
 const PORT = process.env.PORT || 10000;
 
@@ -538,6 +540,18 @@ const tempDir = path.join(DATA_DIR, 'tmp');
 [DATA_DIR, uploadDir, uploadsDir, contractsDir, firmeDir, firmedDir, publicDir, tempDir].forEach(dir => {
   try { if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true }); } catch(e) {}
 });
+
+// V207: su Render il disco persistente /var/data/public puo essere vuoto.
+// Copiamo i PDF/logo inclusi nello ZIP dentro public persistente se mancano,
+// cosi i link /privacy.pdf e /clausole.pdf non vanno in errore ENOENT.
+try {
+  const bundledPublicDir = path.join(__dirname, 'public');
+  ['privacy.pdf','clausole.pdf','logo.png','logo-dp-rent-premium.jpg'].forEach(fn => {
+    const src = path.join(bundledPublicDir, fn);
+    const dst = path.join(publicDir, fn);
+    if (fs.existsSync(src) && !fs.existsSync(dst)) fs.copyFileSync(src, dst);
+  });
+} catch(e) { console.log('V207 copia public skip:', e.message); }
 
 // V63: migra il vecchio database una sola volta se esiste nel percorso non persistente.
 try {
@@ -2083,7 +2097,7 @@ async function generaPdfContratto(id, opts = {}) {
       itNow(),
       `Dal ${itDateTime(p.data_inizio, p.ora_inizio)}\nAl ${itDateTime(p.data_fine, p.ora_fine)}`,
       euroTxt(totaleFinale),
-      euroTxt(p.cauzione || CAUZIONE)
+      euroTxt(p.cauzione_importo || p.cauzione || CAUZIONE)
     ];
     for (let i=1;i<4;i++) doc.moveTo(xs[i]-12, y+11).lineTo(xs[i]-12, y+40).strokeColor('#e0e3ea').lineWidth(0.6).stroke();
     for (let i=0;i<4;i++) {
@@ -2154,22 +2168,28 @@ async function generaPdfContratto(id, opts = {}) {
   }
 
   function drawCondizioniBox(x, yy, w) {
-    const h = 56;
+    const h = 74;
     doc.roundedRect(x, yy, w, h, 6).fillAndStroke('#ffffff', LINE);
     doc.polygon([x, yy], [x + Math.min(170,w-25), yy], [x + Math.min(150,w-45), yy + 22], [x, yy + 22]).fill(RED);
     fitText('CONDIZIONI', x + 10, yy + 7, 140, 10, 7, true, '#fff');
 
-    // Link documenti compatti: lasciano spazio al riquadro assistenza senza allungare il PDF.
-    font(true, 5.9, RED);
-    doc.text('Condizioni di noleggio', x + 12, yy + 27, { width: 92, height: 8, link: termsLink, underline: true });
-    doc.text('Privacy GDPR', x + 112, yy + 27, { width: 70, height: 8, link: privacyLink, underline: true });
-    doc.link(x + 12, yy + 26, 92, 9, termsLink);
-    doc.link(x + 112, yy + 26, 70, 9, privacyLink);
+    // Specchietto condizioni principali richiesto nel contratto.
+    const spec = 'Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio e l’informativa privacy DP RENT / Trasporti DP S.R.L. Il mezzo deve essere riconsegnato nelle stesse condizioni, con carburante equivalente. Danni, multe, pedaggi, franchigie, ritardi, smarrimenti e costi accessori restano a carico del cliente.';
+    fitText(spec, x + 12, yy + 25, w - 24, 18, 4.6, false, BLACK);
 
-    // Riquadro giallo assistenza ACI: ben visibile e sempre dentro la pagina A4.
-    const ay = yy + 38;
-    doc.roundedRect(x + 10, ay, w - 20, 14, 4).fillAndStroke('#ffeb3b', '#d6a800');
-    fitText('ASSISTENZA H24  ACI 803116  -  Cell. 02 66165116', x + 14, ay + 4, w - 28, 7, 5.9, true, '#111111', { align:'center' });
+    // Link documenti compatti.
+    font(true, 5.4, RED);
+    doc.text('Condizioni di noleggio', x + 12, yy + 45, { width: 92, height: 8, link: termsLink, underline: true });
+    doc.text('Privacy GDPR', x + 112, yy + 45, { width: 70, height: 8, link: privacyLink, underline: true });
+    doc.link(x + 12, yy + 44, 92, 9, termsLink);
+    doc.link(x + 112, yy + 44, 70, 9, privacyLink);
+
+    // Riquadro giallo assistenza stradale definitivo.
+    const ay = yy + 54;
+    doc.roundedRect(x + 10, ay, w - 20, 17, 4).fillAndStroke('#ffeb3b', '#111111');
+    fitText('🆘 ASSISTENZA STRADALE', x + 14, ay + 2, w - 28, 5, 4.6, true, '#111111', { align:'center' });
+    fitText('ACI ITALIA 803 116  •  ACI ESTERO +39 02 66165116  •  RENAULT ASSISTANCE 800 595 441', x + 14, ay + 8.4, w - 28, 5, 3.9, true, '#111111', { align:'center' });
+    fitText('Contattare l’assistenza prima di qualsiasi intervento, riparazione o traino.', x + 14, ay + 13.2, w - 28, 4, 3.4, false, '#111111', { align:'center' });
     return yy + h + 8;
   }
 
@@ -2229,7 +2249,7 @@ async function generaPdfContratto(id, opts = {}) {
 
   // Blocco finale compatto: deve stare sempre sopra al footer e dentro pagina A4.
   const reservedBottom = H - 86;
-  const blockH = 56;
+  const blockH = 64;
   const bottomY = Math.min(y + 5, reservedBottom - blockH);
   drawCondizioniBox(M, bottomY, COL);
   const fy = bottomY;
@@ -4668,7 +4688,7 @@ app.post('/prenota-cliente', upload.fields([
           AND COALESCE(data_inizio,'')=?
           AND COALESCE(data_fine,'')=?
           AND COALESCE(km_previsti,'')=COALESCE(?,'')
-          AND COALESCE(stato,'') <> 'eliminato_attesa'
+          AND COALESCE(LOWER(stato),'') NOT IN ('eliminato','eliminato_attesa','annullato','cancellato','scaduto','bozza')
         ORDER BY id DESC LIMIT 1`, [String(b.telefono||''), categoriaRichiesta, String(b.data_inizio||''), String(b.data_fine||''), String(b.km_previsti||'')]).catch(()=>null);
     }
 
@@ -5601,7 +5621,7 @@ app.get('/planning', async (req, res) => {
   const mezzi = await all(mezziSql, mezziParams).catch(()=>[]);
   const pren = await all(`SELECT p.*, m.targa, m.marca, m.modello, m.categoria AS mezzo_categoria
     FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id
-    WHERE COALESCE(p.stato,'') NOT IN ('annullato','eliminato_attesa')
+    WHERE COALESCE(LOWER(p.stato),'') NOT IN ('annullato','eliminato','eliminato_attesa','cancellato','scaduto','bozza')
       AND COALESCE(p.data_fine,'') >= ? AND COALESCE(p.data_inizio,'') <= ?`,
     [start.format('YYYY-MM-DD'), endDate.format('YYYY-MM-DD')]).catch(()=>[]);
   const categorie = await all(`SELECT DISTINCT categoria FROM mezzi WHERE categoria IS NOT NULL AND categoria<>'' ORDER BY categoria`).catch(()=>[]);
@@ -6328,7 +6348,7 @@ app.post('/mezzi/:id/officina', async (req,res)=>{
 app.get('/pdf-view/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   const titolo = p ? (p.codice || ('DPR-' + p.id)) : ('Contratto ' + req.params.id);
-  const pdfUrl = `/pdf/${req.params.id}?download=1`;
+  const pdfUrl = `/pdf/${req.params.id}`;
   const fileName = `${String(titolo || 'contratto-dp-rent').replace(/[^a-zA-Z0-9_-]+/g, '_')}.pdf`;
   res.send(page('PDF contratto', `
     <div class="box dp-pdf-toolbar">
@@ -6355,21 +6375,30 @@ app.get('/pdf-view/:id', async (req, res) => {
       @media(max-width:700px){.dp-pdf-frame{height:72vh}.dp-pdf-toolbar{position:relative}.dp-pdf-toolbar .btn{width:100%;margin:6px 0}}
     </style>
     <script>
-      function dpDownloadPdf(){
+      async function dpDownloadPdf(){
         const msg = document.getElementById('dpDownloadMsg');
         const url = ${JSON.stringify(pdfUrl)};
-        // iPhone/Safari: non cambiamo window.location e non apriamo il PDF nella stessa pagina.
-        // Usiamo un iframe nascosto: la pagina PDF resta aperta, quindi Indietro/Gestisci funziona sempre.
-        let fr = document.getElementById('dpHiddenPdfDownload');
-        if(!fr){
-          fr = document.createElement('iframe');
-          fr.id = 'dpHiddenPdfDownload';
-          fr.name = 'dpHiddenPdfDownload';
-          fr.style.display = 'none';
-          document.body.appendChild(fr);
+        const fileName = ${JSON.stringify(fileName)};
+        try{
+          // iPhone/Safari/PWA: usa il pannello condivisione senza abbandonare questa pagina.
+          if (navigator.share && window.fetch && window.File) {
+            const r = await fetch(url + '?t=' + Date.now(), { cache: 'no-store' });
+            if (!r.ok) throw new Error('PDF non disponibile');
+            const blob = await r.blob();
+            const file = new File([blob], fileName, { type: 'application/pdf' });
+            if (!navigator.canShare || navigator.canShare({ files: [file] })) {
+              await navigator.share({ files: [file], title: fileName });
+              if(msg) msg.textContent = 'PDF condiviso/scaricato. La pagina contratto è rimasta aperta.';
+              return;
+            }
+          }
+          // Fallback: apri inline in una nuova scheda, non nella pagina contratto.
+          window.open(url + '?t=' + Date.now(), '_blank', 'noopener');
+          if(msg) msg.textContent = 'PDF aperto in una nuova scheda. Questa pagina resta aperta.';
+        }catch(e){
+          window.open(url + '?t=' + Date.now(), '_blank', 'noopener');
+          if(msg) msg.textContent = 'PDF aperto. Torna qui per continuare la gestione contratto.';
         }
-        fr.src = url + '&t=' + Date.now();
-        if(msg) msg.textContent = 'Download avviato. Questa pagina resta aperta: usa Indietro o Gestisci contratto.';
       }
     </script>
   `));
@@ -7954,7 +7983,7 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Nota tariffa manuale<input name="tariffa_manuale_note" value="${esc(p.tariffa_manuale_note || '')}" placeholder="Es. prezzo concordato"></label>
           <label>Stato<select name="stato"><option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option><option value="bozza" ${p.stato==='bozza'?'selected':''}>Bozza</option><option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option><option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option><option value="in_corso" ${p.stato==='in_corso'?'selected':''}>In corso/check-out</option><option value="rientrato" ${p.stato==='rientrato'?'selected':''}>Rientrato/check-in</option><option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option></select></label>
           <label>Cauzione ricevuta<select name="cauzione_ricevuta"><option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option></select></label>
-          <label>Importo cauzione<input name="cauzione_importo" value="${esc(p.cauzione_importo || p.cauzione || 0)}"></label>
+          <label>Cauzione (€) default 500 modificabile<input name="cauzione_importo" value="${esc((p.cauzione_importo != null && p.cauzione_importo !== '') ? p.cauzione_importo : (p.cauzione || 500))}"></label>
           <label>Metodo cauzione<select name="cauzione_metodo"><option value="">---</option><option value="contanti" ${p.cauzione_metodo==='contanti'?'selected':''}>Contanti</option><option value="carta" ${p.cauzione_metodo==='carta'?'selected':''}>Carta</option><option value="bonifico" ${p.cauzione_metodo==='bonifico'?'selected':''}>Bonifico</option><option value="non_versata" ${p.cauzione_metodo==='non_versata'?'selected':''}>Non versata</option></select></label>
         </div>
         <label>Note<textarea name="note">${esc(p.note)}</textarea></label>
@@ -8017,7 +8046,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
           v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_data_nascita), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
           dataInizio, oraInizio, dataFine, oraFine, v62Val(b.check_out_orario), v62Val(b.check_in_orario),
-          calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, (Number(oldP.supplemento_km_rientro||0) > 0 || oldP.km_rientro ? v180Money(v188TotaleFinale(calc.totale, oldP.supplemento_km_rientro)) : null), prezzoManualeAttivo ? 'si' : '', prezzoManualeAttivo ? v180Money(calc.imponibile) : '', prezzoManualeAttivo ? v180Money(calc.totale) : '', v62Val(b.tariffa_manuale_note), cauzioneStd, v62Val(b.stato || 'contratto'),
+          calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, (Number(oldP.supplemento_km_rientro||0) > 0 || oldP.km_rientro ? v180Money(v188TotaleFinale(calc.totale, oldP.supplemento_km_rientro)) : null), prezzoManualeAttivo ? 'si' : '', prezzoManualeAttivo ? v180Money(calc.imponibile) : '', prezzoManualeAttivo ? v180Money(calc.totale) : '', v62Val(b.tariffa_manuale_note), cauzioneImporto, v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_ricevuta || 'no'), cauzioneImporto, v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
       ]);
       try{ if (typeof v163AfterContractChange === 'function') { await v163AfterContractChange(req.params.id); } else { await syncContrattoDriveV63(req.params.id); } }catch(e){ console.log('V170 sync dopo modifica warning:', e.message); }
@@ -8499,7 +8528,7 @@ async function dpSaveWhatsAppQuote(session, from, profileName, status){
         AND COALESCE(data_fine,'')=?
         AND COALESCE(km_previsti,0)=?
         AND (stato IN ('attesa_si_no','richiesta_cliente','preventivo_whatsapp') OR tipo_record='preventivo_whatsapp')
-        AND COALESCE(stato,'') <> 'eliminato_attesa'
+        AND COALESCE(LOWER(stato),'') NOT IN ('eliminato','eliminato_attesa','annullato','cancellato','scaduto','bozza')
       ORDER BY id DESC LIMIT 1`, [telefono, categoria, startIso, endIso, kmPrevisti]).catch(()=>null);
 
     const payload = {
