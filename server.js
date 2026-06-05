@@ -210,6 +210,17 @@ function v67EnsureCriticalColumns(done){
     ['prenotazioni','documento_scadenza','TEXT'],
     ['prenotazioni','patente_numero','TEXT'],
     ['prenotazioni','patente_scadenza','TEXT'],
+    ['prenotazioni','conducente2_nome','TEXT'],
+    ['prenotazioni','conducente2_cognome','TEXT'],
+    ['prenotazioni','conducente2','TEXT'],
+    ['prenotazioni','conducente2_cf','TEXT'],
+    ['prenotazioni','conducente2_data_nascita','TEXT'],
+    ['prenotazioni','conducente2_doc_numero','TEXT'],
+    ['prenotazioni','conducente2_doc_scadenza','TEXT'],
+    ['prenotazioni','conducente2_patente_numero','TEXT'],
+    ['prenotazioni','conducente2_patente_scadenza','TEXT'],
+    ['prenotazioni','conducente2_categoria_patente','TEXT'],
+    ['prenotazioni','conducente2_recapito','TEXT'],
     ['prenotazioni','tipo_cliente','TEXT'],
     ['prenotazioni','codice_fiscale','TEXT'],
     ['prenotazioni','partita_iva','TEXT'],
@@ -2488,8 +2499,8 @@ const fields = [
     cargosPad(p.patente1 || p.patente_numero || '',20),
     cargosPad(cargosNumCodV135(p.patente_luogo_rilascio_cod || process.env.CARGOS_PATENTE_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'),
     cargosPad(p.telefono || '',20),
-    cargosPad('',50), cargosPad('',30), cargosDate(''), cargosPad('',9,'number'), cargosPad('',9,'number'),
-    cargosPad('',5), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20), cargosPad('',9,'number'), cargosPad('',20)
+    cargosPad(p.conducente2_cognome || '',50), cargosPad(p.conducente2_nome || '',30), cargosDate(p.conducente2_data_nascita || ''), cargosPad(cargosNumCodV135(p.conducente2_nascita_luogo_cod || p.conducente2_luogo_nascita_cod || process.env.CARGOS_NASCITA_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'), cargosPad(cargosCittadinanzaCodV135(p.conducente2_cittadinanza_cod),9,'number'),
+    cargosPad(getTipoDocumentoCargosV63(p.conducente2_documento_tipo || p.conducente2_doc_tipo_cod || 'IDENT'),5), cargosPad(p.conducente2_doc_numero || '',20), cargosPad(cargosNumCodV135(p.conducente2_doc_luogoril_cod || process.env.CARGOS_DOC_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'), cargosPad(p.conducente2_patente_numero || p.conducente2_patente || '',20), cargosPad(cargosNumCodV135(p.conducente2_patente_luogoril_cod || process.env.CARGOS_PATENTE_LUOGO_COD, cargosCheckoutLuogoCodV63()),9,'number'), cargosPad(p.conducente2_recapito || '',20)
   ];
 
   const record = fields.join('');
@@ -4344,6 +4355,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
       <div><label>Nome 2° autista</label><input name="conducente2_nome" value="${clienteWebVal(req,'conducente2_nome')}"></div>
       <div><label>Cognome 2° autista</label><input name="conducente2_cognome" value="${clienteWebVal(req,'conducente2_cognome')}"></div>
       <div><label>Codice fiscale 2° autista</label><input name="conducente2_cf" value="${clienteWebVal(req,'conducente2_cf')}"></div>
+      <div><label>Data nascita 2° autista</label><input type="date" name="conducente2_data_nascita" value="${clienteWebVal(req,'conducente2_data_nascita')}"></div>
       <div><label>Telefono 2° autista</label><input name="conducente2_recapito" value="${clienteWebVal(req,'conducente2_recapito')}"></div>
       <div><label>Documento 2° autista</label><input name="conducente2_doc_numero" value="${clienteWebVal(req,'conducente2_doc_numero')}"></div>
       <div><label>Scadenza documento 2</label><input type="date" name="conducente2_doc_scadenza" value="${clienteWebVal(req,'conducente2_doc_scadenza')}"></div>
@@ -4370,7 +4382,7 @@ async function ensureClienteWebColumnsV92(){
     documento_tipo:'TEXT', documento_numero:'TEXT', documento_scadenza:'TEXT', documento_rilascio:'TEXT',
     record_cargos_doc_luogoril_cod:'TEXT', record_cargos_patente_luogoril_cod:'TEXT',
     patente_numero:'TEXT', patente_scadenza:'TEXT', patente_rilascio:'TEXT', categoria_patente:'TEXT',
-    conducente2_cf:'TEXT', conducente2_doc_scadenza:'TEXT', conducente2_patente_scadenza:'TEXT', conducente2_categoria_patente:'TEXT', tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT', indirizzo_fatturazione:'TEXT', citta_fatturazione:'TEXT', provincia_fatturazione:'TEXT', cap_fatturazione:'TEXT',
+    conducente2_cf:'TEXT', conducente2_data_nascita:'TEXT', conducente2_doc_scadenza:'TEXT', conducente2_patente_scadenza:'TEXT', conducente2_categoria_patente:'TEXT', tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT', indirizzo_fatturazione:'TEXT', citta_fatturazione:'TEXT', provincia_fatturazione:'TEXT', cap_fatturazione:'TEXT',
     provincia:'TEXT', citta:'TEXT', cap:'TEXT', giorni:'INTEGER', km_previsti:'TEXT', extra_fuori_orario:'REAL', extra_km:'REAL', imponibile:'REAL', iva:'REAL', cauzione:'REAL', tipo_record:'TEXT', note:'TEXT'
   };
   for (const [c,t] of Object.entries(cols)) await run(`ALTER TABLE prenotazioni ADD COLUMN ${c} ${t}`).catch(()=>{});
@@ -4685,7 +4697,7 @@ app.post('/prenota-cliente', upload.fields([
       documento_tipo:b.documento_tipo || 'IDENT', documento_numero:b.documento_numero, documento_rilascio:b.documento_rilascio, documento_scadenza:b.documento_scadenza,
       record_cargos_doc_luogoril_cod:b.record_cargos_doc_luogoril_cod, record_cargos_patente_luogoril_cod:b.record_cargos_patente_luogoril_cod,
       patente_numero:b.patente_numero, patente_rilascio:b.patente_rilascio, patente_scadenza:b.patente_scadenza, categoria_patente:b.categoria_patente,
-      conducente2_nome:b.conducente2_nome, conducente2_cognome:b.conducente2_cognome, conducente2: [b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' '), conducente2_cf:b.conducente2_cf, conducente2_doc_numero:b.conducente2_doc_numero, conducente2_doc_scadenza:b.conducente2_doc_scadenza, conducente2_patente_numero:b.conducente2_patente_numero || b.conducente2_patente, conducente2_patente:b.conducente2_patente_numero || b.conducente2_patente, conducente2_patente_scadenza:b.conducente2_patente_scadenza, conducente2_categoria_patente:b.conducente2_categoria_patente, conducente2_recapito:b.conducente2_recapito,
+      conducente2_nome:b.conducente2_nome, conducente2_cognome:b.conducente2_cognome, conducente2: [b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' '), conducente2_cf:b.conducente2_cf, conducente2_data_nascita:b.conducente2_data_nascita, conducente2_doc_numero:b.conducente2_doc_numero, conducente2_doc_scadenza:b.conducente2_doc_scadenza, conducente2_patente_numero:b.conducente2_patente_numero || b.conducente2_patente, conducente2_patente:b.conducente2_patente_numero || b.conducente2_patente, conducente2_patente_scadenza:b.conducente2_patente_scadenza, conducente2_categoria_patente:b.conducente2_categoria_patente, conducente2_recapito:b.conducente2_recapito,
       tipo_cliente:b.tipo_cliente || 'privato', partita_iva:b.partita_iva || b.piva, piva:b.partita_iva || b.piva, ragione_sociale:b.ragione_sociale, pec:b.pec, codice_sdi:b.codice_sdi || b.sdi, sdi:b.codice_sdi || b.sdi, indirizzo_fatturazione:b.indirizzo_fatturazione || b.indirizzo, citta_fatturazione:b.citta_fatturazione || b.citta, provincia_fatturazione:b.provincia_fatturazione || b.provincia, cap_fatturazione:b.cap_fatturazione || b.cap,
       mezzo_id:mezzo.id, targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '', tipo:mezzo.tipo || '', categoria:categoriaRichiesta || mezzo.categoria || mezzo.tipo || '',
       data_inizio:b.data_inizio, data_fine:b.data_fine, ora_inizio:b.ora_inizio || '08:30', ora_fine:b.ora_fine || '18:00', giorni:calc.giorni,
@@ -7918,6 +7930,7 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Nome 2° autista<input name="conducente2_nome" value="${esc(p.conducente2_nome || '')}"></label>
           <label>Cognome 2° autista<input name="conducente2_cognome" value="${esc(p.conducente2_cognome || '')}"></label>
           <label>CF 2° autista<input name="conducente2_cf" value="${esc(p.conducente2_cf || '')}"></label>
+          <label>Data nascita 2° autista<input type="date" name="conducente2_data_nascita" value="${esc(v67IsoDate(p.conducente2_data_nascita || ''))}"></label>
           <label>Doc. 2° autista<input name="conducente2_doc_numero" value="${esc(p.conducente2_doc_numero || '')}"></label>
           <label>Scad. doc. 2<input type="date" name="conducente2_doc_scadenza" value="${esc(v67IsoDate(p.conducente2_doc_scadenza))}"></label>
           <label>Patente 2° autista<input name="conducente2_patente_numero" value="${esc(p.conducente2_patente_numero || p.conducente2_patente || p.patente2 || '')}"></label>
@@ -7994,7 +8007,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
         mezzo_id=COALESCE(?,mezzo_id), targa=COALESCE(?,targa), marca=COALESCE(?,marca), modello=COALESCE(?,modello), tipo=COALESCE(?,tipo), categoria=COALESCE(?,categoria),
         nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?,
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?, documento_tipo=?, documento_numero=?, documento_scadenza=?,
-        patente_numero=?, patente_scadenza=?, conducente2_nome=?, conducente2_cognome=?, conducente2=?, conducente2_cf=?, conducente2_doc_numero=?, conducente2_doc_scadenza=?, conducente2_patente_numero=?, conducente2_patente=?, conducente2_patente_scadenza=?, conducente2_categoria_patente=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
+        patente_numero=?, patente_scadenza=?, conducente2_nome=?, conducente2_cognome=?, conducente2=?, conducente2_cf=?, conducente2_data_nascita=?, conducente2_doc_numero=?, conducente2_doc_scadenza=?, conducente2_patente_numero=?, conducente2_patente=?, conducente2_patente_scadenza=?, conducente2_categoria_patente=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
         data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?,
         giorni=?, km_previsti=?, km_inclusi=?, extra_fuori_orario=?, extra_km=?, imponibile=?, iva=?, totale=?, totale_finale=?, prezzo_manual_enabled=?, prezzo_manual_imponibile=?, prezzo_manual_totale=?, tariffa_manuale_note=?, cauzione=?, stato=?,
         cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, note=?
@@ -8002,7 +8015,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           mezzoDb?.id || null, mezzoDb?.targa || null, mezzoDb?.marca || null, mezzoDb?.modello || null, mezzoDb?.tipo || null, mezzoDb?.categoria || mezzoDb?.tipo || null,
           v62Val(b.nome), v62Val(b.cognome), v62Val(b.telefono), v62Val(b.email), v62Val(b.codice_fiscale),
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
-          v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
+          v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_data_nascita), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
           dataInizio, oraInizio, dataFine, oraFine, v62Val(b.check_out_orario), v62Val(b.check_in_orario),
           calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, (Number(oldP.supplemento_km_rientro||0) > 0 || oldP.km_rientro ? v180Money(v188TotaleFinale(calc.totale, oldP.supplemento_km_rientro)) : null), prezzoManualeAttivo ? 'si' : '', prezzoManualeAttivo ? v180Money(calc.imponibile) : '', prezzoManualeAttivo ? v180Money(calc.totale) : '', v62Val(b.tariffa_manuale_note), cauzioneStd, v62Val(b.stato || 'contratto'),
           v62Val(b.cauzione_ricevuta || 'no'), cauzioneImporto, v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
