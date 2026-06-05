@@ -495,6 +495,8 @@ function sendPdfDocumentoStatico(res, fileName, label) {
 }
 app.get('/privacy.pdf', (req, res) => sendPdfDocumentoStatico(res, 'privacy.pdf', 'Informativa privacy'));
 app.get('/clausole.pdf', (req, res) => sendPdfDocumentoStatico(res, 'clausole.pdf', 'Condizioni generali di noleggio'));
+app.get('/privacy_file.pdf', (req, res) => sendPdfDocumentoStatico(res, 'privacy_file.pdf', 'Informativa privacy'));
+app.get('/terms_file.pdf', (req, res) => sendPdfDocumentoStatico(res, 'terms_file.pdf', 'Condizioni generali di noleggio'));
 
 const PORT = process.env.PORT || 10000;
 
@@ -546,7 +548,7 @@ const tempDir = path.join(DATA_DIR, 'tmp');
 // cosi i link /privacy.pdf e /clausole.pdf non vanno in errore ENOENT.
 try {
   const bundledPublicDir = path.join(__dirname, 'public');
-  ['privacy.pdf','clausole.pdf','logo.png','logo-dp-rent-premium.jpg'].forEach(fn => {
+  ['privacy.pdf','clausole.pdf','privacy_file.pdf','terms_file.pdf','logo.png','logo-dp-rent-premium.jpg'].forEach(fn => {
     const src = path.join(bundledPublicDir, fn);
     const dst = path.join(publicDir, fn);
     if (fs.existsSync(src) && !fs.existsSync(dst)) fs.copyFileSync(src, dst);
@@ -2037,8 +2039,8 @@ async function generaPdfContratto(id, opts = {}) {
     doc.text(safe(txt), x, yy, Object.assign({ width:w, height:h, ellipsis:true, lineGap:0 }, opt));
   }
   function baseUrl() { return String(process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || '').replace(/\/+$/,''); }
-  const termsLink = process.env.DP_TERMS_URL || process.env.TERMS_URL || (baseUrl() ? `${baseUrl()}/clausole.pdf` : '/clausole.pdf');
-  const privacyLink = process.env.DP_PRIVACY_URL || process.env.PRIVACY_URL || (baseUrl() ? `${baseUrl()}/privacy.pdf` : '/privacy.pdf');
+  const termsLink = process.env.DP_TERMS_URL || process.env.TERMS_URL || (baseUrl() ? `${baseUrl()}/terms_file.pdf` : '/terms_file.pdf');
+  const privacyLink = process.env.DP_PRIVACY_URL || process.env.PRIVACY_URL || (baseUrl() ? `${baseUrl()}/privacy_file.pdf` : '/privacy_file.pdf');
 
   function drawHeader() {
     doc.rect(0, 0, W, 112).fill(BLACK);
@@ -2168,28 +2170,31 @@ async function generaPdfContratto(id, opts = {}) {
   }
 
   function drawCondizioniBox(x, yy, w) {
-    const h = 74;
+    const h = 82;
     doc.roundedRect(x, yy, w, h, 6).fillAndStroke('#ffffff', LINE);
     doc.polygon([x, yy], [x + Math.min(170,w-25), yy], [x + Math.min(150,w-45), yy + 22], [x, yy + 22]).fill(RED);
     fitText('CONDIZIONI', x + 10, yy + 7, 140, 10, 7, true, '#fff');
 
-    // Specchietto condizioni principali richiesto nel contratto.
     const spec = 'Il cliente dichiara di aver preso visione e accettare le condizioni generali di noleggio e l’informativa privacy DP RENT / Trasporti DP S.R.L. Il mezzo deve essere riconsegnato nelle stesse condizioni, con carburante equivalente. Danni, multe, pedaggi, franchigie, ritardi, smarrimenti e costi accessori restano a carico del cliente.';
-    fitText(spec, x + 12, yy + 25, w - 24, 18, 4.6, false, BLACK);
+    fitText(spec, x + 12, yy + 25, w - 24, 21, 4.9, false, BLACK);
 
-    // Link documenti compatti.
-    font(true, 5.4, RED);
-    doc.text('Condizioni di noleggio', x + 12, yy + 45, { width: 92, height: 8, link: termsLink, underline: true });
-    doc.text('Privacy GDPR', x + 112, yy + 45, { width: 70, height: 8, link: privacyLink, underline: true });
-    doc.link(x + 12, yy + 44, 92, 9, termsLink);
-    doc.link(x + 112, yy + 44, 70, 9, privacyLink);
+    // Link REALI: i riquadri sono cliccabili e aprono i PDF ufficiali presenti in /public.
+    const linkY = yy + 50;
+    const btnH = 12;
+    const btnW1 = 118;
+    const btnW2 = 82;
+    doc.roundedRect(x + 12, linkY, btnW1, btnH, 3).fillAndStroke('#fff5f5', RED);
+    doc.roundedRect(x + 138, linkY, btnW2, btnH, 3).fillAndStroke('#fff5f5', RED);
+    fitText('Condizioni di noleggio', x + 15, linkY + 3, btnW1 - 6, 6, 5.3, true, RED, { align:'center' });
+    fitText('Privacy GDPR', x + 141, linkY + 3, btnW2 - 6, 6, 5.3, true, RED, { align:'center' });
+    doc.link(x + 12, linkY, btnW1, btnH, termsLink);
+    doc.link(x + 138, linkY, btnW2, btnH, privacyLink);
 
-    // Riquadro giallo assistenza stradale definitivo.
-    const ay = yy + 54;
-    doc.roundedRect(x + 10, ay, w - 20, 17, 4).fillAndStroke('#ffeb3b', '#111111');
-    fitText('🆘 ASSISTENZA STRADALE', x + 14, ay + 2, w - 28, 5, 4.6, true, '#111111', { align:'center' });
-    fitText('ACI ITALIA 803 116  •  ACI ESTERO +39 02 66165116  •  RENAULT ASSISTANCE 800 595 441', x + 14, ay + 8.4, w - 28, 5, 3.9, true, '#111111', { align:'center' });
-    fitText('Contattare l’assistenza prima di qualsiasi intervento, riparazione o traino.', x + 14, ay + 13.2, w - 28, 4, 3.4, false, '#111111', { align:'center' });
+    // Riquadro giallo assistenza stradale: solo testo standard, niente emoji/caratteri non compatibili PDF.
+    const ay = yy + 65;
+    doc.roundedRect(x + 10, ay, w - 20, 14, 4).fillAndStroke('#ffeb3b', '#111111');
+    fitText('ASSISTENZA STRADALE - ACI ITALIA 803 116 - ACI ESTERO +39 02 66165116 - RENAULT ASSISTANCE 800 595 441', x + 14, ay + 2.2, w - 28, 5.4, 3.9, true, '#111111', { align:'center' });
+    fitText('Contattare l’assistenza prima di qualsiasi intervento, riparazione o traino.', x + 14, ay + 8.5, w - 28, 4, 3.4, false, '#111111', { align:'center' });
     return yy + h + 8;
   }
 
