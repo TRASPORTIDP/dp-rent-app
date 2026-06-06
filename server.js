@@ -1109,6 +1109,9 @@ function page(title, content) {
     ? `<img src="/public/logo.png" onerror="this.style.display=\'none\';this.insertAdjacentHTML(\'afterend\',\'<span class=&quot;brandText&quot;>DP RENT</span>\')" style="height:48px;max-width:180px;object-fit:contain;background:white;border-radius:8px;padding:4px;">`
     : `<span class="brandText">DP RENT</span>`;
 
+  const isHomePage = String(title || '').toLowerCase() === 'dashboard';
+  const topActionsHtml = isHomePage ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Home</a></div>`;
+  const navHtml = isHomePage ? '' : `${navHtml}`;
   return `<!doctype html>
 <html lang="it">
 <head>
@@ -1322,6 +1325,12 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 @media(max-width:900px){.dp-kpi-grid{grid-template-columns:repeat(2,1fr)}.dp-actions-grid{grid-template-columns:repeat(2,1fr)}.dp-status-row{grid-template-columns:1fr}.dp-advanced{width:100%}.dp-advanced summary{width:100%}.dp-advanced div{position:static;margin-top:8px;min-width:0}}
 @media(max-width:560px){.dp-kpi-grid,.dp-actions-grid{grid-template-columns:1fr}.dp-action-card{min-height:128px}.dp-main-nav>a{flex:1 1 calc(50% - 8px);font-size:15px!important;padding:10px!important}.dp-hero-new{border-radius:24px}.dp-kpi,.dp-panel,.dp-video-card{border-radius:22px}}
 
+
+
+/* V213 HOME MINIMAL MOBILE-FIRST */
+body.dp-home-clean nav{display:none!important}
+.dp-home-minimal{max-width:760px;margin:0 auto;display:grid;gap:12px}.dp-home-title{background:linear-gradient(135deg,#050505,#18181b);color:#fff;border-radius:22px;padding:16px 18px;box-shadow:0 12px 28px rgba(0,0,0,.18)}.dp-home-title h2{margin:0;font-size:34px;line-height:1;font-weight:1000;letter-spacing:.5px}.dp-home-title p{margin:6px 0 0;color:#ddd;font-weight:800}.dp-alert-strip{display:grid;grid-template-columns:1fr 1fr;gap:10px}.dp-alert-pill{display:flex;align-items:center;gap:10px;background:#fff;border-radius:16px;padding:12px 14px;text-decoration:none;color:#111;font-weight:950;box-shadow:0 8px 20px rgba(0,0,0,.08);border:1px solid #eee}.dp-alert-pill.red{border-left:7px solid #d70000}.dp-alert-pill.yellow{border-left:7px solid #ffb000}.dp-alert-pill b{font-size:22px;color:#d70000}.dp-home-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}.dp-home-btn{min-height:92px;background:#111;color:#fff;text-decoration:none;border-radius:22px;padding:16px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;box-shadow:0 6px 0 #d70000,0 12px 26px rgba(0,0,0,.14);font-weight:1000}.dp-home-btn .ico{font-size:30px;margin-bottom:6px}.dp-home-btn strong{font-size:20px;line-height:1.05}.dp-home-btn.red{background:linear-gradient(135deg,#d70000,#850000)}.dp-home-btn.dark{background:linear-gradient(135deg,#111,#29292f)}.dp-home-small{font-size:13px;color:#666;text-align:center;font-weight:800;margin-top:2px}.dp-advanced-page{max-width:900px;margin:0 auto}.dp-advanced-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.dp-advanced-card{background:#111;color:#fff;text-decoration:none;border-radius:20px;padding:18px;min-height:90px;display:flex;align-items:center;gap:12px;font-weight:950;box-shadow:0 8px 22px rgba(0,0,0,.12)}.dp-advanced-card span{font-size:28px}.dp-advanced-card:hover{background:#d70000}@media(max-width:560px){header{display:none!important}main{padding:10px!important}.dp-home-title{padding:14px 16px;border-radius:18px}.dp-home-title h2{font-size:30px}.dp-alert-strip{grid-template-columns:1fr}.dp-alert-pill{padding:10px 12px}.dp-home-buttons{gap:10px}.dp-home-btn{min-height:82px;border-radius:18px;padding:12px;box-shadow:0 4px 0 #d70000,0 8px 18px rgba(0,0,0,.12)}.dp-home-btn .ico{font-size:28px;margin-bottom:4px}.dp-home-btn strong{font-size:17px}.dp-home-small{font-size:12px}}
+
 </style>
 <script>
 function toggleAzienda(){
@@ -1336,8 +1345,8 @@ function toggleAzienda(){
 window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
-<body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V212 DASHBOARD + VIDEO DRIVE</small></h1></header>
+<body class="${isHomePage ? 'dp-home-clean' : ''}">
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V213 HOME MINIMAL + VIDEO DRIVE</small></h1></header>
 <nav class="dp-main-nav">
 <a href="/">Dashboard</a>
 <a href="/nuova-prenotazione">+ Prenotazione</a>
@@ -1360,7 +1369,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 <a href="/test-drive">Test Drive</a>
 </div></details>
 </nav>
-<main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
+<main>${topActionsHtml}${content}</main>
 </body>
 </html>`;
 }
@@ -3207,61 +3216,64 @@ app.get('/', async (req, res) => {
     const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
     const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`);
     const atteseRowsV137 = await v137AtteseRows();
-    const attesa = { tot: atteseRowsV137.length };
+    const attesaCount = atteseRowsV137.length;
     const allMezzi = await all(`SELECT * FROM mezzi`);
-    const alerts = allMezzi.map(m => {
-      const a = alertMezzo(m);
-      return a ? `<div><b>${esc(m.targa)} ${esc(m.modello)}</b>${a}</div>` : '';
-    }).join('');
-
     const alertCount = allMezzi.filter(m => !!alertMezzo(m)).length;
+
     res.send(page('Dashboard', `
-      <section class="dp-dashboard">
-        <div class="dp-hero-new">
+      <section class="dp-home-minimal">
+        <div class="dp-home-title">
           <h2>DP RENT</h2>
-          <p>Dashboard noleggio mezzi - veloce, pulita, pronta per iPhone, iPad e Mac</p>
+          <p>Home veloce - 6 pulsanti principali</p>
         </div>
 
-        <div class="dp-kpi-grid">
-          <div class="dp-kpi"><b>${mezzi ? mezzi.tot : 0}</b><span>Mezzi caricati</span></div>
-          <div class="dp-kpi"><b>${pren ? pren.tot : 0}</b><span>Contratti / prenotazioni</span></div>
-          <div class="dp-kpi"><b>${alertCount}</b><span>Alert mezzi</span></div>
-          <div class="dp-kpi"><b>${attesa ? attesa.tot : 0}</b><span>Clienti in attesa</span></div>
+        <div class="dp-alert-strip">
+          <a class="dp-alert-pill red" href="/richieste-attesa"><span>🔴</span><div><b>${attesaCount}</b><br>Clienti in attesa</div></a>
+          <a class="dp-alert-pill yellow" href="/scadenze-mezzi"><span>🟡</span><div><b>${alertCount}</b><br>Scadenze / alert</div></a>
         </div>
 
-        ${(attesa && attesa.tot>0) ? `<div class="box dp-alert-wait"><h2>🚨 ${attesa.tot} CLIENTE/I IN ATTESA</h2><p>Ci sono preventivi WhatsApp o richieste cliente da controllare subito.</p><a class="btn" href="/richieste-attesa">Apri clienti in attesa</a> <a class="btn btn2" href="/admin/pulisci-attese-duplicate">Pulisci doppioni</a></div>` : ``}
-
-        <div class="dp-actions-grid">
-          <a class="dp-action-card red" href="/nuova-prenotazione"><span class="ico">➕</span><strong>Nuova prenotazione</strong><small>Crea richiesta o contratto</small></a>
-          <a class="dp-action-card" href="/planning"><span class="ico">📅</span><strong>Planning</strong><small>Giorno / settimana / mese</small></a>
-          <a class="dp-action-card" href="/prenotazioni"><span class="ico">📝</span><strong>Contratti</strong><small>Storico e gestione PDF</small></a>
-          <a class="dp-action-card" href="/mezzi-web"><span class="ico">🚗</span><strong>Mezzi</strong><small>Parco veicoli</small></a>
-          <a class="dp-action-card drive" href="/video-mezzi"><span class="ico">🎥</span><strong>Video mezzi</strong><small>Drive per targa</small></a>
-          <a class="dp-action-card" href="/clienti"><span class="ico">👥</span><strong>Clienti</strong><small>Anagrafiche e dati</small></a>
-          <a class="dp-action-card" href="/documenti-clienti"><span class="ico">📂</span><strong>Documenti</strong><small>Patenti, carte, allegati</small></a>
-          <a class="dp-action-card" href="/scadenze-mezzi"><span class="ico">⚠️</span><strong>Scadenze</strong><small>Revisioni, tagliandi, assicurazioni</small></a>
+        <div class="dp-home-buttons">
+          <a class="dp-home-btn red" href="/nuova-prenotazione"><span class="ico">➕</span><strong>Prenotazione</strong></a>
+          <a class="dp-home-btn" href="/planning"><span class="ico">📅</span><strong>Planning</strong></a>
+          <a class="dp-home-btn" href="/mezzi-web"><span class="ico">🚗</span><strong>Mezzi</strong></a>
+          <a class="dp-home-btn" href="/prenotazioni"><span class="ico">📄</span><strong>Contratti</strong></a>
+          <a class="dp-home-btn dark" href="/video-mezzi"><span class="ico">🎥</span><strong>Video Mezzi</strong></a>
+          <a class="dp-home-btn" href="/avanzate"><span class="ico">⚙️</span><strong>Avanzate</strong></a>
         </div>
 
-        <div class="dp-panel">
-          <h2>Stato gestionale</h2>
-          <div class="dp-status-row">
-            <p>Email: <b>${esc(process.env.SMTP_HOST || 'non configurata')}</b></p>
-            <p>Google Drive: <b>${googleDriveConfigured() ? 'configurato' : 'non configurato'}</b></p>
-            <p>Nexi Pay By Link: <b>${nexiConfigured() ? 'configurato' : 'non configurato'}</b></p>
-            <p>Versione attiva: <b>V212 Dashboard + Video Drive</b></p>
-          </div>
-        </div>
-
-        <div class="dp-panel">
-          <h2>Alert mezzi</h2>
-          <div class="dp-alert-list">${alerts || '<p class="ok">Nessun alert mezzi.</p>'}</div>
-        </div>
+        <div class="dp-home-small">Mezzi: ${mezzi ? mezzi.tot : 0} · Contratti: ${pren ? pren.tot : 0} · Drive video attivo</div>
       </section>
     `));
   } catch (e) {
-    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore Dashboard</h2><pre>${esc(e.message)}</pre></div>`));
+    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore Home</h2><pre>${esc(e.message)}</pre></div>`));
   }
 });
+
+app.get('/avanzate', async (req,res) => {
+  res.send(page('Avanzate', `
+    <section class="dp-advanced-page">
+      <div class="box">
+        <h2>⚙️ Avanzate</h2>
+        <p>Funzioni secondarie nascoste dalla home per tenere l'app pulita su iPhone.</p>
+      </div>
+      <div class="dp-advanced-grid">
+        <a class="dp-advanced-card" href="/clienti"><span>👥</span>Clienti</a>
+        <a class="dp-advanced-card" href="/documenti-clienti"><span>📂</span>Documenti clienti</a>
+        <a class="dp-advanced-card" href="/import-mezzi"><span>📈</span>Import Excel</a>
+        <a class="dp-advanced-card" href="/scansione-documenti"><span>📷</span>Scansione documenti</a>
+        <a class="dp-advanced-card" href="/richieste-attesa"><span>⏳</span>Clienti in attesa</a>
+        <a class="dp-advanced-card" href="/scadenze-clienti"><span>🔔</span>Scadenze clienti</a>
+        <a class="dp-advanced-card" href="/cargos"><span>🚚</span>Ca.R.G.O.S.</a>
+        <a class="dp-advanced-card" href="/cargos-config"><span>⚙️</span>Config CARGOS</a>
+        <a class="dp-advanced-card" href="/prenota"><span>📲</span>Pagina cliente</a>
+        <a class="dp-advanced-card" href="/logo"><span>🎨</span>Logo</a>
+        <a class="dp-advanced-card" href="/test-drive"><span>🧪</span>Test Drive</a>
+        <a class="dp-advanced-card" href="/versione"><span>ℹ️</span>Versione</a>
+      </div>
+    </section>
+  `));
+});
+
 
 app.get('/richieste-attesa', async (req, res) => {
   try {
