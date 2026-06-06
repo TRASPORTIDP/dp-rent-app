@@ -1109,31 +1109,6 @@ function page(title, content) {
     ? `<img src="/public/logo.png" onerror="this.style.display=\'none\';this.insertAdjacentHTML(\'afterend\',\'<span class=&quot;brandText&quot;>DP RENT</span>\')" style="height:48px;max-width:180px;object-fit:contain;background:white;border-radius:8px;padding:4px;">`
     : `<span class="brandText">DP RENT</span>`;
 
-  const isHomePage = String(title || '').toLowerCase() === 'dashboard';
-  const topActionsHtml = isHomePage ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Home</a></div>`;
-  const navHtml = isHomePage ? '' : `
-<nav class="dp-main-nav">
-<a href="/">Dashboard</a>
-<a href="/nuova-prenotazione">+ Prenotazione</a>
-<a href="/planning">Planning</a>
-<a href="/mezzi-web">Mezzi</a>
-<a href="/clienti">Clienti</a>
-<a href="/prenotazioni">Contratti</a>
-<a href="/video-mezzi">Video mezzi</a>
-<a href="/scadenze-mezzi">Scadenze</a>
-<details class="dp-advanced"><summary>Avanzate</summary><div>
-<a href="/import-mezzi">Import Excel</a>
-<a href="/scansione-documenti">Scansione documenti</a>
-<a href="/documenti-clienti">Documenti clienti</a>
-<a href="/richieste-attesa">Clienti in attesa</a>
-<a href="/scadenze-clienti">Scadenze clienti</a>
-<a href="/prenota">Pagina cliente</a>
-<a href="/cargos">Ca.R.G.O.S.</a>
-<a href="/cargos-config">Config CARGOS</a>
-<a href="/logo">Logo</a>
-<a href="/test-drive">Test Drive</a>
-</div></details>
-</nav>`;
   return `<!doctype html>
 <html lang="it">
 <head>
@@ -1347,12 +1322,6 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 @media(max-width:900px){.dp-kpi-grid{grid-template-columns:repeat(2,1fr)}.dp-actions-grid{grid-template-columns:repeat(2,1fr)}.dp-status-row{grid-template-columns:1fr}.dp-advanced{width:100%}.dp-advanced summary{width:100%}.dp-advanced div{position:static;margin-top:8px;min-width:0}}
 @media(max-width:560px){.dp-kpi-grid,.dp-actions-grid{grid-template-columns:1fr}.dp-action-card{min-height:128px}.dp-main-nav>a{flex:1 1 calc(50% - 8px);font-size:15px!important;padding:10px!important}.dp-hero-new{border-radius:24px}.dp-kpi,.dp-panel,.dp-video-card{border-radius:22px}}
 
-
-
-/* V213 HOME MINIMAL MOBILE-FIRST */
-body.dp-home-clean nav{display:none!important}
-.dp-home-minimal{max-width:760px;margin:0 auto;display:grid;gap:12px}.dp-home-title{background:linear-gradient(135deg,#050505,#18181b);color:#fff;border-radius:22px;padding:16px 18px;box-shadow:0 12px 28px rgba(0,0,0,.18)}.dp-home-title h2{margin:0;font-size:34px;line-height:1;font-weight:1000;letter-spacing:.5px}.dp-home-title p{margin:6px 0 0;color:#ddd;font-weight:800}.dp-alert-strip{display:grid;grid-template-columns:1fr 1fr;gap:10px}.dp-alert-pill{display:flex;align-items:center;gap:10px;background:#fff;border-radius:16px;padding:12px 14px;text-decoration:none;color:#111;font-weight:950;box-shadow:0 8px 20px rgba(0,0,0,.08);border:1px solid #eee}.dp-alert-pill.red{border-left:7px solid #d70000}.dp-alert-pill.yellow{border-left:7px solid #ffb000}.dp-alert-pill b{font-size:22px;color:#d70000}.dp-home-buttons{display:grid;grid-template-columns:1fr 1fr;gap:12px}.dp-home-btn{min-height:92px;background:#111;color:#fff;text-decoration:none;border-radius:22px;padding:16px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;box-shadow:0 6px 0 #d70000,0 12px 26px rgba(0,0,0,.14);font-weight:1000}.dp-home-btn .ico{font-size:30px;margin-bottom:6px}.dp-home-btn strong{font-size:20px;line-height:1.05}.dp-home-btn.red{background:linear-gradient(135deg,#d70000,#850000)}.dp-home-btn.dark{background:linear-gradient(135deg,#111,#29292f)}.dp-home-small{font-size:13px;color:#666;text-align:center;font-weight:800;margin-top:2px}.dp-advanced-page{max-width:900px;margin:0 auto}.dp-advanced-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px}.dp-advanced-card{background:#111;color:#fff;text-decoration:none;border-radius:20px;padding:18px;min-height:90px;display:flex;align-items:center;gap:12px;font-weight:950;box-shadow:0 8px 22px rgba(0,0,0,.12)}.dp-advanced-card span{font-size:28px}.dp-advanced-card:hover{background:#d70000}@media(max-width:560px){header{display:none!important}main{padding:10px!important}.dp-home-title{padding:14px 16px;border-radius:18px}.dp-home-title h2{font-size:30px}.dp-alert-strip{grid-template-columns:1fr}.dp-alert-pill{padding:10px 12px}.dp-home-buttons{gap:10px}.dp-home-btn{min-height:82px;border-radius:18px;padding:12px;box-shadow:0 4px 0 #d70000,0 8px 18px rgba(0,0,0,.12)}.dp-home-btn .ico{font-size:28px;margin-bottom:4px}.dp-home-btn strong{font-size:17px}.dp-home-small{font-size:12px}}
-
 </style>
 <script>
 function toggleAzienda(){
@@ -1367,10 +1336,31 @@ function toggleAzienda(){
 window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
-<body class="${isHomePage ? 'dp-home-clean' : ''}">
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V213 HOME MINIMAL + VIDEO DRIVE</small></h1></header>
-${navHtml}
-<main>${topActionsHtml}${content}</main>
+<body>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V212 DASHBOARD + VIDEO DRIVE</small></h1></header>
+<nav class="dp-main-nav">
+<a href="/">Dashboard</a>
+<a href="/nuova-prenotazione">+ Prenotazione</a>
+<a href="/planning">Planning</a>
+<a href="/mezzi-web">Mezzi</a>
+<a href="/clienti">Clienti</a>
+<a href="/prenotazioni">Contratti</a>
+<a href="/video-mezzi">Video mezzi</a>
+<a href="/scadenze-mezzi">Scadenze</a>
+<details class="dp-advanced"><summary>Avanzate</summary><div>
+<a href="/import-mezzi">Import Excel</a>
+<a href="/scansione-documenti">Scansione documenti</a>
+<a href="/documenti-clienti">Documenti clienti</a>
+<a href="/richieste-attesa">Clienti in attesa</a>
+<a href="/scadenze-clienti">Scadenze clienti</a>
+<a href="/prenota">Pagina cliente</a>
+<a href="/cargos">Ca.R.G.O.S.</a>
+<a href="/cargos-config">Config CARGOS</a>
+<a href="/logo">Logo</a>
+<a href="/test-drive">Test Drive</a>
+</div></details>
+</nav>
+<main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
 </body>
 </html>`;
 }
@@ -3221,60 +3211,59 @@ app.get('/', async (req, res) => {
     const allMezzi = await all(`SELECT * FROM mezzi`);
     const alertCount = allMezzi.filter(m => !!alertMezzo(m)).length;
 
-    res.send(page('Dashboard', `
-      <section class="dp-home-minimal">
-        <div class="dp-home-title">
-          <h2>DP RENT</h2>
-          <p>Home veloce - 6 pulsanti principali</p>
-        </div>
-
-        <div class="dp-alert-strip">
-          <a class="dp-alert-pill red" href="/richieste-attesa"><span>🔴</span><div><b>${attesaCount}</b><br>Clienti in attesa</div></a>
-          <a class="dp-alert-pill yellow" href="/scadenze-mezzi"><span>🟡</span><div><b>${alertCount}</b><br>Scadenze / alert</div></a>
-        </div>
-
-        <div class="dp-home-buttons">
-          <a class="dp-home-btn red" href="/nuova-prenotazione"><span class="ico">➕</span><strong>Prenotazione</strong></a>
-          <a class="dp-home-btn" href="/planning"><span class="ico">📅</span><strong>Planning</strong></a>
-          <a class="dp-home-btn" href="/mezzi-web"><span class="ico">🚗</span><strong>Mezzi</strong></a>
-          <a class="dp-home-btn" href="/prenotazioni"><span class="ico">📄</span><strong>Contratti</strong></a>
-          <a class="dp-home-btn dark" href="/video-mezzi"><span class="ico">🎥</span><strong>Video Mezzi</strong></a>
-          <a class="dp-home-btn" href="/avanzate"><span class="ico">⚙️</span><strong>Avanzate</strong></a>
-        </div>
-
-        <div class="dp-home-small">Mezzi: ${mezzi ? mezzi.tot : 0} · Contratti: ${pren ? pren.tot : 0} · Drive video attivo</div>
-      </section>
-    `));
+    res.send(`<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f3f3f3">
+<title>DP RENT</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:linear-gradient(180deg,#fafafa,#eeeeee);color:#111;-webkit-text-size-adjust:100%}.home{max-width:760px;margin:0 auto;padding:calc(18px + env(safe-area-inset-top)) 14px 22px}.head{background:linear-gradient(135deg,#050505,#17171b);color:#fff;border-radius:26px;padding:24px 24px 26px;box-shadow:0 16px 34px rgba(0,0,0,.20);margin-bottom:14px}.head h1{margin:0;font-size:44px;letter-spacing:1px;line-height:.95;font-weight:1000}.head p{margin:12px 0 0;font-size:20px;font-weight:900;color:#e8e8e8}.alerts{display:grid;gap:10px;margin:0 0 16px}.alertline{display:flex;align-items:center;gap:14px;background:#fff;border-radius:22px;padding:14px 16px;min-height:72px;text-decoration:none;color:#111;box-shadow:0 10px 26px rgba(0,0,0,.08);border-left:7px solid #ddd}.alertline.red{border-left-color:#d70000}.alertline.yellow{border-left-color:#ffb000}.dot{font-size:30px;line-height:1}.num{font-size:34px;font-weight:1000;color:#d70000;line-height:1}.label{font-size:22px;font-weight:1000;line-height:1.05}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card{min-height:126px;background:#101013;color:white;text-decoration:none;border-radius:24px;padding:18px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 0 #d70000,0 14px 28px rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.08);font-weight:1000}.card.primary{background:linear-gradient(135deg,#d90000,#8c0000)}.ico{font-size:32px;line-height:1;margin-bottom:9px}.txt{font-size:22px;line-height:1.05}.foot{text-align:center;color:#666;font-weight:900;font-size:16px;margin:20px 0 0}.small{font-size:13px;color:#ddd;margin-top:5px;font-weight:800}.advanced{background:#19191d}@media(max-width:380px){.head h1{font-size:38px}.head p{font-size:17px}.card{min-height:112px;border-radius:22px}.txt{font-size:20px}.ico{font-size:28px}.label{font-size:20px}.num{font-size:30px}}
+</style>
+</head>
+<body>
+<main class="home">
+  <section class="head"><h1>DP RENT</h1><p>Home veloce - 6 pulsanti principali</p></section>
+  <section class="alerts">
+    <a class="alertline red" href="/richieste-attesa"><span class="dot">🔴</span><span class="num">${attesaCount}</span><span class="label">Clienti in attesa</span></a>
+    <a class="alertline yellow" href="/scadenze-mezzi"><span class="dot">🟡</span><span class="num">${alertCount}</span><span class="label">Scadenze / alert</span></a>
+  </section>
+  <section class="grid">
+    <a class="card primary" href="/nuova-prenotazione"><span class="ico">➕</span><span class="txt">Prenotazione</span></a>
+    <a class="card" href="/planning"><span class="ico">📅</span><span class="txt">Planning</span></a>
+    <a class="card" href="/mezzi-web"><span class="ico">🚗</span><span class="txt">Mezzi</span></a>
+    <a class="card" href="/prenotazioni"><span class="ico">📄</span><span class="txt">Contratti</span></a>
+    <a class="card" href="/video-mezzi"><span class="ico">🎥</span><span class="txt">Video Mezzi</span><span class="small">Drive per targa</span></a>
+    <a class="card advanced" href="/avanzate"><span class="ico">⚙️</span><span class="txt">Avanzate</span></a>
+  </section>
+  <div class="foot">Mezzi: ${mezzi ? mezzi.tot : 0} • Contratti: ${pren ? pren.tot : 0} • Drive video attivo</div>
+</main>
+</body>
+</html>`);
   } catch (e) {
-    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore Home</h2><pre>${esc(e.message)}</pre></div>`));
+    res.status(500).send('Errore Dashboard: ' + (e && e.message ? e.message : e));
   }
 });
 
-app.get('/avanzate', async (req,res) => {
+app.get('/avanzate', async (req, res) => {
   res.send(page('Avanzate', `
-    <section class="dp-advanced-page">
-      <div class="box">
-        <h2>⚙️ Avanzate</h2>
-        <p>Funzioni secondarie nascoste dalla home per tenere l'app pulita su iPhone.</p>
+    <div class="box"><h2>⚙️ Avanzate</h2><p>Funzioni amministrative e meno usate.</p>
+      <div class="hero">
+        <a class="tile" href="/clienti"><span>👥</span>Clienti</a>
+        <a class="tile" href="/documenti-clienti"><span>📂</span>Documenti clienti</a>
+        <a class="tile" href="/import-excel"><span>📊</span>Import Excel</a>
+        <a class="tile" href="/scadenze-clienti"><span>⏳</span>Scadenze clienti</a>
+        <a class="tile" href="/storico"><span>🗄️</span>Storico</a>
+        <a class="tile" href="/cargos"><span>🚚</span>Ca.R.G.O.S.</a>
+        <a class="tile" href="/cargos-config"><span>⚙️</span>Config Cargos</a>
+        <a class="tile" href="/logo"><span>🎨</span>Logo</a>
+        <a class="tile" href="/richieste-attesa"><span>🚨</span>Clienti in attesa</a>
       </div>
-      <div class="dp-advanced-grid">
-        <a class="dp-advanced-card" href="/clienti"><span>👥</span>Clienti</a>
-        <a class="dp-advanced-card" href="/documenti-clienti"><span>📂</span>Documenti clienti</a>
-        <a class="dp-advanced-card" href="/import-mezzi"><span>📈</span>Import Excel</a>
-        <a class="dp-advanced-card" href="/scansione-documenti"><span>📷</span>Scansione documenti</a>
-        <a class="dp-advanced-card" href="/richieste-attesa"><span>⏳</span>Clienti in attesa</a>
-        <a class="dp-advanced-card" href="/scadenze-clienti"><span>🔔</span>Scadenze clienti</a>
-        <a class="dp-advanced-card" href="/cargos"><span>🚚</span>Ca.R.G.O.S.</a>
-        <a class="dp-advanced-card" href="/cargos-config"><span>⚙️</span>Config CARGOS</a>
-        <a class="dp-advanced-card" href="/prenota"><span>📲</span>Pagina cliente</a>
-        <a class="dp-advanced-card" href="/logo"><span>🎨</span>Logo</a>
-        <a class="dp-advanced-card" href="/test-drive"><span>🧪</span>Test Drive</a>
-        <a class="dp-advanced-card" href="/versione"><span>ℹ️</span>Versione</a>
-      </div>
-    </section>
+      <a class="btn btn2" href="/">Torna home</a>
+    </div>
   `));
 });
-
 
 app.get('/richieste-attesa', async (req, res) => {
   try {
@@ -10724,3 +10713,119 @@ async function v176UpdateOrCreatePdfDrive(prenotazioneId){
         uploaded = (await drive.files.update({
           fileId: oldId,
           requestBody:{ name: pdfName },
+          media:{ mimeType:'application/pdf', body: fs.createReadStream(pdf) },
+          fields:'id,name,webViewLink',
+          supportsAllDrives:true
+        })).data;
+        console.log('V176 PDF aggiornato/sovrascritto:', pdfName, size, 'bytes', uploaded.id, uploaded.webViewLink || '');
+        await v176DeletePdfDuplicates(folder.id, p, uploaded.id);
+      } catch(e) {
+        console.log('V176 update PDF non riuscito, pulisco e ricarico:', e.message);
+        await v176DeletePdfDuplicates(folder.id, p, null);
+      }
+    } else {
+      await v176DeletePdfDuplicates(folder.id, p, null);
+    }
+
+    // 2) Se update non è riuscito, crea nuovo ma DOPO aver eliminato i duplicati.
+    if (!uploaded) {
+      try {
+        uploaded = await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
+        if (uploaded) console.log('V176 PDF creato unico in cartella cliente:', pdfName, size, 'bytes', uploaded.id, uploaded.webViewLink || '');
+      } catch(e) {
+        console.log('V176 create diretto warning:', e.message);
+      }
+    }
+  }
+
+  // 3) Fallback Apps Script: prima abbiamo già pulito i duplicati via Drive se possibile.
+  if (!uploaded) {
+    uploaded = await uploadFileToDrive(pdf, pdfName, 'application/pdf', folderName);
+    console.log('V176 PDF Apps Script fallback unico:', folderName, uploaded?.id || '', uploaded?.webViewLink || uploaded?.link || '');
+  }
+
+  if (!uploaded || !(uploaded.id || uploaded.webViewLink || uploaded.link)) {
+    await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+    throw new Error('PDF generato ma upload Drive non riuscito');
+  }
+
+  link = (uploaded && (uploaded.webViewLink || uploaded.link)) || '';
+  const uploadedId = (uploaded && uploaded.id) ? uploaded.id : '';
+  const folderId = (folder && folder.id) ? folder.id : null;
+  const folderLink = (folder && folder.webViewLink) ? folder.webViewLink : null;
+
+  await run(
+    `UPDATE prenotazioni
+       SET pdf_path=?,
+           pdf_drive_link=?,
+           pdf_drive_web_link=?,
+           pdf_drive_file_id=?,
+           drive_folder_id=COALESCE(?,drive_folder_id),
+           drive_folder_link=COALESCE(?,drive_folder_link)
+     WHERE id=?`,
+    [pdf, link, link, uploadedId, folderId, folderLink, prenotazioneId]
+  );
+
+  if (folder && folder.id && typeof uploadLocalAllegatiToDriveV63 === 'function') await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
+  if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
+  return { ok:true, pdf, link, fileId:uploaded.id || '', folder };
+}
+
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V176(prenotazioneId){
+  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
+  catch(e) { console.log('V176 sync Drive error:', e.message); return { ok:false, error:e.message }; }
+};
+
+v163AfterContractChange = async function v176AfterContractChange(prenotazioneId){
+  const id = String(prenotazioneId || '').trim();
+  if(!id) return null;
+  const driveSync = await syncContrattoDriveV63(id);
+  try {
+    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
+    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
+      const ics = await v153IcsFileForPrenotazione(fresh);
+      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
+    }
+  } catch(e) { console.log('V176 calendario warning:', e.message); }
+  return { ok:true, driveSync };
+};
+
+app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
+  try{
+    const r = await v176UpdateOrCreatePdfDrive(req.params.id);
+    res.send(page('Drive PDF unico', `<div class="box"><h2 class="ok">PDF unico aggiornato</h2><p><b>PDF:</b> <a target="_blank" href="${esc(r.link||'')}">Apri PDF Drive</a></p><p><b>Cartella cliente:</b> ${r.folder?.webViewLink ? `<a target="_blank" href="${esc(r.folder.webViewLink)}">Apri cartella cliente</a>` : 'n/d'}</p><p>Ora le modifiche non creano duplicati: aggiornano lo stesso PDF.</p><a class="btn" href="/contratto/${esc(req.params.id)}/gestisci">Torna contratto</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore Drive PDF unico', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna</a></div>`)); }
+});
+
+console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
+
+
+console.log('DP RENT V186: planning sempre oggi salvo filtro manuale + UI compatta');
+
+
+// V178: blocco duplicati Drive.
+// Se esiste già un PDF Drive per il contratto e l'update diretto non riesce,
+// NON usare Apps Script fallback perché crea un nuovo file con lo stesso nome.
+const v176UpdateOrCreatePdfDrive_ORIG_V178 = v176UpdateOrCreatePdfDrive;
+v176UpdateOrCreatePdfDrive = async function v178UpdateOrCreatePdfDriveNoDuplicates(prenotazioneId){
+  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
+  const hadDrivePdf = !!(p && (String(p.pdf_drive_file_id || '').trim() || String(p.pdf_drive_web_link || p.pdf_drive_link || '').trim()));
+  try {
+    return await v176UpdateOrCreatePdfDrive_ORIG_V178(prenotazioneId);
+  } catch(e) {
+    if (hadDrivePdf) {
+      const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false, skipDrive:true });
+      await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
+      console.log('V178 Drive update non riuscito: mantengo PDF Drive esistente, NO duplicato:', e.message);
+      return { ok:false, pdf, keptExisting:true, error:e.message };
+    }
+    throw e;
+  }
+};
+
+syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId){
+  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
+  catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
+};
+
+console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
