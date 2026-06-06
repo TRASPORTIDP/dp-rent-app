@@ -1309,19 +1309,6 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .planning-cell{min-width:36px!important;width:36px!important;height:28px!important;border-radius:7px!important}
 }
 
-
-
-/* V212 DP RENT HOME PROFESSIONALE + VIDEO MEZZI */
-.dp-main-nav{background:linear-gradient(90deg,#b90000,#e30000);display:flex!important;flex-wrap:wrap!important;gap:10px!important;align-items:center!important;box-shadow:0 12px 30px rgba(198,0,0,.23)!important}
-.dp-main-nav>a,.dp-main-nav summary{display:inline-flex!important;align-items:center!important;justify-content:center!important;min-height:48px!important;padding:12px 18px!important;border-radius:16px!important;background:rgba(0,0,0,.18)!important;border:1px solid rgba(255,255,255,.18)!important;color:#fff!important;text-decoration:none!important;font-weight:950!important;cursor:pointer!important;list-style:none!important}
-.dp-main-nav>a:hover,.dp-main-nav summary:hover{background:#111!important;transform:translateY(-1px)}
-.dp-advanced{position:relative}.dp-advanced summary::-webkit-details-marker{display:none}.dp-advanced summary:after{content:' ▾';font-size:14px;margin-left:6px}.dp-advanced[open] summary{background:#111!important}
-.dp-advanced div{position:absolute;right:0;top:58px;z-index:9999;min-width:290px;background:#111;border:2px solid #d70000;border-radius:18px;padding:12px;box-shadow:0 18px 45px rgba(0,0,0,.35);display:grid;grid-template-columns:1fr;gap:8px}
-.dp-advanced div a{color:#fff;text-decoration:none;background:#24242a;border-radius:13px;padding:13px 14px;font-weight:900}.dp-advanced div a:hover{background:#d70000}
-.dp-dashboard{display:grid;gap:18px}.dp-hero-new{background:linear-gradient(135deg,#080808,#1d1d22 58%,#d70000);color:#fff;border-radius:32px;padding:clamp(22px,4vw,42px);box-shadow:0 24px 60px rgba(0,0,0,.22);overflow:hidden;position:relative}.dp-hero-new:after{content:'DP';position:absolute;right:-12px;bottom:-36px;font-size:160px;font-weight:1000;opacity:.08;letter-spacing:-8px}.dp-hero-new h2{font-size:clamp(34px,6vw,64px);margin:0 0 10px;line-height:.95}.dp-hero-new p{font-size:clamp(16px,2vw,22px);margin:0;color:#f1f1f1;font-weight:800}.dp-kpi-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}.dp-kpi{background:#fff;border-radius:24px;padding:20px;box-shadow:0 16px 38px rgba(0,0,0,.10);border:1px solid rgba(0,0,0,.06)}.dp-kpi b{display:block;font-size:clamp(30px,4vw,48px);line-height:1;color:#d70000}.dp-kpi span{display:block;margin-top:8px;font-weight:950;color:#222}.dp-actions-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}.dp-action-card{min-height:150px;background:#0e0e10;color:#fff;text-decoration:none;border-radius:28px;padding:22px;display:flex;flex-direction:column;justify-content:space-between;box-shadow:0 8px 0 #d70000,0 20px 42px rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.08);transition:.12s}.dp-action-card:hover{transform:translateY(-3px);filter:brightness(1.08)}.dp-action-card .ico{font-size:42px}.dp-action-card strong{font-size:clamp(20px,2.2vw,28px);line-height:1.05}.dp-action-card small{color:#ddd;font-weight:700;margin-top:6px}.dp-action-card.red{background:linear-gradient(135deg,#d70000,#780000)}.dp-action-card.drive{background:linear-gradient(135deg,#111,#24242a)}.dp-panel{background:#fff;border-radius:28px;padding:24px;box-shadow:0 18px 45px rgba(0,0,0,.10);border:1px solid rgba(0,0,0,.06)}.dp-panel h2{margin-top:0}.dp-alert-list{display:grid;gap:8px}.dp-alert-list .alert{font-weight:800}.dp-status-row{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.dp-status-row p{margin:0;padding:14px;border-radius:16px;background:#f4f4f5;font-weight:800}.dp-video-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}.dp-video-card{background:#fff;border-radius:24px;padding:18px;box-shadow:0 14px 35px rgba(0,0,0,.10);border:1px solid rgba(0,0,0,.06)}.dp-video-card h3{margin:0 0 12px;font-size:23px}.dp-video-actions{display:flex;gap:8px;flex-wrap:wrap}.dp-video-actions .btn{font-size:15px!important;padding:10px 12px!important;border-radius:12px!important}.dp-upload-box{border:3px dashed #d70000;border-radius:24px;padding:22px;background:#fff8f8;margin:12px 0}.dp-upload-box input{background:#fff}.dp-note{background:#fff3cd;border:1px solid #ffdc6a;border-radius:16px;padding:14px;font-weight:800}
-@media(max-width:900px){.dp-kpi-grid{grid-template-columns:repeat(2,1fr)}.dp-actions-grid{grid-template-columns:repeat(2,1fr)}.dp-status-row{grid-template-columns:1fr}.dp-advanced{width:100%}.dp-advanced summary{width:100%}.dp-advanced div{position:static;margin-top:8px;min-width:0}}
-@media(max-width:560px){.dp-kpi-grid,.dp-actions-grid{grid-template-columns:1fr}.dp-action-card{min-height:128px}.dp-main-nav>a{flex:1 1 calc(50% - 8px);font-size:15px!important;padding:10px!important}.dp-hero-new{border-radius:24px}.dp-kpi,.dp-panel,.dp-video-card{border-radius:22px}}
-
 </style>
 <script>
 function toggleAzienda(){
@@ -1337,28 +1324,16 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V217 PDF REALI + VIDEO OK</small></h1></header>
-<nav class="dp-main-nav">
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V219 STABILE + VIDEO SEMPLICE</small></h1></header>
+<nav>
 <a href="/">Dashboard</a>
 <a href="/nuova-prenotazione">+ Prenotazione</a>
 <a href="/planning">Planning</a>
 <a href="/mezzi-web">Mezzi</a>
-<a href="/clienti">Clienti</a>
 <a href="/prenotazioni">Contratti</a>
 <a href="/video-mezzi">Video mezzi</a>
 <a href="/scadenze-mezzi">Scadenze</a>
-<details class="dp-advanced"><summary>Avanzate</summary><div>
-<a href="/import-mezzi">Import Excel</a>
-<a href="/scansione-documenti">Scansione documenti</a>
-<a href="/documenti-clienti">Documenti clienti</a>
-<a href="/richieste-attesa">Clienti in attesa</a>
-<a href="/scadenze-clienti">Scadenze clienti</a>
-<a href="/prenota">Pagina cliente</a>
-<a href="/cargos">Ca.R.G.O.S.</a>
-<a href="/cargos-config">Config CARGOS</a>
-<a href="/logo">Logo</a>
-<a href="/test-drive">Test Drive</a>
-</div></details>
+<a href="/avanzate">Avanzate</a>
 </nav>
 <main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
 </body>
@@ -3204,65 +3179,38 @@ async function v137AtteseRows(){
 
 app.get('/', async (req, res) => {
   try {
-    const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`);
-    const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`);
-    const atteseRowsV137 = await v137AtteseRows();
-    const attesaCount = atteseRowsV137.length;
-    const allMezzi = await all(`SELECT * FROM mezzi`);
-    const alertCount = allMezzi.filter(m => !!alertMezzo(m)).length;
-
-    res.send(`<!doctype html>
-<html lang="it">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f3f3f3">
-<title>DP RENT</title>
-<style>
-*{box-sizing:border-box}html,body{margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:linear-gradient(180deg,#fafafa,#eeeeee);color:#111;-webkit-text-size-adjust:100%}.home{max-width:760px;margin:0 auto;padding:calc(18px + env(safe-area-inset-top)) 14px 22px}.head{background:linear-gradient(135deg,#050505,#17171b);color:#fff;border-radius:26px;padding:24px 24px 26px;box-shadow:0 16px 34px rgba(0,0,0,.20);margin-bottom:14px}.head h1{margin:0;font-size:44px;letter-spacing:1px;line-height:.95;font-weight:1000}.head p{margin:12px 0 0;font-size:20px;font-weight:900;color:#e8e8e8}.alerts{display:grid;gap:10px;margin:0 0 16px}.alertline{display:flex;align-items:center;gap:14px;background:#fff;border-radius:22px;padding:14px 16px;min-height:72px;text-decoration:none;color:#111;box-shadow:0 10px 26px rgba(0,0,0,.08);border-left:7px solid #ddd}.alertline.red{border-left-color:#d70000}.alertline.yellow{border-left-color:#ffb000}.dot{font-size:30px;line-height:1}.num{font-size:34px;font-weight:1000;color:#d70000;line-height:1}.label{font-size:22px;font-weight:1000;line-height:1.05}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.card{min-height:126px;background:#101013;color:white;text-decoration:none;border-radius:24px;padding:18px 14px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;box-shadow:0 7px 0 #d70000,0 14px 28px rgba(0,0,0,.16);border:1px solid rgba(255,255,255,.08);font-weight:1000}.card.primary{background:linear-gradient(135deg,#d90000,#8c0000)}.ico{font-size:32px;line-height:1;margin-bottom:9px}.txt{font-size:22px;line-height:1.05}.foot{text-align:center;color:#666;font-weight:900;font-size:16px;margin:20px 0 0}.small{font-size:13px;color:#ddd;margin-top:5px;font-weight:800}.advanced{background:#19191d}@media(max-width:380px){.head h1{font-size:38px}.head p{font-size:17px}.card{min-height:112px;border-radius:22px}.txt{font-size:20px}.ico{font-size:28px}.label{font-size:20px}.num{font-size:30px}}
-</style>
-</head>
-<body>
-<main class="home">
-  <section class="head"><h1>DP RENT</h1><p>Home veloce - 6 pulsanti principali</p></section>
-  <section class="alerts">
-    <a class="alertline red" href="/richieste-attesa"><span class="dot">🔴</span><span class="num">${attesaCount}</span><span class="label">Clienti in attesa</span></a>
-    <a class="alertline yellow" href="/scadenze-mezzi"><span class="dot">🟡</span><span class="num">${alertCount}</span><span class="label">Scadenze / alert</span></a>
-  </section>
-  <section class="grid">
-    <a class="card primary" href="/nuova-prenotazione"><span class="ico">➕</span><span class="txt">Prenotazione</span></a>
-    <a class="card" href="/planning"><span class="ico">📅</span><span class="txt">Planning</span></a>
-    <a class="card" href="/mezzi-web"><span class="ico">🚗</span><span class="txt">Mezzi</span></a>
-    <a class="card" href="/prenotazioni"><span class="ico">📄</span><span class="txt">Contratti</span></a>
-    <a class="card" href="/video-mezzi"><span class="ico">🎥</span><span class="txt">Video Mezzi</span><span class="small">Drive per targa</span></a>
-    <a class="card advanced" href="/avanzate"><span class="ico">⚙️</span><span class="txt">Avanzate</span></a>
-  </section>
-  <div class="foot">Mezzi: ${mezzi ? mezzi.tot : 0} • Contratti: ${pren ? pren.tot : 0} • Drive video attivo</div>
-</main>
-</body>
-</html>`);
-  } catch (e) {
-    res.status(500).send('Errore Dashboard: ' + (e && e.message ? e.message : e));
-  }
-});
-
-app.get('/avanzate', async (req, res) => {
-  res.send(page('Avanzate', `
-    <div class="box"><h2>⚙️ Avanzate</h2><p>Funzioni amministrative e meno usate.</p>
-      <div class="hero">
-        <a class="tile" href="/clienti"><span>👥</span>Clienti</a>
-        <a class="tile" href="/documenti-clienti"><span>📂</span>Documenti clienti</a>
-        <a class="tile" href="/import-excel"><span>📊</span>Import Excel</a>
-        <a class="tile" href="/scadenze-clienti"><span>⏳</span>Scadenze clienti</a>
-        <a class="tile" href="/storico"><span>🗄️</span>Storico</a>
-        <a class="tile" href="/cargos"><span>🚚</span>Ca.R.G.O.S.</a>
-        <a class="tile" href="/cargos-config"><span>⚙️</span>Config Cargos</a>
-        <a class="tile" href="/logo"><span>🎨</span>Logo</a>
-        <a class="tile" href="/richieste-attesa"><span>🚨</span>Clienti in attesa</a>
+    const mezzi = await get(`SELECT COUNT(*) as tot FROM mezzi`).catch(()=>({tot:0}));
+    const pren = await get(`SELECT COUNT(*) as tot FROM prenotazioni`).catch(()=>({tot:0}));
+    const atteseRowsV137 = (typeof v137AtteseRows === 'function') ? await v137AtteseRows().catch(()=>[]) : [];
+    const allMezzi = await all(`SELECT * FROM mezzi`).catch(()=>[]);
+    const alertCount = (allMezzi||[]).filter(m => String(alertMezzo(m)||'').trim()).length;
+    res.send(page('Dashboard', `
+      <style>
+        .dp-home-head{background:linear-gradient(135deg,#080808,#202020);color:#fff;border-radius:26px;padding:24px;margin-bottom:16px;box-shadow:0 18px 40px rgba(0,0,0,.16)}
+        .dp-home-head h2{font-size:42px;margin:0 0 6px;font-weight:950}.dp-home-head p{font-size:20px;margin:0;color:#eee;font-weight:800}
+        .dp-alert-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:14px}.dp-alert-mini{background:#fff;border-radius:22px;padding:18px;border-left:8px solid #d70000;box-shadow:0 10px 24px rgba(0,0,0,.08);font-size:22px;font-weight:950}.dp-alert-mini.warn{border-left-color:#ffb000}.dp-alert-mini b{font-size:34px;color:#d70000;margin-right:8px}.dp-alert-mini.warn b{color:#d18a00}
+        .dp-main-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.dp-main-btn{background:#111;color:#fff;text-decoration:none;border-radius:24px;min-height:132px;padding:20px;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:25px;font-weight:950;box-shadow:0 7px 0 #d70000,0 12px 26px rgba(0,0,0,.14)}.dp-main-btn.red{background:#d70000}.dp-main-btn span{font-size:36px;margin-bottom:8px}
+        .dp-home-foot{text-align:center;color:#777;font-weight:900;font-size:18px;margin-top:18px}
+        @media(max-width:700px){main{padding:12px!important}.top-actions{display:none!important}header h1{font-size:30px!important}.dp-home-head{padding:18px;border-radius:18px}.dp-home-head h2{font-size:36px}.dp-home-head p{font-size:17px}.dp-alert-row{grid-template-columns:1fr}.dp-alert-mini{font-size:22px;padding:15px}.dp-main-grid{gap:10px}.dp-main-btn{min-height:112px;border-radius:18px;font-size:21px;padding:14px}.dp-main-btn span{font-size:30px}}
+      </style>
+      <div class="dp-home-head"><h2>DP RENT</h2><p>Home veloce - 6 pulsanti principali</p></div>
+      <div class="dp-alert-row">
+        <a class="dp-alert-mini" href="/richieste-attesa" style="text-decoration:none;color:#111"><span>🔴</span> <b>${atteseRowsV137.length}</b>Clienti in attesa</a>
+        <a class="dp-alert-mini warn" href="/scadenze-mezzi" style="text-decoration:none;color:#111"><span>🟡</span> <b>${alertCount}</b>Scadenze / alert</a>
       </div>
-      <a class="btn btn2" href="/">Torna home</a>
-    </div>
-  `));
+      <div class="dp-main-grid">
+        <a class="dp-main-btn red" href="/nuova-prenotazione"><span>＋</span>Prenotazione</a>
+        <a class="dp-main-btn" href="/planning"><span>📅</span>Planning</a>
+        <a class="dp-main-btn" href="/mezzi-web"><span>🚗</span>Mezzi</a>
+        <a class="dp-main-btn" href="/prenotazioni"><span>📄</span>Contratti</a>
+        <a class="dp-main-btn" href="/video-mezzi"><span>🎥</span>Video Mezzi</a>
+        <a class="dp-main-btn" href="/avanzate"><span>⚙️</span>Avanzate</a>
+      </div>
+      <div class="dp-home-foot">Mezzi: ${mezzi?.tot||0} · Contratti: ${pren?.tot||0} · Drive video solo apertura cartella</div>
+    `));
+  } catch (e) {
+    res.status(500).send(page('Errore', `<div class="box"><h2 class="bad">Errore Dashboard</h2><pre>${esc(e.message)}</pre></div>`));
+  }
 });
 
 app.get('/richieste-attesa', async (req, res) => {
@@ -5423,7 +5371,6 @@ function condizioniHtmlV40() {
 }
 
 
-// V217: privacy e condizioni aprono sempre i PDF reali inclusi in /public.
 app.get('/privacy', (req, res) => res.redirect('/privacy_file.pdf'));
 app.get('/condizioni', (req, res) => res.redirect('/terms_file.pdf'));
 app.get('/condizioni-noleggio', (req, res) => res.redirect('/terms_file.pdf'));
@@ -8159,7 +8106,12 @@ function dpLabelStatus(v){
   return raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase();
 }
 function dpDateTimeLabel(data, ora){
-  return [String(data || '').trim(), String(ora || '').trim()].filter(Boolean).join(' ore ');
+  const raw = String(data || '').trim();
+  let d = raw;
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) d = `${m[3]}/${m[2]}/${m[1]}`;
+  const h = String(ora || '').trim();
+  return h ? `${d} ore ${h}` : d;
 }
 
 function euroHtml(v){
@@ -9419,254 +9371,68 @@ app.get('/admin/sincronizza-documenti-clienti', async (req,res)=>{
 });
 
 
-
-
-
 // =========================
-// V218 - VIDEO MEZZI PULITO / SOSTITUZIONE REALE
-// Regole:
-// - usa SOLO DP_RENT_VIDEO_FOLDER_ID, mai GOOGLE_DRIVE_FOLDER_ID dei contratti
-// - cerca SOLO dentro DP RENT VIDEO
-// - match per TARGA iniziale, quindi i nomi cartella possono cambiare
-// - se esistono doppie cartelle per la stessa targa, usa quella col nome piu lungo
-// - prima di caricare elimina TUTTI i video VIDEO_/video/* in TUTTE le cartelle duplicate di quella targa
-// - upload SOLO con Service Account diretto: niente Apps Script fallback per evitare duplicati
+// V219 VIDEO MEZZI SEMPLICE E SICURO
+// Non carica e non elimina video dall'app: apre direttamente la cartella corretta del mezzo.
+// Evita duplicati e casini su Drive.
 // =========================
-const DP_RENT_VIDEO_FOLDERS = [
-  'AT369FZ - DAILY',
-  'DR749MM - DAILY',
-  'EB389DV - GOLF VI 1.6 TDI ADVANCE',
-  'EC13 - EC13',
-  'EF681EN - TRANSIT',
-  'EH249SX - TRAFIC',
-  'FD188BL - VIVARO',
-  'FE592HA - FIORINO',
-  'FF130BV - TRANSIT',
-  'FG391NE - DACIA SANDERO',
-  'FH177CC - VIVARO',
-  'FK538XH - NV200 EVALIA',
-  'FR768SH - MASTER',
-  'FT492CZ - TOURNEO',
-  'FV095SN - DAILY',
-  'GV145TP - DUCATO',
-  'TOUCAN - TOUCAN 10E'
-];
-try {
-  db.run(`CREATE TABLE IF NOT EXISTS video_mezzi (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    targa TEXT,
-    mezzo TEXT,
-    folder_name TEXT,
-    drive_folder_id TEXT,
-    drive_file_id TEXT,
-    drive_web_link TEXT,
-    filename TEXT,
-    mime_type TEXT,
-    uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
-    active INTEGER DEFAULT 1
-  )`);
-  addColumn('video_mezzi','drive_folder_id','TEXT');
-} catch(e) { console.log('V218 video_mezzi table skip:', e.message); }
-
-function dpVideoSlug(name){ return String(name||'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
-function dpVideoNameBySlug(slug){
-  const s = String(slug||'').toUpperCase();
-  return DP_RENT_VIDEO_FOLDERS.find(n => dpVideoSlug(n) === s) || null;
+function v219VideoRootFolderId(){
+  return String(process.env.DP_RENT_VIDEO_FOLDER_ID || process.env.VIDEO_DRIVE_FOLDER_ID || '').trim();
 }
-function dpVideoRootFolderId(){ return process.env.DP_RENT_VIDEO_FOLDER_ID || process.env.VIDEO_DRIVE_FOLDER_ID || ''; }
-function dpVideoRootUrl(){
-  const id = dpVideoRootFolderId();
-  return id ? `https://drive.google.com/drive/folders/${encodeURIComponent(id)}` : '';
-}
-function dpVideoPlateFromName(folderName){
-  const raw = String(folderName || '').trim();
-  return raw.split(/\s+-\s+|\s+/)[0].toUpperCase().replace(/[^A-Z0-9]/g,'');
-}
-function dpDriveQ(s){ return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
-function dpNormFolderName(v){ return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g,''); }
-function dpIsVideoFile(f){
-  const mt = String(f && f.mimeType || '').toLowerCase();
-  const nm = String(f && f.name || '').toUpperCase();
-  return mt.startsWith('video/') || nm.startsWith('VIDEO_') || nm.endsWith('.MOV') || nm.endsWith('.MP4') || nm.endsWith('.M4V');
-}
-function dpVideoTargetFilename(folderName, originalName){
-  const targa = dpVideoPlateFromName(folderName);
-  const ext = (path.extname(originalName || '') || '.MOV').toUpperCase();
-  return safeFileName(`VIDEO_${targa}${ext}`);
-}
-async function dpVideoDriveClient(){
-  const d = ensureDriveClientV172();
-  if (!d) throw new Error('Google Drive diretto non configurato. Controlla GOOGLE_SERVICE_ACCOUNT_EMAIL e GOOGLE_PRIVATE_KEY su Render.');
-  const parentId = dpVideoRootFolderId();
-  if (!parentId) throw new Error('Manca DP_RENT_VIDEO_FOLDER_ID su Render.');
-  return d;
-}
-async function dpFindVideoFoldersByPlate(folderName){
-  const d = await dpVideoDriveClient();
-  const parentId = dpVideoRootFolderId();
-  const plate = dpVideoPlateFromName(folderName);
-  if (!plate) return [];
-  const q = `mimeType='application/vnd.google-apps.folder' and trashed=false and name contains '${dpDriveQ(plate)}' and '${dpDriveQ(parentId)}' in parents`;
-  const found = await d.files.list({
-    q,
-    fields:'files(id,name,webViewLink,modifiedTime)',
-    spaces:'drive',
-    supportsAllDrives:true,
-    includeItemsFromAllDrives:true,
-    orderBy:'modifiedTime desc'
-  });
-  const files = found.data.files || [];
-  return files.filter(f => dpNormFolderName(f.name).startsWith(plate));
-}
-function dpPickBestVideoFolder(folders, fallbackName){
-  folders = Array.isArray(folders) ? folders.slice() : [];
-  if (!folders.length) return null;
-  folders.sort((a,b) => {
-    const la = String(a.name||'').length, lb = String(b.name||'').length;
-    if (lb !== la) return lb - la; // preferisce nomi rinominati piu descrittivi
-    return String(b.modifiedTime||'').localeCompare(String(a.modifiedTime||''));
-  });
-  return folders[0];
-}
-async function dpGetOrCreateVideoFolder(folderName){
-  const d = await dpVideoDriveClient();
-  const parentId = dpVideoRootFolderId();
-  const folders = await dpFindVideoFoldersByPlate(folderName);
-  const best = dpPickBestVideoFolder(folders, folderName);
-  if (best) return best;
-  const created = await d.files.create({
-    requestBody:{ name:folderName, mimeType:'application/vnd.google-apps.folder', parents:[parentId] },
-    fields:'id,name,webViewLink,modifiedTime',
-    supportsAllDrives:true
-  });
-  return created.data;
-}
-async function dpListVideoFiles(folderId){
-  const d = await dpVideoDriveClient();
-  if (!folderId) return [];
-  const q = `'${dpDriveQ(folderId)}' in parents and trashed=false`;
-  const found = await d.files.list({
-    q,
-    fields:'files(id,name,webViewLink,webContentLink,mimeType,modifiedTime,size)',
-    spaces:'drive',
-    supportsAllDrives:true,
-    includeItemsFromAllDrives:true,
-    orderBy:'modifiedTime desc',
-    pageSize:100
-  });
-  return (found.data.files || []).filter(dpIsVideoFile);
-}
-async function dpListAllVideoFilesForPlate(folderName){
-  const folders = await dpFindVideoFoldersByPlate(folderName);
-  let out = [];
-  for (const folder of folders) {
-    const files = await dpListVideoFiles(folder.id).catch(()=>[]);
-    out = out.concat(files.map(f => ({...f, folderId:folder.id, folderName:folder.name, folderLink:folder.webViewLink})));
-  }
-  out.sort((a,b)=>String(b.modifiedTime||'').localeCompare(String(a.modifiedTime||'')));
-  return { folders, files: out };
-}
-async function dpDeleteVideoFilesInFolders(folders){
-  const d = await dpVideoDriveClient();
-  let count = 0;
-  for (const folder of (folders || [])) {
-    const files = await dpListVideoFiles(folder.id).catch(()=>[]);
-    for (const f of files) {
-      try { await d.files.delete({ fileId:f.id, supportsAllDrives:true }); count++; }
-      catch(e) { console.log('V218 delete video skip:', f.name, e.message); }
-    }
-  }
-  return count;
-}
-async function dpSaveVideoDb(folderName, up, filename, mimetype, folder){
-  const targa = dpVideoPlateFromName(folderName);
-  await run(`UPDATE video_mezzi SET active=0 WHERE targa=?`, [targa]).catch(()=>{});
-  await run(`INSERT INTO video_mezzi (targa,mezzo,folder_name,drive_folder_id,drive_file_id,drive_web_link,filename,mime_type,active) VALUES (?,?,?,?,?,?,?,?,1)`, [
-    targa, folderName, folder?.name || folderName, folder?.id || '', up?.id||'', up?.webViewLink||'', filename||'', mimetype||''
-  ]).catch(e=>console.log('V218 save video db:', e.message));
-}
-async function dpLastVideoDb(folderName){
-  const targa = dpVideoPlateFromName(folderName);
-  return await get(`SELECT * FROM video_mezzi WHERE targa=? AND active=1 ORDER BY id DESC LIMIT 1`, [targa]).catch(()=>null);
-}
-async function dpUploadVehicleVideo(folderName, file){
-  await assertFileReadyV173(file.path, 'Upload video Drive');
-  const folders = await dpFindVideoFoldersByPlate(folderName);
-  let folder = dpPickBestVideoFolder(folders, folderName);
-  if (!folder) folder = await dpGetOrCreateVideoFolder(folderName);
-
-  // Elimina TUTTI i video vecchi in tutte le cartelle duplicate della stessa targa.
-  const allFolders = folders.length ? folders : [folder];
-  const deleted = await dpDeleteVideoFilesInFolders(allFolders);
-
-  const safeName = dpVideoTargetFilename(folderName, file.originalname || 'video.mov');
-  const up = await uploadFileToDriveFolderV63(file.path, safeName, file.mimetype || 'video/quicktime', folder.id);
-  await dpSaveVideoDb(folderName, up, safeName, file.mimetype || 'video/quicktime', folder);
-  return { ...(up||{}), folder, deletedOld:deleted, direct:true };
+function v219DriveFolderUrl(id){ return id ? `https://drive.google.com/drive/folders/${encodeURIComponent(id)}` : ''; }
+function v219CleanTarga(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'').trim(); }
+async function v219FindVideoFolderByTarga(targa){
+  const root = v219VideoRootFolderId();
+  const key = v219CleanTarga(targa);
+  if (!root || !key) return null;
+  ensureDriveClientV172();
+  if (!drive) return null;
+  const q = `'${root}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`;
+  const found = await drive.files.list({ q, fields:'files(id,name,webViewLink)', spaces:'drive', supportsAllDrives:true, includeItemsFromAllDrives:true, pageSize:1000 });
+  const folders = found.data.files || [];
+  return folders.find(f => v219CleanTarga(f.name).startsWith(key)) || null;
 }
 
-app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
+app.get('/avanzate', async (req,res)=>{
+  res.send(page('Avanzate', `<div class="box"><h2>⚙️ Avanzate</h2><p>Funzioni usate meno spesso.</p><div class="hero">
+    <a class="tile" href="/clienti"><span>👥</span>Clienti</a>
+    <a class="tile" href="/documenti-clienti"><span>📂</span>Documenti clienti</a>
+    <a class="tile" href="/import-mezzi"><span>📊</span>Import Excel</a>
+    <a class="tile" href="/scansione-documenti"><span>📷</span>Scansione documenti</a>
+    <a class="tile" href="/cargos"><span>🚚</span>Ca.R.G.O.S.</a>
+    <a class="tile" href="/cargos-config"><span>⚙️</span>Config CARGOS</a>
+    <a class="tile" href="/prenotazioni"><span>📜</span>Storico</a>
+    <a class="tile" href="/richieste-attesa"><span>⏳</span>Clienti in attesa</a>
+    <a class="tile" href="/scadenze-clienti"><span>🔔</span>Scadenze clienti</a>
+    <a class="tile" href="/logo"><span>🎨</span>Logo</a>
+  </div></div>`));
+});
 
 app.get('/video-mezzi', async (req,res)=>{
   try{
-    const rootUrl = dpVideoRootUrl();
-    const cards = DP_RENT_VIDEO_FOLDERS.map(name => {
-      const slug = dpVideoSlug(name);
-      return `<div class="dp-video-card"><h3>🎥 ${esc(name)}</h3><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${encodeURIComponent(slug)}">Gestisci</a></div></div>`;
-    }).join('');
-    res.send(page('Video mezzi', `<div class="dp-panel"><h2>🎥 Video mezzi DP RENT</h2><p>Da qui carichi e sostituisci il video del mezzo. Ogni mezzo deve restare con un solo video attivo.</p>${rootUrl?`<p><a class="btn btn2" target="_blank" href="${esc(rootUrl)}">Apri cartella principale DP RENT VIDEO</a></p>`:''}</div><div class="dp-video-grid">${cards}</div>`));
-  }catch(e){ res.status(500).send(page('Errore Video mezzi', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.stack || e.message)}</pre></div>`)); }
+    const rows = await all(`SELECT * FROM mezzi ORDER BY targa, modello`).catch(()=>[]);
+    const cards = (rows||[]).map(m=>`<div class="box"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><a class="btn" href="/video-mezzi/${m.id}">Apri cartella mezzo</a></div>`).join('') || '<div class="box"><p>Nessun mezzo trovato.</p></div>';
+    res.send(page('Video mezzi', `<div class="box"><h2>🎥 Video mezzi</h2><p>Da qui apri la cartella Drive corretta del mezzo. Caricamento e sostituzione si fanno direttamente in Drive per evitare doppioni.</p></div>${cards}`));
+  }catch(e){ res.status(500).send(page('Errore video mezzi', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
 
-app.get('/video-mezzi/:slug', async (req,res)=>{
+app.get('/video-mezzi/:id', async (req,res)=>{
   try{
-    const name = dpVideoNameBySlug(req.params.slug);
-    if (!name) return res.status(404).send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
-    let folders = [], videos = [], note = '';
-    try {
-      const data = await dpListAllVideoFilesForPlate(name);
-      folders = data.folders;
-      videos = data.files;
-    } catch(e) { note = 'Drive diretto non legge la cartella: ' + e.message; }
-    const bestFolder = dpPickBestVideoFolder(folders, name);
-    const lastDb = await dpLastVideoDb(name);
-    let videoHtml = '';
-    if (videos.length) {
-      const v = videos[0];
-      videoHtml = `<div class="notice"><b>${esc(v.name)}</b><br><span class="muted">Cartella: ${esc(v.folderName || '')}</span><br><a class="btn" target="_blank" href="${esc(v.webViewLink||'')}">▶️ Apri video su Drive</a></div>`;
-      if (videos.length > 1) videoHtml += `<p class="dp-note">Trovati ${videos.length} video. Al prossimo caricamento verranno eliminati i vecchi e restera un solo video.</p>`;
-    } else if (lastDb && lastDb.drive_web_link) {
-      videoHtml = `<div class="notice"><b>${esc(lastDb.filename || 'Ultimo video caricato')}</b><br><a class="btn" target="_blank" href="${esc(lastDb.drive_web_link)}">▶️ Apri ultimo video caricato</a></div><p class="muted">Google Drive può impiegare qualche minuto per elaborare l'anteprima del video.</p>`;
-    } else {
-      videoHtml = `<p class="muted">Nessun video registrato nell'app. Carica un video qui sotto.</p>`;
-    }
-    const folderButton = bestFolder?.webViewLink ? `<a class="btn btn2" target="_blank" href="${esc(bestFolder.webViewLink)}">📂 Apri cartella del mezzo</a>` : '';
-    res.send(page('Video ' + name, `<div class="dp-panel"><h2>🎥 ${esc(name)}</h2><div class="dp-video-actions"><a class="btn btn2" href="/video-mezzi">Indietro</a>${folderButton}</div>${note?`<p class="dp-note">${esc(note)}</p>`:''}<h3>Video attuale</h3>${videoHtml}<div class="dp-upload-box"><h3>⬆️ Carica / sostituisci video</h3><p class="muted">Quando carichi, l'app elimina prima tutti i video vecchi della stessa targa e poi carica quello nuovo.</p><form method="POST" action="/video-mezzi/${encodeURIComponent(req.params.slug)}/upload" enctype="multipart/form-data"><input type="file" name="video" accept="video/*" required><button type="submit">Carica e sostituisci video</button></form></div><form method="POST" action="/video-mezzi/${encodeURIComponent(req.params.slug)}/elimina" onsubmit="return confirm('Eliminare tutti i video attuali di questa targa?');"><button class="bad" type="submit">🗑️ Elimina video attuale</button></form></div>`));
-  }catch(e){ res.status(500).send(page('Errore Video mezzo', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/video-mezzi">Torna</a></div>`)); }
+    const m = await get(`SELECT * FROM mezzi WHERE id=?`, [req.params.id]);
+    if(!m) return res.status(404).send(page('Mezzo non trovato', `<div class="box"><h2>Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
+    const folder = await v219FindVideoFolderByTarga(m.targa).catch(e=>{ console.log('V219 video folder warning:', e.message); return null; });
+    const link = folder?.webViewLink || (folder?.id ? v219DriveFolderUrl(folder.id) : '');
+    res.send(page('Video mezzo', `<div class="box"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2>
+      ${link ? `<p class="ok"><b>Cartella collegata:</b> ${esc(folder.name)}</p><a class="btn" target="_blank" href="${esc(link)}">📂 Apri cartella Drive del mezzo</a>` : `<div class="notice"><b>Cartella Drive non trovata.</b><br>Controlla che in DP RENT VIDEO esista una cartella che inizi con la targa <b>${esc(m.targa||'')}</b> e che la cartella principale sia condivisa con il service account.</div>`}
+      <p class="muted">Metodo sicuro: apri Drive, lascia un solo video nella cartella e cancella eventuali vecchi duplicati.</p>
+      <a class="btn btn2" href="/video-mezzi">Torna video mezzi</a>
+    </div>`));
+  }catch(e){ res.status(500).send(page('Errore video mezzo', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
 
-app.post('/video-mezzi/:slug/upload', upload.single('video'), async (req,res)=>{
-  try{
-    const name = dpVideoNameBySlug(req.params.slug);
-    if (!name) throw new Error('Mezzo non trovato');
-    if (!req.file) throw new Error('Nessun video caricato');
-    const up = await dpUploadVehicleVideo(name, req.file);
-    cleanupLocalAfterDriveV151(req.file.path);
-    res.send(page('Video caricato', `<div class="box"><h2 class="ok">Video caricato e sostituito</h2><p>Mezzo: <b>${esc(name)}</b></p><p>Vecchi video eliminati: <b>${Number(up.deletedOld||0)}</b></p><p>Cartella: <b>${esc(up.folder?.name || '')}</b></p>${up.webViewLink?`<p><a class="btn" target="_blank" href="${esc(up.webViewLink)}">Apri video su Drive</a></p>`:''}<p class="dp-note">Se Google Drive dice "video in elaborazione", aspetta qualche minuto: è normale per file .MOV da iPhone.</p><a class="btn btn2" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna al mezzo</a><a class="btn" href="/video-mezzi">Video mezzi</a></div>`));
-  }catch(e){ res.status(500).send(page('Errore upload video', `<div class="box"><h2 class="bad">Errore upload video</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna</a></div>`)); }
-});
-
-app.post('/video-mezzi/:slug/elimina', async (req,res)=>{
-  try{
-    const name = dpVideoNameBySlug(req.params.slug);
-    if (!name) throw new Error('Mezzo non trovato');
-    const targa = dpVideoPlateFromName(name);
-    const folders = await dpFindVideoFoldersByPlate(name);
-    const n = await dpDeleteVideoFilesInFolders(folders);
-    await run(`UPDATE video_mezzi SET active=0 WHERE targa=?`, [targa]).catch(()=>{});
-    res.send(page('Video eliminato', `<div class="box"><h2 class="ok">Video eliminato</h2><p>Video cancellati da Drive: <b>${n}</b></p><a class="btn" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna al mezzo</a></div>`));
-  }catch(e){ res.status(500).send(page('Errore elimina video', `<div class="box"><h2 class="bad">Errore elimina video</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna</a></div>`)); }
-});
+// V219 alias sicuri per vecchi pulsanti
+app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
+app.get('/contratti', (req,res)=>res.redirect('/prenotazioni'));
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP V137 stabile porta ' + PORT);
