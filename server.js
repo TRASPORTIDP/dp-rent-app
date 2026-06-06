@@ -1111,7 +1111,29 @@ function page(title, content) {
 
   const isHomePage = String(title || '').toLowerCase() === 'dashboard';
   const topActionsHtml = isHomePage ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Home</a></div>`;
-  const navHtml = isHomePage ? '' : `${navHtml}`;
+  const navHtml = isHomePage ? '' : `
+<nav class="dp-main-nav">
+<a href="/">Dashboard</a>
+<a href="/nuova-prenotazione">+ Prenotazione</a>
+<a href="/planning">Planning</a>
+<a href="/mezzi-web">Mezzi</a>
+<a href="/clienti">Clienti</a>
+<a href="/prenotazioni">Contratti</a>
+<a href="/video-mezzi">Video mezzi</a>
+<a href="/scadenze-mezzi">Scadenze</a>
+<details class="dp-advanced"><summary>Avanzate</summary><div>
+<a href="/import-mezzi">Import Excel</a>
+<a href="/scansione-documenti">Scansione documenti</a>
+<a href="/documenti-clienti">Documenti clienti</a>
+<a href="/richieste-attesa">Clienti in attesa</a>
+<a href="/scadenze-clienti">Scadenze clienti</a>
+<a href="/prenota">Pagina cliente</a>
+<a href="/cargos">Ca.R.G.O.S.</a>
+<a href="/cargos-config">Config CARGOS</a>
+<a href="/logo">Logo</a>
+<a href="/test-drive">Test Drive</a>
+</div></details>
+</nav>`;
   return `<!doctype html>
 <html lang="it">
 <head>
@@ -1347,28 +1369,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </head>
 <body class="${isHomePage ? 'dp-home-clean' : ''}">
 <header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V213 HOME MINIMAL + VIDEO DRIVE</small></h1></header>
-<nav class="dp-main-nav">
-<a href="/">Dashboard</a>
-<a href="/nuova-prenotazione">+ Prenotazione</a>
-<a href="/planning">Planning</a>
-<a href="/mezzi-web">Mezzi</a>
-<a href="/clienti">Clienti</a>
-<a href="/prenotazioni">Contratti</a>
-<a href="/video-mezzi">Video mezzi</a>
-<a href="/scadenze-mezzi">Scadenze</a>
-<details class="dp-advanced"><summary>Avanzate</summary><div>
-<a href="/import-mezzi">Import Excel</a>
-<a href="/scansione-documenti">Scansione documenti</a>
-<a href="/documenti-clienti">Documenti clienti</a>
-<a href="/richieste-attesa">Clienti in attesa</a>
-<a href="/scadenze-clienti">Scadenze clienti</a>
-<a href="/prenota">Pagina cliente</a>
-<a href="/cargos">Ca.R.G.O.S.</a>
-<a href="/cargos-config">Config CARGOS</a>
-<a href="/logo">Logo</a>
-<a href="/test-drive">Test Drive</a>
-</div></details>
-</nav>
+${navHtml}
 <main>${topActionsHtml}${content}</main>
 </body>
 </html>`;
@@ -10723,119 +10724,3 @@ async function v176UpdateOrCreatePdfDrive(prenotazioneId){
         uploaded = (await drive.files.update({
           fileId: oldId,
           requestBody:{ name: pdfName },
-          media:{ mimeType:'application/pdf', body: fs.createReadStream(pdf) },
-          fields:'id,name,webViewLink',
-          supportsAllDrives:true
-        })).data;
-        console.log('V176 PDF aggiornato/sovrascritto:', pdfName, size, 'bytes', uploaded.id, uploaded.webViewLink || '');
-        await v176DeletePdfDuplicates(folder.id, p, uploaded.id);
-      } catch(e) {
-        console.log('V176 update PDF non riuscito, pulisco e ricarico:', e.message);
-        await v176DeletePdfDuplicates(folder.id, p, null);
-      }
-    } else {
-      await v176DeletePdfDuplicates(folder.id, p, null);
-    }
-
-    // 2) Se update non è riuscito, crea nuovo ma DOPO aver eliminato i duplicati.
-    if (!uploaded) {
-      try {
-        uploaded = await uploadFileToDriveFolderV63(pdf, pdfName, 'application/pdf', folder.id);
-        if (uploaded) console.log('V176 PDF creato unico in cartella cliente:', pdfName, size, 'bytes', uploaded.id, uploaded.webViewLink || '');
-      } catch(e) {
-        console.log('V176 create diretto warning:', e.message);
-      }
-    }
-  }
-
-  // 3) Fallback Apps Script: prima abbiamo già pulito i duplicati via Drive se possibile.
-  if (!uploaded) {
-    uploaded = await uploadFileToDrive(pdf, pdfName, 'application/pdf', folderName);
-    console.log('V176 PDF Apps Script fallback unico:', folderName, uploaded?.id || '', uploaded?.webViewLink || uploaded?.link || '');
-  }
-
-  if (!uploaded || !(uploaded.id || uploaded.webViewLink || uploaded.link)) {
-    await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
-    throw new Error('PDF generato ma upload Drive non riuscito');
-  }
-
-  link = (uploaded && (uploaded.webViewLink || uploaded.link)) || '';
-  const uploadedId = (uploaded && uploaded.id) ? uploaded.id : '';
-  const folderId = (folder && folder.id) ? folder.id : null;
-  const folderLink = (folder && folder.webViewLink) ? folder.webViewLink : null;
-
-  await run(
-    `UPDATE prenotazioni
-       SET pdf_path=?,
-           pdf_drive_link=?,
-           pdf_drive_web_link=?,
-           pdf_drive_file_id=?,
-           drive_folder_id=COALESCE(?,drive_folder_id),
-           drive_folder_link=COALESCE(?,drive_folder_link)
-     WHERE id=?`,
-    [pdf, link, link, uploadedId, folderId, folderLink, prenotazioneId]
-  );
-
-  if (folder && folder.id && typeof uploadLocalAllegatiToDriveV63 === 'function') await uploadLocalAllegatiToDriveV63(prenotazioneId, folder.id);
-  if(String(process.env.KEEP_LOCAL_FILES || '').toLowerCase() !== 'true') cleanupLocalAfterDriveV151(pdf);
-  return { ok:true, pdf, link, fileId:uploaded.id || '', folder };
-}
-
-syncContrattoDriveV63 = async function syncContrattoDriveV63_V176(prenotazioneId){
-  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
-  catch(e) { console.log('V176 sync Drive error:', e.message); return { ok:false, error:e.message }; }
-};
-
-v163AfterContractChange = async function v176AfterContractChange(prenotazioneId){
-  const id = String(prenotazioneId || '').trim();
-  if(!id) return null;
-  const driveSync = await syncContrattoDriveV63(id);
-  try {
-    const fresh = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]);
-    if(fresh && typeof v153IcsFileForPrenotazione === 'function') {
-      const ics = await v153IcsFileForPrenotazione(fresh);
-      await run(`UPDATE prenotazioni SET calendar_path=? WHERE id=?`, [ics, id]).catch(()=>{});
-    }
-  } catch(e) { console.log('V176 calendario warning:', e.message); }
-  return { ok:true, driveSync };
-};
-
-app.get('/admin/drive-pdf-unico/:id', async (req,res)=>{
-  try{
-    const r = await v176UpdateOrCreatePdfDrive(req.params.id);
-    res.send(page('Drive PDF unico', `<div class="box"><h2 class="ok">PDF unico aggiornato</h2><p><b>PDF:</b> <a target="_blank" href="${esc(r.link||'')}">Apri PDF Drive</a></p><p><b>Cartella cliente:</b> ${r.folder?.webViewLink ? `<a target="_blank" href="${esc(r.folder.webViewLink)}">Apri cartella cliente</a>` : 'n/d'}</p><p>Ora le modifiche non creano duplicati: aggiornano lo stesso PDF.</p><a class="btn" href="/contratto/${esc(req.params.id)}/gestisci">Torna contratto</a></div>`));
-  }catch(e){ res.status(500).send(page('Errore Drive PDF unico', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn btn2" href="/contratto/${esc(req.params.id)}/gestisci">Torna</a></div>`)); }
-});
-
-console.log('DP RENT V176: PDF Drive unico, sovrascrive invece di duplicare');
-
-
-console.log('DP RENT V186: planning sempre oggi salvo filtro manuale + UI compatta');
-
-
-// V178: blocco duplicati Drive.
-// Se esiste già un PDF Drive per il contratto e l'update diretto non riesce,
-// NON usare Apps Script fallback perché crea un nuovo file con lo stesso nome.
-const v176UpdateOrCreatePdfDrive_ORIG_V178 = v176UpdateOrCreatePdfDrive;
-v176UpdateOrCreatePdfDrive = async function v178UpdateOrCreatePdfDriveNoDuplicates(prenotazioneId){
-  const p = await getPrenotazioneCompletaAsyncV171(prenotazioneId) || await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenotazioneId]).catch(()=>null);
-  const hadDrivePdf = !!(p && (String(p.pdf_drive_file_id || '').trim() || String(p.pdf_drive_web_link || p.pdf_drive_link || '').trim()));
-  try {
-    return await v176UpdateOrCreatePdfDrive_ORIG_V178(prenotazioneId);
-  } catch(e) {
-    if (hadDrivePdf) {
-      const pdf = await generaPdfContratto(prenotazioneId, { forceDrive:false, skipDrive:true });
-      await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenotazioneId]).catch(()=>{});
-      console.log('V178 Drive update non riuscito: mantengo PDF Drive esistente, NO duplicato:', e.message);
-      return { ok:false, pdf, keptExisting:true, error:e.message };
-    }
-    throw e;
-  }
-};
-
-syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId){
-  try { return await v176UpdateOrCreatePdfDrive(prenotazioneId); }
-  catch(e) { console.log('V178 sync Drive error:', e.message); return { ok:false, error:e.message }; }
-};
-
-console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
