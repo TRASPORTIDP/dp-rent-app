@@ -491,6 +491,12 @@ function sendPdfDocumentoStatico(res, fileName, label) {
   for (const f of candidates) {
     try { if (f && fs.existsSync(f)) return res.sendFile(f); } catch(e) {}
   }
+  // V216: se su Render manca il PDF fisico, non mostra errore: usa la pagina HTML già inclusa nel server.
+  try {
+    const fn = String(fileName || '').toLowerCase();
+    if (fn.includes('privacy') && typeof privacyHtmlV40 === 'function') return res.type('html').send(privacyHtmlV40());
+    if ((fn.includes('terms') || fn.includes('clausole')) && typeof condizioniHtmlV40 === 'function') return res.type('html').send(condizioniHtmlV40());
+  } catch(e) {}
   res.status(404).type('text/plain; charset=utf-8').send(`${label} non disponibile: file ${fileName} non trovato sul server.`);
 }
 app.get('/privacy.pdf', (req, res) => sendPdfDocumentoStatico(res, 'privacy.pdf', 'Informativa privacy'));
@@ -1337,7 +1343,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V215 VIDEO DRIVE FIX</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V216 VIDEO DRIVE PULITO</small></h1></header>
 <nav class="dp-main-nav">
 <a href="/">Dashboard</a>
 <a href="/nuova-prenotazione">+ Prenotazione</a>
@@ -9419,8 +9425,14 @@ app.get('/admin/sincronizza-documenti-clienti', async (req,res)=>{
 
 
 
+
 // =========================
-// V212 - VIDEO MEZZI SU GOOGLE DRIVE
+// V216 - VIDEO MEZZI SEMPLICE E SICURO
+// Regole:
+// - usa SOLO DP_RENT_VIDEO_FOLDER_ID, mai GOOGLE_DRIVE_FOLDER_ID dei contratti
+// - cerca cartella SOLO dentro DP RENT VIDEO e solo per targa iniziale
+// - se Drive diretto non legge, usa comunque Apps Script per caricare e salva il link nel DB
+// - niente ricerca generica su tutto Drive
 // =========================
 const DP_RENT_VIDEO_FOLDERS = [
   'AT369FZ - DAILY',
@@ -9441,41 +9453,53 @@ const DP_RENT_VIDEO_FOLDERS = [
   'GV145TP - DUCATO',
   'TOUCAN - TOUCAN 10E'
 ];
+try {
+  db.run(`CREATE TABLE IF NOT EXISTS video_mezzi (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    targa TEXT,
+    mezzo TEXT,
+    folder_name TEXT,
+    drive_file_id TEXT,
+    drive_web_link TEXT,
+    filename TEXT,
+    mime_type TEXT,
+    uploaded_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    active INTEGER DEFAULT 1
+  )`);
+} catch(e) { console.log('V216 video_mezzi table skip:', e.message); }
 function dpVideoSlug(name){ return String(name||'').toUpperCase().replace(/[^A-Z0-9]+/g,'-').replace(/^-+|-+$/g,''); }
 function dpVideoNameBySlug(slug){
   const s = String(slug||'').toUpperCase();
   return DP_RENT_VIDEO_FOLDERS.find(n => dpVideoSlug(n) === s) || null;
 }
-function dpVideoRootFolderId(){
-  return process.env.DP_RENT_VIDEO_FOLDER_ID || process.env.VIDEO_DRIVE_FOLDER_ID || '';
-}
-function dpDriveSearchUrl(name){ return 'https://drive.google.com/drive/search?q=' + encodeURIComponent(String(name||'')); }
+function dpVideoRootFolderId(){ return process.env.DP_RENT_VIDEO_FOLDER_ID || process.env.VIDEO_DRIVE_FOLDER_ID || ''; }
 function dpVideoRootUrl(){
   const id = dpVideoRootFolderId();
-  return id ? `https://drive.google.com/drive/folders/${encodeURIComponent(id)}` : dpDriveSearchUrl('DP RENT VIDEO');
+  return id ? `https://drive.google.com/drive/folders/${encodeURIComponent(id)}` : '';
 }
-function dpDriveQ(s){ return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 function dpVideoPlateFromName(folderName){
   const raw = String(folderName || '').trim();
   return raw.split(/\s+-\s+|\s+/)[0].toUpperCase().replace(/[^A-Z0-9]/g,'');
 }
+function dpDriveQ(s){ return String(s||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
 function dpNormFolderName(v){ return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g,''); }
-async function dpFindDriveFolderByName(parentId, folderName){
+async function dpFindVideoFolderByPlate(folderName){
   ensureDriveClientV172();
+  const parentId = dpVideoRootFolderId();
   if (!drive || !parentId) return null;
   const plate = dpVideoPlateFromName(folderName);
   if (!plate) return null;
-  // Cerca SOLO dentro DP_RENT_VIDEO_FOLDER_ID: non tocca cartelle contratti/documenti.
+  // SOLO nella cartella DP RENT VIDEO: niente ricerca globale.
   const q = `mimeType='application/vnd.google-apps.folder' and trashed=false and name contains '${dpDriveQ(plate)}' and '${dpDriveQ(parentId)}' in parents`;
   const found = await drive.files.list({ q, fields:'files(id,name,webViewLink)', spaces:'drive', supportsAllDrives:true, includeItemsFromAllDrives:true });
   const files = found.data.files || [];
-  return files.find(f => dpNormFolderName(f.name).startsWith(plate)) || files[0] || null;
+  return files.find(f => dpNormFolderName(f.name).startsWith(plate)) || null;
 }
 async function dpGetOrCreateVideoFolder(folderName){
   ensureDriveClientV172();
   const parentId = dpVideoRootFolderId();
   if (!drive || !parentId) return null;
-  const found = await dpFindDriveFolderByName(parentId, folderName);
+  const found = await dpFindVideoFolderByPlate(folderName);
   if (found) return found;
   const created = await drive.files.create({
     requestBody:{ name:folderName, mimeType:'application/vnd.google-apps.folder', parents:[parentId] },
@@ -9494,11 +9518,11 @@ async function dpListVideoFiles(folderId){
 async function dpDeleteVideoFiles(folderId){
   const files = await dpListVideoFiles(folderId);
   for (const f of files) {
-    try { await drive.files.delete({ fileId:f.id, supportsAllDrives:true }); } catch(e) { console.log('V212 delete video skip:', e.message); }
+    try { await drive.files.delete({ fileId:f.id, supportsAllDrives:true }); } catch(e) { console.log('V216 delete video skip:', e.message); }
   }
   return files.length;
 }
-async function dpUploadViaAppsScriptToRoot(localPath, filename, mimetype, subFolderName){
+async function dpUploadViaAppsScriptToVideo(localPath, filename, mimetype, subFolderName){
   const rootId = dpVideoRootFolderId();
   if (!process.env.DRIVE_WEBAPP_URL || !rootId) return null;
   await assertFileReadyV173(localPath, 'Upload video Drive');
@@ -9506,35 +9530,58 @@ async function dpUploadViaAppsScriptToRoot(localPath, filename, mimetype, subFol
   const r = await fetch(process.env.DRIVE_WEBAPP_URL, {
     method:'POST',
     headers:{ 'Content-Type':'text/plain;charset=utf-8' },
-    body: JSON.stringify({ folderId:rootId, subfolder:subFolderName, filename, mimeType:mimetype||'video/mp4', base64 })
+    body: JSON.stringify({ folderId:rootId, subfolder:subFolderName, filename, mimeType:mimetype||'video/quicktime', base64 })
   });
   const text = await r.text();
   let data; try { data = JSON.parse(text); } catch { throw new Error('Risposta Apps Script non valida: ' + text); }
   if (!data.ok) throw new Error(data.error || 'Upload video Drive fallito');
   return { id:data.id||'', webViewLink:data.link||data.webViewLink||'' };
 }
+async function dpSaveVideoDb(folderName, up, filename, mimetype){
+  const targa = dpVideoPlateFromName(folderName);
+  await run(`UPDATE video_mezzi SET active=0 WHERE targa=?`, [targa]).catch(()=>{});
+  await run(`INSERT INTO video_mezzi (targa,mezzo,folder_name,drive_file_id,drive_web_link,filename,mime_type,active) VALUES (?,?,?,?,?,?,?,1)`, [targa, folderName, folderName, up?.id||'', up?.webViewLink||'', filename||'', mimetype||'']).catch(e=>console.log('V216 save video db:', e.message));
+}
+async function dpLastVideoDb(folderName){
+  const targa = dpVideoPlateFromName(folderName);
+  return await get(`SELECT * FROM video_mezzi WHERE targa=? AND active=1 ORDER BY id DESC LIMIT 1`, [targa]).catch(()=>null);
+}
 async function dpUploadVehicleVideo(folderName, file){
-  const safeName = safeFileName(`VIDEO_${folderName}_${moment().format('YYYYMMDD_HHmm')}${path.extname(file.originalname || '.mp4') || '.mp4'}`);
+  const ext = path.extname(file.originalname || '') || '.MOV';
+  const safeName = safeFileName(`VIDEO_${folderName}_${moment().format('YYYYMMDD_HHmm')}${ext}`);
+  let folder = null, up = null, fallback = false;
   ensureDriveClientV172();
   const parentId = dpVideoRootFolderId();
   if (drive && parentId) {
-    const folder = await dpGetOrCreateVideoFolder(folderName);
-    await dpDeleteVideoFiles(folder.id); // regola: un solo video attuale
-    const up = await uploadFileToDriveFolderV63(file.path, safeName, file.mimetype || 'video/mp4', folder.id);
-    if (up) return { ...up, folder };
+    try {
+      folder = await dpGetOrCreateVideoFolder(folderName);
+      if (folder) {
+        await dpDeleteVideoFiles(folder.id).catch(e=>console.log('V216 delete old video:', e.message));
+        up = await uploadFileToDriveFolderV63(file.path, safeName, file.mimetype || 'video/quicktime', folder.id);
+      }
+    } catch(e) {
+      console.log('V216 upload diretto non riuscito, provo Apps Script:', e.message);
+      up = null;
+    }
   }
-  const up2 = await dpUploadViaAppsScriptToRoot(file.path, safeName, file.mimetype || 'video/mp4', folderName);
-  return { ...(up2||{}), folder:null, fallback:true };
+  if (!up) {
+    fallback = true;
+    up = await dpUploadViaAppsScriptToVideo(file.path, safeName, file.mimetype || 'video/quicktime', folderName);
+  }
+  await dpSaveVideoDb(folderName, up, safeName, file.mimetype || 'video/quicktime');
+  return { ...(up||{}), folder, fallback };
 }
+
+app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
 
 app.get('/video-mezzi', async (req,res)=>{
   try{
     const rootUrl = dpVideoRootUrl();
     const cards = DP_RENT_VIDEO_FOLDERS.map(name => {
       const slug = dpVideoSlug(name);
-      return `<div class="dp-video-card"><h3>🎥 ${esc(name)}</h3><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${encodeURIComponent(slug)}">Gestisci / Carica</a><a class="btn btn2" target="_blank" href="${esc(dpDriveSearchUrl(dpVideoPlateFromName(name)))}">Cerca su Drive</a></div></div>`;
+      return `<div class="dp-video-card"><h3>🎥 ${esc(name)}</h3><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${encodeURIComponent(slug)}">Gestisci video</a></div></div>`;
     }).join('');
-    res.send(page('Video mezzi', `<div class="dp-panel"><h2>🎥 Video mezzi DP RENT</h2><p>Ogni targa ha la sua cartella su Google Drive. Caricando un nuovo video, se Drive diretto è configurato, il vecchio viene eliminato e resta solo il video aggiornato.</p><p><a class="btn" target="_blank" href="${esc(rootUrl)}">Apri cartella principale Drive</a></p></div><div class="dp-video-grid">${cards}</div>`));
+    res.send(page('Video mezzi', `<div class="dp-panel"><h2>🎥 Video mezzi DP RENT</h2><p>Gestione semplice: scegli il mezzo, carica/sostituisci il video. La ricerca generale su Drive è stata tolta.</p>${rootUrl?`<p><a class="btn btn2" target="_blank" href="${esc(rootUrl)}">Apri DP RENT VIDEO su Drive</a></p>`:''}</div><div class="dp-video-grid">${cards}</div>`));
   }catch(e){ res.status(500).send(page('Errore Video mezzi', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
 
@@ -9544,12 +9591,20 @@ app.get('/video-mezzi/:slug', async (req,res)=>{
     if (!name) return res.status(404).send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
     let folder = null, videos = [], note = '';
     try {
-      folder = await dpFindDriveFolderByName(dpVideoRootFolderId(), name);
+      folder = await dpFindVideoFolderByPlate(name);
       if (folder) videos = await dpListVideoFiles(folder.id);
-      else note = 'Cartella non trovata con Drive diretto. Puoi comunque aprire/cercare la cartella su Drive.';
-    } catch(e) { note = 'Lista video non disponibile: ' + e.message; }
-    const videoHtml = videos.length ? videos.map(v => `<div class="notice"><b>${esc(v.name)}</b><br><a class="btn" target="_blank" href="${esc(v.webViewLink||'')}">▶️ Guarda su Drive</a></div>`).join('') : `<p class="muted">Nessun video letto dall'app. Se hai caricato video manualmente, usa Apri/Cerca su Drive.</p>`;
-    res.send(page('Video ' + name, `<div class="dp-panel"><h2>🎥 ${esc(name)}</h2><div class="dp-video-actions"><a class="btn btn2" href="/video-mezzi">Indietro</a><a class="btn" target="_blank" href="${esc(folder?.webViewLink || dpDriveSearchUrl(dpVideoPlateFromName(name)))}">📂 Apri/Cerca cartella Drive</a></div>${note?`<p class="dp-note">${esc(note)}</p>`:''}<h3>Video attuale</h3>${videoHtml}<div class="dp-upload-box"><h3>⬆️ Carica / sostituisci video</h3><form method="POST" action="/video-mezzi/${encodeURIComponent(req.params.slug)}/upload" enctype="multipart/form-data"><input type="file" name="video" accept="video/*" required><button type="submit">Carica e sostituisci video</button></form></div><form method="POST" action="/video-mezzi/${encodeURIComponent(req.params.slug)}/elimina" onsubmit="return confirm('Eliminare il video attuale da Drive?');"><button class="bad" type="submit">🗑️ Elimina video attuale</button></form></div>`));
+    } catch(e) { note = 'Drive diretto non legge ancora la cartella: ' + e.message; }
+    const lastDb = await dpLastVideoDb(name);
+    let videoHtml = '';
+    if (videos.length) {
+      videoHtml = videos.map(v => `<div class="notice"><b>${esc(v.name)}</b><br><a class="btn" target="_blank" href="${esc(v.webViewLink||'')}">▶️ Apri video su Drive</a></div>`).join('');
+    } else if (lastDb && lastDb.drive_web_link) {
+      videoHtml = `<div class="notice"><b>${esc(lastDb.filename || 'Ultimo video caricato')}</b><br><a class="btn" target="_blank" href="${esc(lastDb.drive_web_link)}">▶️ Apri ultimo video caricato</a></div><p class="muted">Google Drive può impiegare qualche minuto per elaborare l'anteprima del video.</p>`;
+    } else {
+      videoHtml = `<p class="muted">Nessun video registrato nell'app. Carica un video qui sotto.</p>`;
+    }
+    const folderButton = folder?.webViewLink ? `<a class="btn btn2" target="_blank" href="${esc(folder.webViewLink)}">📂 Apri cartella del mezzo</a>` : (dpVideoRootUrl()?`<a class="btn btn2" target="_blank" href="${esc(dpVideoRootUrl())}">📂 Apri DP RENT VIDEO</a>`:'');
+    res.send(page('Video ' + name, `<div class="dp-panel"><h2>🎥 ${esc(name)}</h2><div class="dp-video-actions"><a class="btn btn2" href="/video-mezzi">Indietro</a>${folderButton}</div>${note?`<p class="dp-note">${esc(note)}</p>`:''}<h3>Video attuale</h3>${videoHtml}<div class="dp-upload-box"><h3>⬆️ Carica / sostituisci video</h3><form method="POST" action="/video-mezzi/${encodeURIComponent(req.params.slug)}/upload" enctype="multipart/form-data"><input type="file" name="video" accept="video/*" required><button type="submit">Carica e sostituisci video</button></form></div><form method="POST" action="/video-mezzi/${encodeURIComponent(req.params.slug)}/elimina" onsubmit="return confirm('Eliminare il video attuale registrato dall app?');"><button class="bad" type="submit">🗑️ Elimina video attuale</button></form></div>`));
   }catch(e){ res.status(500).send(page('Errore Video mezzo', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre><a class="btn" href="/video-mezzi">Torna</a></div>`)); }
 });
 
@@ -9560,7 +9615,7 @@ app.post('/video-mezzi/:slug/upload', upload.single('video'), async (req,res)=>{
     if (!req.file) throw new Error('Nessun video caricato');
     const up = await dpUploadVehicleVideo(name, req.file);
     cleanupLocalAfterDriveV151(req.file.path);
-    res.send(page('Video caricato', `<div class="box"><h2 class="ok">Video caricato</h2><p>Mezzo: <b>${esc(name)}</b></p>${up.webViewLink?`<p><a class="btn" target="_blank" href="${esc(up.webViewLink)}">Apri video su Drive</a></p>`:''}${up.fallback?`<p class="dp-note">Upload fatto via Apps Script. In questa modalità l'eliminazione automatica del vecchio video dipende dallo script Google; se vedi doppioni, elimina il vecchio manualmente o configura DP_RENT_VIDEO_FOLDER_ID + Service Account.</p>`:''}<a class="btn btn2" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna al mezzo</a><a class="btn" href="/video-mezzi">Video mezzi</a></div>`));
+    res.send(page('Video caricato', `<div class="box"><h2 class="ok">Video caricato</h2><p>Mezzo: <b>${esc(name)}</b></p>${up.webViewLink?`<p><a class="btn" target="_blank" href="${esc(up.webViewLink)}">Apri video su Drive</a></p>`:''}<p class="dp-note">Se Google Drive dice "video in elaborazione", aspetta qualche minuto: è normale per file .MOV da iPhone.</p><a class="btn btn2" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna al mezzo</a><a class="btn" href="/video-mezzi">Video mezzi</a></div>`));
   }catch(e){ res.status(500).send(page('Errore upload video', `<div class="box"><h2 class="bad">Errore upload video</h2><pre>${esc(e.message)}</pre><a class="btn" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna</a></div>`)); }
 });
 
@@ -9568,12 +9623,15 @@ app.post('/video-mezzi/:slug/elimina', async (req,res)=>{
   try{
     const name = dpVideoNameBySlug(req.params.slug);
     if (!name) throw new Error('Mezzo non trovato');
-    ensureDriveClientV172();
-    if (!drive) throw new Error('Eliminazione diretta non disponibile: configura Google Service Account. Puoi eliminare il video aprendo la cartella Drive.');
-    const folder = await dpFindDriveFolderByName(dpVideoRootFolderId(), name);
-    if (!folder) throw new Error('Cartella Drive non trovata: ' + name);
-    const n = await dpDeleteVideoFiles(folder.id);
-    res.send(page('Video eliminato', `<div class="box"><h2 class="ok">Video eliminato</h2><p>Video eliminati: <b>${n}</b></p><a class="btn" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna al mezzo</a></div>`));
+    const targa = dpVideoPlateFromName(name);
+    let n = 0;
+    try {
+      ensureDriveClientV172();
+      const folder = await dpFindVideoFolderByPlate(name);
+      if (folder) n = await dpDeleteVideoFiles(folder.id);
+    } catch(e) { console.log('V216 delete drive non riuscito:', e.message); }
+    await run(`UPDATE video_mezzi SET active=0 WHERE targa=?`, [targa]).catch(()=>{});
+    res.send(page('Video eliminato', `<div class="box"><h2 class="ok">Video eliminato dall'app</h2><p>Video cancellati da Drive diretto: <b>${n}</b></p><p class="dp-note">Se il file è stato caricato via Apps Script e resta visibile in Drive, eliminalo manualmente dalla cartella del mezzo.</p><a class="btn" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna al mezzo</a></div>`));
   }catch(e){ res.status(500).send(page('Errore elimina video', `<div class="box"><h2 class="bad">Errore elimina video</h2><pre>${esc(e.message)}</pre><a class="btn" href="/video-mezzi/${encodeURIComponent(req.params.slug)}">Torna</a></div>`)); }
 });
 
