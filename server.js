@@ -1180,11 +1180,12 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 .top-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}.top-actions .back-btn,.top-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:14px;padding:10px 16px;font-weight:900;text-decoration:none;border:0;background:#333;color:#fff;box-shadow:0 3px 0 rgba(0,0,0,.16);font-size:16px}.top-actions .home-btn{background:#d70000}@media(max-width:700px){.top-actions{position:sticky;top:0;z-index:20;background:rgba(244,244,244,.94);backdrop-filter:blur(8px);padding:8px 0}.top-actions .back-btn,.top-actions a{flex:1;min-width:130px}}
 
 
-/* V227 UFFICIO: pulsanti aggressivi + indietro sempre visibile */
+/* V228 UFFICIO: pulsanti aggressivi controllati + indietro solo dove serve */
 .top-actions{display:flex!important;gap:10px!important;flex-wrap:wrap!important;margin:0 auto 16px!important;max-width:1180px!important;padding:8px 0!important}
 .top-actions .back-btn,.top-actions a,.btn,button,.dp-home-card,.planning-pro-tools a{border-radius:18px!important;font-weight:1000!important;letter-spacing:.2px!important;text-transform:none!important;box-shadow:0 7px 0 rgba(0,0,0,.22),0 14px 28px rgba(0,0,0,.16)!important}
 .top-actions .back-btn{background:linear-gradient(135deg,#202020,#000)!important;color:#fff!important;border:0!important}
-.top-actions .home-btn,.btn:not(.btn2):not(.btn3):not(.btnWarn),button:not(.back-btn){background:linear-gradient(135deg,#f00000,#980000)!important;color:#fff!important;border:0!important}
+.top-actions .home-btn,.btn:not(.btn2):not(.btn3):not(.btnWarn):not(.dp-primary):not(.dp-green):not(.dp-dark):not(.dp-danger),button:not(.back-btn){background:linear-gradient(135deg,#f00000,#980000)!important;color:#fff!important;border:0!important}
+.dp-primary{background:linear-gradient(135deg,#2459d3,#123a9c)!important;color:#fff!important}.dp-green{background:linear-gradient(135deg,#11a64a,#067029)!important;color:#fff!important}.dp-dark{background:linear-gradient(135deg,#444,#111)!important;color:#fff!important}.dp-danger,.bad{background:linear-gradient(135deg,#f00000,#980000)!important;color:#fff!important}
 .btn2{background:linear-gradient(135deg,#444,#111)!important;color:#fff!important}.btn3{background:linear-gradient(135deg,#11a64a,#067029)!important;color:#fff!important}.btnWarn{background:linear-gradient(135deg,#ffae00,#b66a00)!important;color:#111!important}
 @media(max-width:700px){.top-actions{position:sticky!important;top:0!important;z-index:9999!important;background:rgba(244,244,244,.96)!important;backdrop-filter:blur(8px)!important;padding:8px!important;margin-bottom:10px!important}.top-actions .back-btn,.top-actions a{flex:1 1 45%!important;min-height:52px!important;font-size:18px!important}.btn,button{min-height:56px!important}}
 input[type=date]{-webkit-appearance:auto!important;appearance:auto!important;background:#fff!important;color:#111!important}
@@ -1367,8 +1368,8 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V227 STABILE UFFICIO</small></h1></header>
-<main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V228 STABILE UFFICIO</small></h1></header>
+<main>${title === 'Dashboard' ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>`}${content}</main>
 </body>
 </html>`;
 }
@@ -3241,7 +3242,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V227 STABILE UFFICIO</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V228 STABILE UFFICIO</p>
       </div>
     `));
   } catch(e) {
@@ -3271,7 +3272,7 @@ app.get('/video-mezzi/:id', async (req,res)=>{
     if(folder) videos=await dpV223ListVideoFiles(folder.id);
   }catch(e){err=e.message;}
   const current=videos[0]||null;
-  const msg=req.query.ok==='1'?'<p class="ok"><b>Video aggiornato.</b></p>':(req.query.del==='1'?'<p class="ok"><b>Video eliminato.</b></p>':'');
+  const msg=req.query.ok==='1'?'<p class="ok"><b>Video aggiornato.</b></p>':(req.query.del==='1'?'<p class="ok"><b>Video eliminato.</b></p>':(req.query.warn?`<p class="notice"><b>Attenzione:</b> ${esc(req.query.warn)}</p>`:''));
   res.send(page('Video mezzo', `<div class="dp-one-page"><div class="dp-video-card"><h2>🎥 ${esc(m.targa)} - ${esc(m.modello||m.marca||'')}</h2>
     ${msg}
     ${folder?`<p class="ok"><b>Cartella collegata:</b> ${esc(folder.name)}</p>`:`<p class="bad"><b>Cartella non trovata.</b> La cartella deve stare dentro DP RENT VIDEO e iniziare con ${esc(m.targa)}.</p>`}
@@ -3299,13 +3300,18 @@ app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
     folder=await dpV223FindVideoFolderByTarga(m.targa);
     if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
     if(!req.file) throw new Error('Nessun video caricato');
-    // prima elimina i video precedenti, poi carica il nuovo
-    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { console.log('Apps Script delete video skip:', e.message); }
-    await dpV223DeleteVideoFiles(folder.id);
+    // prima prova a eliminare i video precedenti, poi carica il nuovo
+    await dpV228DeleteVideosHard(folder,m.targa);
     const filename=dpV223VideoFileName(m, req.file.originalname);
     await dpV224ReplaceVideoWithAppsScript(req.file.path, filename, req.file.mimetype, folder, m.targa);
+    // pulizia finale: se Drive/AppScript ha lasciato copie vecchie, riprova senza bloccare l'ufficio
+    const pulizia = await dpV228DeleteVideosHard(folder,m.targa).catch(e=>({rimasti:[],errors:[e.message]}));
+    // Se la pulizia ha cancellato anche il nuovo per script troppo aggressivo, ricarica il file appena scelto.
+    let after = await dpV223ListVideoFiles(folder.id).catch(()=>[]);
+    if(!after.length){ await dpV224ReplaceVideoWithAppsScript(req.file.path, filename, req.file.mimetype, folder, m.targa); after = await dpV223ListVideoFiles(folder.id).catch(()=>[]); }
     try{ fs.unlinkSync(req.file.path); }catch(e){}
-    res.redirect(`/video-mezzi/${m.id}?ok=1`);
+    const warn = after.length>1 ? '&warn='+encodeURIComponent('Drive vede ancora più video: apri la cartella e cancella manualmente quelli vecchi.') : '';
+    res.redirect(`/video-mezzi/${m.id}?ok=1${warn}`);
   }catch(e){
     try{ if(req.file && req.file.path) fs.unlinkSync(req.file.path); }catch(_){}
     res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore caricamento video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
@@ -3318,10 +3324,11 @@ app.post('/video-mezzi/:id/delete', async (req,res)=>{
   try{
     const folder=await dpV223FindVideoFolderByTarga(m.targa);
     if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
-    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { console.log('Apps Script delete video skip:', e.message); }
-    const delRes = await dpV223DeleteVideoFiles(folder.id);
-    const rimasti = await dpV223ListVideoFiles(folder.id);
-    if(rimasti.length) throw new Error('Drive segnala ancora '+rimasti.length+' video nella cartella: '+rimasti.map(x=>x.name).join(', '));
+    const r = await dpV228DeleteVideosHard(folder,m.targa);
+    if(r.rimasti && r.rimasti.length){
+      const msg = 'Drive non ha autorizzato la cancellazione automatica di '+r.rimasti.length+' video. Usa Apri cartella Drive e cancella manualmente: '+r.rimasti.map(x=>x.name).join(', ');
+      return res.redirect(`/video-mezzi/${m.id}?warn=${encodeURIComponent(msg)}&ts=${Date.now()}`);
+    }
     res.redirect(`/video-mezzi/${m.id}?del=1&ts=${Date.now()}`);
   }catch(e){
     res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore cancellazione video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
@@ -5495,7 +5502,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V227 STABILE UFFICIO: PDF reali, video pulito, stati preventivo
+// V228 STABILE UFFICIO: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
@@ -5578,6 +5585,31 @@ async function dpV224DeleteVideoWithAppsScript(folder,targa){
     subfolder:folder.name,
     targa:dpV223Targa(targa)
   });
+}
+async function dpV228Sleep(ms){ return new Promise(r=>setTimeout(r,ms)); }
+async function dpV228TryTrashVideos(folderId){
+  const d=await dpV223DriveApi();
+  const files=await dpV223ListVideoFiles(folderId);
+  let trashed=0, errors=[];
+  for(const f of files){
+    try{ await d.files.update({fileId:f.id, requestBody:{trashed:true}, supportsAllDrives:true}); trashed++; }
+    catch(e){ errors.push(`${f.name}: ${e.message}`); }
+  }
+  return {trashed, errors};
+}
+async function dpV228DeleteVideosHard(folder,targa){
+  const errors=[];
+  try{ await dpV224DeleteVideoWithAppsScript(folder,targa); }catch(e){ errors.push('AppsScript root: '+e.message); }
+  try{ await dpV224AppsScript({action:'deleteVideos', folderId:folder.id, subfolder:folder.name, targa:dpV223Targa(targa)}); }catch(e){ errors.push('AppsScript cartella: '+e.message); }
+  try{ const r=await dpV223DeleteVideoFiles(folder.id); if(r.errors&&r.errors.length) errors.push(...r.errors); }catch(e){ errors.push('Drive delete: '+e.message); }
+  await dpV228Sleep(900);
+  let rimasti=await dpV223ListVideoFiles(folder.id);
+  if(rimasti.length){
+    try{ const r=await dpV228TryTrashVideos(folder.id); if(r.errors&&r.errors.length) errors.push(...r.errors); }catch(e){ errors.push('Drive trash: '+e.message); }
+    await dpV228Sleep(900);
+    rimasti=await dpV223ListVideoFiles(folder.id);
+  }
+  return {rimasti, errors};
 }
 
 async function dpV223UploadVideoToFolder(localPath,fileName,mimeType,folder){
