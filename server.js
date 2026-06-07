@@ -1179,6 +1179,16 @@ pre{white-space:pre-wrap;word-break:break-word;background:#111;color:#fff;paddin
 
 .top-actions{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 14px}.top-actions .back-btn,.top-actions a{display:inline-flex;align-items:center;justify-content:center;min-height:44px;border-radius:14px;padding:10px 16px;font-weight:900;text-decoration:none;border:0;background:#333;color:#fff;box-shadow:0 3px 0 rgba(0,0,0,.16);font-size:16px}.top-actions .home-btn{background:#d70000}@media(max-width:700px){.top-actions{position:sticky;top:0;z-index:20;background:rgba(244,244,244,.94);backdrop-filter:blur(8px);padding:8px 0}.top-actions .back-btn,.top-actions a{flex:1;min-width:130px}}
 
+
+/* V227 UFFICIO: pulsanti aggressivi + indietro sempre visibile */
+.top-actions{display:flex!important;gap:10px!important;flex-wrap:wrap!important;margin:0 auto 16px!important;max-width:1180px!important;padding:8px 0!important}
+.top-actions .back-btn,.top-actions a,.btn,button,.dp-home-card,.planning-pro-tools a{border-radius:18px!important;font-weight:1000!important;letter-spacing:.2px!important;text-transform:none!important;box-shadow:0 7px 0 rgba(0,0,0,.22),0 14px 28px rgba(0,0,0,.16)!important}
+.top-actions .back-btn{background:linear-gradient(135deg,#202020,#000)!important;color:#fff!important;border:0!important}
+.top-actions .home-btn,.btn:not(.btn2):not(.btn3):not(.btnWarn),button:not(.back-btn){background:linear-gradient(135deg,#f00000,#980000)!important;color:#fff!important;border:0!important}
+.btn2{background:linear-gradient(135deg,#444,#111)!important;color:#fff!important}.btn3{background:linear-gradient(135deg,#11a64a,#067029)!important;color:#fff!important}.btnWarn{background:linear-gradient(135deg,#ffae00,#b66a00)!important;color:#111!important}
+@media(max-width:700px){.top-actions{position:sticky!important;top:0!important;z-index:9999!important;background:rgba(244,244,244,.96)!important;backdrop-filter:blur(8px)!important;padding:8px!important;margin-bottom:10px!important}.top-actions .back-btn,.top-actions a{flex:1 1 45%!important;min-height:52px!important;font-size:18px!important}.btn,button{min-height:56px!important}}
+input[type=date]{-webkit-appearance:auto!important;appearance:auto!important;background:#fff!important;color:#111!important}
+
 /* V109 responsive premium iPhone/iPad */
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:linear-gradient(180deg,#f7f7f7,#ededed);-webkit-text-size-adjust:100%}
 header{padding:22px clamp(16px,3vw,34px);box-shadow:0 10px 30px rgba(0,0,0,.22);position:relative}
@@ -1329,7 +1339,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 /* V225 STABILE: grafica pulita senza doppio menu */
 .dp-super-nav{display:grid!important;grid-template-columns:repeat(4,minmax(120px,1fr))!important;gap:10px!important;padding:14px clamp(12px,2vw,26px)!important;background:linear-gradient(135deg,#d70000,#9b0000)!important;position:sticky;top:0;z-index:60;box-shadow:0 12px 30px rgba(160,0,0,.25)}
 .dp-super-nav a{min-height:46px!important;border-radius:18px!important;background:rgba(255,255,255,.10)!important;border:1px solid rgba(255,255,255,.18)!important;font-size:18px!important;font-weight:950!important;color:#fff!important;text-decoration:none!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;box-shadow:none!important}
-.dp-home-hero{background:linear-gradient(135deg,#050505,#1b1b1d 60%,#d70000);color:#fff;border-radius:28px;padding:28px;box-shadow:0 22px 55px rgba(0,0,0,.18);margin-bottom:18px}.dp-home-hero h2{font-size:clamp(38px,5vw,64px);line-height:.95;margin:0 0 8px;font-weight:1000;letter-spacing:1px}.dp-home-hero p{font-size:clamp(18px,2.4vw,25px);font-weight:850;margin:0;color:#eee}.dp-home-alerts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}.dp-alert-card{background:#fff;border-radius:24px;padding:18px 22px;font-size:24px;font-weight:950;box-shadow:0 12px 35px rgba(0,0,0,.10);border-left:8px solid #d70000}.dp-alert-card.warn{border-left-color:#ffb000}.dp-alert-card b{font-size:38px;color:#d70000;margin-right:8px}.dp-alert-card.warn b{color:#d18a00}.dp-home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.dp-home-card{min-height:132px;border-radius:26px;background:linear-gradient(145deg,#0a0a0b,#1f2024);color:#fff;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-weight:1000;font-size:clamp(22px,3vw,34px);box-shadow:0 8px 0 #d70000,0 14px 35px rgba(0,0,0,.16)}.dp-home-card.primary{background:linear-gradient(145deg,#e00000,#980000)}.dp-home-card small{display:block;margin-top:6px;font-size:14px;color:#ddd;font-weight:800}.dp-home-card .ico{font-size:34px;margin-bottom:8px}.dp-video-card{background:#fff;border-radius:28px;padding:26px;box-shadow:0 18px 45px rgba(0,0,0,.12);margin-bottom:18px}.dp-video-card h2{font-size:clamp(30px,4vw,48px);margin:0 0 14px}.dp-video-actions{display:flex;gap:12px;flex-wrap:wrap}.dp-video-actions .btn{min-width:190px;text-align:center}.dp-video-current{background:#fff8d8;border:1px solid #f2d16b;border-radius:18px;padding:16px;margin:14px 0;font-weight:850}.dp-upload-box{border:3px dashed #d70000;border-radius:24px;padding:22px;margin-top:16px;background:#fff7f7}.dp-upload-box input[type=file]{background:#fff;border:1px solid #bbb}.dp-one-page{max-width:980px;margin:0 auto}.top-actions{display:none!important}header h1 small{font-size:18px!important}.dp-date-it{font-weight:900}
+.dp-home-hero{background:linear-gradient(135deg,#050505,#1b1b1d 60%,#d70000);color:#fff;border-radius:28px;padding:28px;box-shadow:0 22px 55px rgba(0,0,0,.18);margin-bottom:18px}.dp-home-hero h2{font-size:clamp(38px,5vw,64px);line-height:.95;margin:0 0 8px;font-weight:1000;letter-spacing:1px}.dp-home-hero p{font-size:clamp(18px,2.4vw,25px);font-weight:850;margin:0;color:#eee}.dp-home-alerts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}.dp-alert-card{background:#fff;border-radius:24px;padding:18px 22px;font-size:24px;font-weight:950;box-shadow:0 12px 35px rgba(0,0,0,.10);border-left:8px solid #d70000}.dp-alert-card.warn{border-left-color:#ffb000}.dp-alert-card b{font-size:38px;color:#d70000;margin-right:8px}.dp-alert-card.warn b{color:#d18a00}.dp-home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.dp-home-card{min-height:132px;border-radius:26px;background:linear-gradient(145deg,#0a0a0b,#1f2024);color:#fff;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-weight:1000;font-size:clamp(22px,3vw,34px);box-shadow:0 8px 0 #d70000,0 14px 35px rgba(0,0,0,.16)}.dp-home-card.primary{background:linear-gradient(145deg,#e00000,#980000)}.dp-home-card small{display:block;margin-top:6px;font-size:14px;color:#ddd;font-weight:800}.dp-home-card .ico{font-size:34px;margin-bottom:8px}.dp-video-card{background:#fff;border-radius:28px;padding:26px;box-shadow:0 18px 45px rgba(0,0,0,.12);margin-bottom:18px}.dp-video-card h2{font-size:clamp(30px,4vw,48px);margin:0 0 14px}.dp-video-actions{display:flex;gap:12px;flex-wrap:wrap}.dp-video-actions .btn{min-width:190px;text-align:center}.dp-video-current{background:#fff8d8;border:1px solid #f2d16b;border-radius:18px;padding:16px;margin:14px 0;font-weight:850}.dp-upload-box{border:3px dashed #d70000;border-radius:24px;padding:22px;margin-top:16px;background:#fff7f7}.dp-upload-box input[type=file]{background:#fff;border:1px solid #bbb}.dp-one-page{max-width:980px;margin:0 auto}header h1 small{font-size:18px!important}.dp-date-it{font-weight:900}
 @media(max-width:700px){header{padding-top:calc(12px + env(safe-area-inset-top))!important;padding-bottom:14px!important}header img{height:52px!important}header h1{font-size:32px!important;line-height:1!important}.dp-super-nav{grid-template-columns:repeat(2,1fr)!important;position:relative!important;top:auto!important;padding:12px!important}.dp-super-nav a{font-size:18px!important;min-height:58px!important}.dp-home-hero{padding:22px;border-radius:24px}.dp-home-alerts{grid-template-columns:1fr;gap:10px}.dp-alert-card{font-size:25px;padding:16px 18px}.dp-alert-card b{font-size:42px}.dp-home-grid{gap:12px}.dp-home-card{min-height:120px;font-size:26px;border-radius:22px}.dp-home-card small{display:none}.dp-video-card{padding:20px;border-radius:24px}.dp-video-actions .btn,.dp-upload-box .btn{width:100%;min-width:0}.box h2,.premium-card h2{font-size:32px!important}main{padding:14px!important}}
 
 
@@ -1357,7 +1367,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V225 STABILE PULITA</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V227 STABILE UFFICIO</small></h1></header>
 <main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
 </body>
 </html>`;
@@ -3231,7 +3241,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V225 STABILE PULITA</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V227 STABILE UFFICIO</p>
       </div>
     `));
   } catch(e) {
@@ -3290,7 +3300,8 @@ app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
     if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
     if(!req.file) throw new Error('Nessun video caricato');
     // prima elimina i video precedenti, poi carica il nuovo
-    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { await dpV223DeleteVideoFiles(folder.id); }
+    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { console.log('Apps Script delete video skip:', e.message); }
+    await dpV223DeleteVideoFiles(folder.id);
     const filename=dpV223VideoFileName(m, req.file.originalname);
     await dpV224ReplaceVideoWithAppsScript(req.file.path, filename, req.file.mimetype, folder, m.targa);
     try{ fs.unlinkSync(req.file.path); }catch(e){}
@@ -3307,8 +3318,11 @@ app.post('/video-mezzi/:id/delete', async (req,res)=>{
   try{
     const folder=await dpV223FindVideoFolderByTarga(m.targa);
     if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
-    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { await dpV223DeleteVideoFiles(folder.id); }
-    res.redirect(`/video-mezzi/${m.id}?del=1`);
+    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { console.log('Apps Script delete video skip:', e.message); }
+    const delRes = await dpV223DeleteVideoFiles(folder.id);
+    const rimasti = await dpV223ListVideoFiles(folder.id);
+    if(rimasti.length) throw new Error('Drive segnala ancora '+rimasti.length+' video nella cartella: '+rimasti.map(x=>x.name).join(', '));
+    res.redirect(`/video-mezzi/${m.id}?del=1&ts=${Date.now()}`);
   }catch(e){
     res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore cancellazione video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
   }
@@ -5481,7 +5495,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V225 STABILE PULITA: PDF reali, video pulito, stati preventivo
+// V227 STABILE UFFICIO: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
@@ -5893,8 +5907,8 @@ app.get('/planning', async (req, res) => {
     <form class="box pl-filter-form" method="GET" action="/planning">
       <input type="hidden" name="manual" value="1">
       <input type="hidden" name="mese" value="${esc(meseIt)}">
-      <input type="text" name="dal" inputmode="numeric" placeholder="Dal GG/MM/AAAA" value="${esc(start.format('DD/MM/YYYY'))}">
-      <input type="text" name="al" inputmode="numeric" placeholder="Al GG/MM/AAAA" value="${esc(endDate.format('DD/MM/YYYY'))}">
+      <label style="font-weight:900">Dal <input type="date" name="dal" value="${esc(start.format('YYYY-MM-DD'))}"></label>
+      <label style="font-weight:900">Al <input type="date" name="al" value="${esc(endDate.format('YYYY-MM-DD'))}"></label>
       <select name="categoria">${catOptions}</select>
       <select name="vista"><option ${vista==='mese'?'selected':''} value="mese">Vista mese</option><option ${vista==='settimana'?'selected':''} value="settimana">Vista settimana</option><option ${vista==='giorno'?'selected':''} value="giorno">Vista giorno</option></select>
       <button>Filtra</button>
