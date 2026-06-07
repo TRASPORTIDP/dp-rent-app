@@ -1432,8 +1432,13 @@ function codicePratica(id) {
   return `DPR-${moment().format('YYYYMMDD')}-${String(id).padStart(4, '0')}`;
 }
 function validDateRange(inizio, fine) {
+  inizio = dpV226IsoDate(inizio);
+  fine = dpV226IsoDate(fine);
   if (!inizio || !fine) return 'Data inizio/fine mancante';
-  if (moment(fine).isBefore(moment(inizio))) return 'La data fine non può essere precedente alla data inizio';
+  const mi = moment(inizio, 'YYYY-MM-DD', true);
+  const mf = moment(fine, 'YYYY-MM-DD', true);
+  if (!mi.isValid() || !mf.isValid()) return 'Formato data non valido. Usa GG/MM/AAAA.';
+  if (mf.isBefore(mi)) return 'La data fine non può essere precedente alla data inizio';
   return '';
 }
 function extraOrario(ora) {
@@ -1445,7 +1450,9 @@ function extraOrario(ora) {
   return (minuti < inizio || minuti > fine) ? EXTRA_FUORI_ORARIO : 0;
 }
 function calcolaTotale(mezzo, data_inizio, data_fine, ora_inizio, ora_fine, km_previsti) {
-  const giorni = Math.max(1, moment(data_fine).diff(moment(data_inizio), 'days') + 1);
+  data_inizio = dpV226IsoDate(data_inizio);
+  data_fine = dpV226IsoDate(data_fine);
+  const giorni = Math.max(1, moment(data_fine, 'YYYY-MM-DD', true).diff(moment(data_inizio, 'YYYY-MM-DD', true), 'days') + 1);
   const prezzo = Number(mezzo.prezzo_giorno || prezzoCategoria(mezzo.categoria));
   const kmGiorno = Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria));
   const kmInclusiTot = giorni * kmGiorno;
@@ -1465,6 +1472,8 @@ function dpDateTimeSafe(data, ora, fallbackOra) {
   return `${d} ${h.slice(0,5)}:00`;
 }
 async function queryDisponibilita(mezzo_id, data_inizio, data_fine, ora_inizio='08:30', ora_fine='18:00', excludeId=0) {
+  data_inizio = dpV226IsoDate(data_inizio);
+  data_fine = dpV226IsoDate(data_fine);
   // V180: se il mezzo è in officina/fermo, non è prenotabile.
   const mz = await get(`SELECT * FROM mezzi WHERE id=?`, [mezzo_id]).catch(()=>null);
   if (mz && v180StatoMezzoOff(mz)) {
@@ -3235,14 +3244,12 @@ app.get('/avanzate', async (req,res)=>{ res.send(page('Avanzate', `<div class="d
 app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
 
 // =========================
-// V225 VIDEO DRIVE STABILE (solo cartella diretta, niente errori upload/delete)
-// Motivo: upload/cancellazione automatici richiedono Apps Script aggiornato o OAuth utente.
-// Qui non duplichiamo e non rompiamo: si apre la cartella giusta del mezzo.
+// V226 VIDEO DRIVE UFFICIO: carica da telefono/PC, sostituisce ed elimina video precedente
 // =========================
 app.get('/video-mezzi', async (req,res)=>{
   const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
-  const cards=(mezzi||[]).map(m=>`<div class="dp-video-card"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Apri cartella video</a></div></div>`).join('') || '<div class="box">Nessun mezzo trovato.</div>';
-  res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Metodo stabile: una cartella Drive per targa. Da qui apri la cartella esatta e carichi/sostituisci il video in Drive.</p></section>${cards}</div>`));
+  const cards=(mezzi||[]).map(m=>`<div class="dp-video-card"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Gestisci video</a></div></div>`).join('') || '<div class="box">Nessun mezzo trovato.</div>';
+  res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Carica video da telefono o PC. Se carichi un nuovo video, quello precedente viene eliminato/sostituito.</p></section>${cards}</div>`));
 });
 
 app.get('/video-mezzi/:id', async (req,res)=>{
@@ -3254,17 +3261,57 @@ app.get('/video-mezzi/:id', async (req,res)=>{
     if(folder) videos=await dpV223ListVideoFiles(folder.id);
   }catch(e){err=e.message;}
   const current=videos[0]||null;
+  const msg=req.query.ok==='1'?'<p class="ok"><b>Video aggiornato.</b></p>':(req.query.del==='1'?'<p class="ok"><b>Video eliminato.</b></p>':'');
   res.send(page('Video mezzo', `<div class="dp-one-page"><div class="dp-video-card"><h2>🎥 ${esc(m.targa)} - ${esc(m.modello||m.marca||'')}</h2>
+    ${msg}
     ${folder?`<p class="ok"><b>Cartella collegata:</b> ${esc(folder.name)}</p>`:`<p class="bad"><b>Cartella non trovata.</b> La cartella deve stare dentro DP RENT VIDEO e iniziare con ${esc(m.targa)}.</p>`}
     ${err?`<pre>${esc(err)}</pre>`:''}
-    ${current?`<div class="dp-video-current"><p><b>Video attuale rilevato:</b><br>${esc(current.name)}</p><a class="btn" target="_blank" href="${esc(current.webViewLink||'')}">▶️ Apri video</a></div>`:`<p class="notice">Nessun video rilevato nella cartella.</p>`}
-    ${videos.length>1?`<p class="notice"><b>Attenzione:</b> trovati ${videos.length} video. Apri Drive e lascia solo quello attuale.</p>`:''}
+    ${current?`<div class="dp-video-current"><p><b>Video attuale rilevato:</b><br>${esc(current.name)}</p><a class="btn" target="_blank" href="${esc(current.webViewLink||current.webContentLink||'')}">▶️ Apri video</a></div>`:`<p class="notice">Nessun video rilevato nella cartella.</p>`}
+    <form method="POST" action="/video-mezzi/${m.id}/upload" enctype="multipart/form-data" class="box">
+      <h3>Carica / sostituisci video</h3>
+      <p class="notice">Da telefono puoi scegliere Libreria/Foto/Video. Il nuovo video sostituisce quello precedente.</p>
+      <input type="file" name="video" accept="video/*,.mov,.mp4,.m4v" required>
+      <button type="submit">📤 Carica e sostituisci</button>
+    </form>
+    ${current?`<form method="POST" action="/video-mezzi/${m.id}/delete" class="box" onsubmit="return confirm('Eliminare il video attuale del mezzo?')"><button class="btn bad" type="submit">🗑️ Cancella video precedente</button></form>`:''}
     <div class="dp-video-actions">
       <a class="btn btn2" href="/video-mezzi">Torna video mezzi</a>
       ${folder?`<a class="btn" target="_blank" href="${esc(folder.webViewLink||'')}">📂 Apri cartella Drive del mezzo</a>`:''}
     </div>
-    <p class="notice">Per non bloccare il lavoro: carica o elimina il video direttamente nella cartella Drive. L'upload automatico resta disattivato finché Apps Script non è aggiornato correttamente.</p>
   </div></div>`));
+});
+
+app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
+  const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null);
+  if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
+  let folder=null;
+  try{
+    folder=await dpV223FindVideoFolderByTarga(m.targa);
+    if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
+    if(!req.file) throw new Error('Nessun video caricato');
+    // prima elimina i video precedenti, poi carica il nuovo
+    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { await dpV223DeleteVideoFiles(folder.id); }
+    const filename=dpV223VideoFileName(m, req.file.originalname);
+    await dpV224ReplaceVideoWithAppsScript(req.file.path, filename, req.file.mimetype, folder, m.targa);
+    try{ fs.unlinkSync(req.file.path); }catch(e){}
+    res.redirect(`/video-mezzi/${m.id}?ok=1`);
+  }catch(e){
+    try{ if(req.file && req.file.path) fs.unlinkSync(req.file.path); }catch(_){}
+    res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore caricamento video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
+  }
+});
+
+app.post('/video-mezzi/:id/delete', async (req,res)=>{
+  const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null);
+  if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
+  try{
+    const folder=await dpV223FindVideoFolderByTarga(m.targa);
+    if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
+    try { await dpV224DeleteVideoWithAppsScript(folder,m.targa); } catch(e) { await dpV223DeleteVideoFiles(folder.id); }
+    res.redirect(`/video-mezzi/${m.id}?del=1`);
+  }catch(e){
+    res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore cancellazione video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
+  }
 });
 
 app.get('/richieste-attesa', async (req, res) => {
@@ -3541,9 +3588,9 @@ function formPrenotazione(mezzi, selectedMezzo, selectedData, action, query = {}
       <h3>Mezzo e periodo</h3>
       <div class="grid">
         <div><label>Mezzo</label><select name="mezzo_id" required>${opt}</select></div>
-        <div><label>Data inizio</label><input type="date" name="data_inizio" value="${esc(selectedData || query.data_inizio || '')}" required></div>
+        <div><label>Dal</label><input type="text" name="data_inizio" inputmode="numeric" placeholder="GG/MM/AAAA" value="${esc(dpV226DateIt(selectedData || query.data_inizio || ''))}" required></div>
         <div><label>Ora inizio</label><input type="time" name="ora_inizio" value="${qv('ora_inizio','08:30')}"></div>
-        <div><label>Data fine</label><input type="date" name="data_fine" value="${esc(selectedData || query.data_fine || '')}" required></div>
+        <div><label>Al</label><input type="text" name="data_fine" inputmode="numeric" placeholder="GG/MM/AAAA" value="${esc(dpV226DateIt(selectedData || query.data_fine || ''))}" required></div>
         <div><label>Ora fine</label><input type="time" name="ora_fine" value="${qv('ora_fine','18:00')}"></div>
         <div><label>Km previsti</label><input type="number" name="km_previsti" value="${qv('km_previsti','150')}"></div>
         <div><label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions(query.carburante_uscita || '4/4 pieno')}</select></div>
@@ -4155,7 +4202,7 @@ app.get('/nuova-prenotazione', async (req, res) => {
         <a class="btn btn3" href="/ocr-pro"> OCR carta identita + patente</a>
       </div>
       <h3>2) Poi controlla i dati e crea contratto</h3>
-    ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(req.query.data)}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin', req.query)}`));
+    ${req.query.data ? `<p class="notice">Aperta dal planning per il giorno <b>${esc(dpV226DateIt(req.query.data))}</b>.</p>` : ''}${formPrenotazione(mezzi, req.query.mezzo_id, req.query.data, '/prenota-admin', req.query)}`));
 });
 async function ensureBookingColumnsV77(){
   const cols = {
@@ -4173,6 +4220,13 @@ app.post('/prenota-admin', async (req, res) => {
   try {
     await ensureBookingColumnsV77();
     const b = req.body || {};
+    b.data_inizio = dpV226IsoDate(b.data_inizio);
+    b.data_fine = dpV226IsoDate(b.data_fine);
+    b.data_nascita = dpV226IsoDate(b.data_nascita);
+    b.documento_scadenza = dpV226IsoDate(b.documento_scadenza);
+    b.patente_scadenza = dpV226IsoDate(b.patente_scadenza);
+    b.patente1_scadenza = dpV226IsoDate(b.patente1_scadenza);
+    b.patente2_scadenza = dpV226IsoDate(b.patente2_scadenza);
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(page('Errore date', `<div class="box"><h2 class="bad">${esc(erroreDate)}</h2><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
@@ -5436,6 +5490,32 @@ function dpV223DateIt(v){
   if(m) return `${m[3]}/${m[2]}/${m[1]}`;
   return String(v);
 }
+
+// V226 UFFICIO: date sempre interne ISO (YYYY-MM-DD) e visuali italiane (GG/MM/AAAA).
+function dpV226IsoDate(v){
+  v = String(v || '').trim();
+  if(!v) return '';
+  let m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if(m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = v.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if(m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m) return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+  return v;
+}
+function dpV226DateIt(v){
+  const iso = dpV226IsoDate(v);
+  const m = String(iso || '').slice(0,10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : String(v || '');
+}
+function dpV226MonthIso(v){
+  v = String(v || '').trim();
+  let m = v.match(/^(\d{4})-(\d{2})$/);
+  if(m) return `${m[1]}-${m[2]}`;
+  m = v.match(/^(\d{2})\/(\d{4})$/);
+  if(m) return `${m[2]}-${m[1]}`;
+  return v;
+}
 function dpV223Targa(v){ return String(v||'').trim().toUpperCase().split(/\s+/)[0]; }
 async function dpV223DriveApi(){ ensureDriveClientV172(); if(!drive) throw new Error('Google Drive API non configurata'); return drive; }
 async function dpV223FindVideoFolderByTarga(targa){
@@ -5691,7 +5771,7 @@ app.get('/prenotazione/:id', async (req, res) => {
 });
 
 app.get('/prenotazioni', async (req, res) => {
-  const q = normalize(req.query.q), stato = normalize(req.query.stato), dal = normalize(req.query.dal), al = normalize(req.query.al);
+  const q = normalize(req.query.q), stato = normalize(req.query.stato), dal = dpV226IsoDate(normalize(req.query.dal)), al = dpV226IsoDate(normalize(req.query.al));
   let sql = `SELECT p.*, m.targa, m.marca, m.modello, m.descrizione_pubblica FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE 1=1`;
   const params = [];
   if (q) { sql += ` AND (p.codice LIKE ? OR p.nome LIKE ? OR p.cognome LIKE ? OR p.telefono LIKE ? OR m.targa LIKE ?)`; params.push(`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`,`%${q}%`); }
@@ -5701,7 +5781,7 @@ app.get('/prenotazioni', async (req, res) => {
   sql += ` ORDER BY p.id DESC`;
   const rows = await all(sql, params);
   const trs = rows.map(p => `<tr><td><a href="/contratto/${p.id}/gestisci">${esc(p.codice)}</a></td><td>${esc(p.nome)} ${esc(p.cognome)}</td><td>${esc(p.telefono)}<br>${esc(p.email)}</td><td><b>${esc(p.targa)}</b><br>${esc(descrizionePubblica(p))}</td><td>${esc(dpV223DateIt(p.data_inizio))} - ${esc(dpV223DateIt(p.data_fine))}</td><td>&euro; ${euro(p.totale)}</td><td><span class="badge ${p.stato==='firmato'?'badge-green':'badge-orange'}">${esc(p.stato||'bozza')}</span><br><span class="badge ${p.firma_path?'badge-green':'badge-red'}">${p.firma_path?'firma ok':'firma no'}</span></td><td><span class="badge ${p.record_cargos_stato||p.cargos_inviato?'badge-green':'badge-orange'}">${esc(p.record_cargos_stato || (p.cargos_inviato?'inviato':'da inviare'))}</span></td><td><div class="dp-mini-actions"><a class="dp-mini dp-primary" href="/contratto/${p.id}">👁 Vedi</a><a class="dp-mini dp-danger" href="/pdf-view/${p.id}">📄 PDF</a><a class="dp-mini dp-dark" href="/cargos/check/${p.id}">🚚 CaRGOS</a><a class="dp-mini dp-green" href="/nexi/${p.id}">💳 Nexi</a><a class="dp-mini" href="/contratto/${p.id}/gestisci">⚙️ Gestisci</a></div></td></tr>`).join('');
-  res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="date" name="dal" value="${esc(dal)}"><input type="date" name="al" value="${esc(al)}"></div><button>Cerca</button></form><div class="storico-premium"><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>CaRGOS</th><th>Azioni</th></tr>${trs}</table></div>`));
+  res.send(page('Storico', `<h2>Storico contratti / prenotazioni</h2><form method="GET" action="/prenotazioni" class="box"><div class="grid"><input name="q" placeholder="Cerca nome, targa, codice, telefono" value="${esc(q)}"><select name="stato"><option value="">Tutti gli stati</option>${['bozza','richiesta_cliente','confermato','firmato','in_corso','rientrato','chiuso','pagato','annullato'].map(s=>`<option ${stato===s?'selected':''}>${s}</option>`).join('')}</select><input type="text" name="dal" inputmode="numeric" placeholder="Dal GG/MM/AAAA" value="${esc(dpV226DateIt(dal))}"><input type="text" name="al" inputmode="numeric" placeholder="Al GG/MM/AAAA" value="${esc(dpV226DateIt(al))}"></div><button>Cerca</button></form><div class="storico-premium"><table><tr><th>Codice</th><th>Cliente</th><th>Contatti</th><th>Mezzo</th><th>Date</th><th>Totale</th><th>Stato</th><th>CaRGOS</th><th>Azioni</th></tr>${trs}</table></div>`));
 });
 app.get('/stato/:id/:stato', async (req, res) => {
   await run(`UPDATE prenotazioni SET stato=? WHERE id=?`, [req.params.stato, req.params.id]);
@@ -5715,17 +5795,20 @@ app.get('/planning', async (req, res) => {
   // V186: il planning NON deve riaprire vecchie date rimaste in cache/link (es. 27 aprile).
   // Le date in query vengono rispettate solo quando arrivano dai pulsanti Prima/Dopo o dal filtro manuale.
   const filtroManuale = String(req.query.manual || '') === '1' || String(req.query.nav || '') === '1';
-  let rawMese = filtroManuale ? String(req.query.mese || '').trim() : '';
-  let rawData = filtroManuale ? String(req.query.data || '').trim() : '';
-  // V224: accetta sia 2026-06 sia 06/2026, ma in pagina mostra formato italiano.
-  if (/^\d{2}\/\d{4}$/.test(rawMese)) { const [mm,yy] = rawMese.split('/'); rawMese = `${yy}-${mm}`; }
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(rawData)) { const [dd,mm,yy] = rawData.split('/'); rawData = `${yy}-${mm}-${dd}`; }
+  let rawMese = filtroManuale ? dpV226MonthIso(String(req.query.mese || '').trim()) : '';
+  let rawData = filtroManuale ? dpV226IsoDate(String(req.query.data || req.query.dal || '').trim()) : '';
+  let rawAl = filtroManuale ? dpV226IsoDate(String(req.query.al || '').trim()) : '';
+  // V226: il planning usa Dal/Al in formato italiano. Internamente converte sempre in ISO.
   let start;
   if (vista === 'giorno') start = rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone();
   else if (vista === 'settimana') start = (rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone()).startOf('isoWeek');
   else start = rawMese ? moment(rawMese + '-01', 'YYYY-MM-DD', true) : oggi.clone().startOf('month');
   if (!start.isValid()) start = oggi.clone();
-  const endDate = vista === 'giorno' ? start.clone() : (vista === 'settimana' ? start.clone().add(6,'days') : start.clone().endOf('month'));
+  let endDate = vista === 'giorno' ? start.clone() : (vista === 'settimana' ? start.clone().add(6,'days') : start.clone().endOf('month'));
+  if (rawAl) {
+    const alM = moment(rawAl, 'YYYY-MM-DD', true);
+    if (alM.isValid() && alM.isSameOrAfter(start,'day')) endDate = alM;
+  }
   const mese = (rawMese && /^\d{4}-\d{2}$/.test(rawMese)) ? rawMese : start.format('YYYY-MM');
   const meseIt = start.format('MM/YYYY');
   const prec = vista === 'giorno' ? start.clone().subtract(1,'day') : (vista === 'settimana' ? start.clone().subtract(1,'week') : start.clone().subtract(1,'month'));
@@ -5809,8 +5892,9 @@ app.get('/planning', async (req, res) => {
     </div>
     <form class="box pl-filter-form" method="GET" action="/planning">
       <input type="hidden" name="manual" value="1">
-      <input type="text" name="mese" inputmode="numeric" placeholder="MM/AAAA" value="${esc(meseIt)}">
-      <input type="text" name="data" inputmode="numeric" placeholder="GG/MM/AAAA" value="${esc(start.format('DD/MM/YYYY'))}">
+      <input type="hidden" name="mese" value="${esc(meseIt)}">
+      <input type="text" name="dal" inputmode="numeric" placeholder="Dal GG/MM/AAAA" value="${esc(start.format('DD/MM/YYYY'))}">
+      <input type="text" name="al" inputmode="numeric" placeholder="Al GG/MM/AAAA" value="${esc(endDate.format('DD/MM/YYYY'))}">
       <select name="categoria">${catOptions}</select>
       <select name="vista"><option ${vista==='mese'?'selected':''} value="mese">Vista mese</option><option ${vista==='settimana'?'selected':''} value="settimana">Vista settimana</option><option ${vista==='giorno'?'selected':''} value="giorno">Vista giorno</option></select>
       <button>Filtra</button>
