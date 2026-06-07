@@ -1368,7 +1368,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V228 STABILE UFFICIO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V231 STABILE UFFICIO</small></h1></header>
 <main>${title === 'Dashboard' ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>`}${content}</main>
 </body>
 </html>`;
@@ -3242,7 +3242,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V228 STABILE UFFICIO</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V231 STABILE UFFICIO</p>
       </div>
     `));
   } catch(e) {
@@ -3255,12 +3255,12 @@ app.get('/avanzate', async (req,res)=>{ res.send(page('Avanzate', `<div class="d
 app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
 
 // =========================
-// V226 VIDEO DRIVE UFFICIO: carica da telefono/PC, sostituisce ed elimina video precedente
+// V231 VIDEO DRIVE UFFICIO: carica da telefono/PC, cancellazione manuale da Drive per stabilità
 // =========================
 app.get('/video-mezzi', async (req,res)=>{
   const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
   const cards=(mezzi||[]).map(m=>`<div class="dp-video-card"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Gestisci video</a></div></div>`).join('') || '<div class="box">Nessun mezzo trovato.</div>';
-  res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Carica video da telefono o PC. Se carichi un nuovo video, quello precedente viene eliminato/sostituito.</p></section>${cards}</div>`));
+  res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Carica video da telefono o PC. La cancellazione dei vecchi video si fa dalla cartella Drive del mezzo, così non si blocca l'app.</p></section>${cards}</div>`));
 });
 
 app.get('/video-mezzi/:id', async (req,res)=>{
@@ -3272,19 +3272,20 @@ app.get('/video-mezzi/:id', async (req,res)=>{
     if(folder) videos=await dpV223ListVideoFiles(folder.id);
   }catch(e){err=e.message;}
   const current=videos[0]||null;
-  const msg=req.query.ok==='1'?'<p class="ok"><b>Video aggiornato.</b></p>':(req.query.del==='1'?'<p class="ok"><b>Video eliminato.</b></p>':(req.query.warn?`<p class="notice"><b>Attenzione:</b> ${esc(req.query.warn)}</p>`:''));
+  const msg=req.query.ok==='1'?'<p class="ok"><b>Video caricato.</b> Per cancellare video vecchi usa la cartella Drive del mezzo.</p>':(req.query.warn?`<p class="notice"><b>Attenzione:</b> ${esc(req.query.warn)}</p>`:'');
+  const altriVideo = videos.length>1 ? `<p class="notice"><b>Nota:</b> nella cartella Drive ci sono ${videos.length} video. L'app mostra l'ultimo caricato. Per pulire i vecchi, apri Drive e cancellali manualmente.</p>` : '';
   res.send(page('Video mezzo', `<div class="dp-one-page"><div class="dp-video-card"><h2>🎥 ${esc(m.targa)} - ${esc(m.modello||m.marca||'')}</h2>
     ${msg}
     ${folder?`<p class="ok"><b>Cartella collegata:</b> ${esc(folder.name)}</p>`:`<p class="bad"><b>Cartella non trovata.</b> La cartella deve stare dentro DP RENT VIDEO e iniziare con ${esc(m.targa)}.</p>`}
     ${err?`<pre>${esc(err)}</pre>`:''}
-    ${current?`<div class="dp-video-current"><p><b>Video attuale rilevato:</b><br>${esc(current.name)}</p><a class="btn" target="_blank" href="${esc(current.webViewLink||current.webContentLink||'')}">▶️ Apri video</a></div>`:`<p class="notice">Nessun video rilevato nella cartella.</p>`}
+    ${current?`<div class="dp-video-current"><p><b>Ultimo video rilevato:</b><br>${esc(current.name)}</p><a class="btn" target="_blank" href="${esc(current.webViewLink||current.webContentLink||'')}">▶️ Apri ultimo video</a></div>`:`<p class="notice">Nessun video rilevato nella cartella.</p>`}
+    ${altriVideo}
     <form method="POST" action="/video-mezzi/${m.id}/upload" enctype="multipart/form-data" class="box">
-      <h3>Carica / sostituisci video</h3>
-      <p class="notice">Da telefono puoi scegliere Libreria/Foto/Video. Il nuovo video sostituisce quello precedente.</p>
+      <h3>Carica nuovo video</h3>
+      <p class="notice"><b>Stabile ufficio:</b> l'app carica e visualizza. Per cancellare i video vecchi usa il pulsante “Apri cartella Drive del mezzo”.</p>
       <input type="file" name="video" accept="video/*,.mov,.mp4,.m4v" required>
-      <button type="submit">📤 Carica e sostituisci</button>
+      <button type="submit">📤 Carica video</button>
     </form>
-    ${current?`<form method="POST" action="/video-mezzi/${m.id}/delete" class="box" onsubmit="return confirm('Eliminare il video attuale del mezzo?')"><button class="btn bad" type="submit">🗑️ Cancella video precedente</button></form>`:''}
     <div class="dp-video-actions">
       <a class="btn btn2" href="/video-mezzi">Torna video mezzi</a>
       ${folder?`<a class="btn" target="_blank" href="${esc(folder.webViewLink||'')}">📂 Apri cartella Drive del mezzo</a>`:''}
@@ -3300,18 +3301,11 @@ app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
     folder=await dpV223FindVideoFolderByTarga(m.targa);
     if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
     if(!req.file) throw new Error('Nessun video caricato');
-    // prima prova a eliminare i video precedenti, poi carica il nuovo
-    await dpV228DeleteVideosHard(folder,m.targa);
+    // V231 stabile: NON cancelliamo da app. Carichiamo e lasciamo la pulizia manuale da Drive.
     const filename=dpV223VideoFileName(m, req.file.originalname);
-    await dpV224ReplaceVideoWithAppsScript(req.file.path, filename, req.file.mimetype, folder, m.targa);
-    // pulizia finale: se Drive/AppScript ha lasciato copie vecchie, riprova senza bloccare l'ufficio
-    const pulizia = await dpV228DeleteVideosHard(folder,m.targa).catch(e=>({rimasti:[],errors:[e.message]}));
-    // Se la pulizia ha cancellato anche il nuovo per script troppo aggressivo, ricarica il file appena scelto.
-    let after = await dpV223ListVideoFiles(folder.id).catch(()=>[]);
-    if(!after.length){ await dpV224ReplaceVideoWithAppsScript(req.file.path, filename, req.file.mimetype, folder, m.targa); after = await dpV223ListVideoFiles(folder.id).catch(()=>[]); }
+    await dpV223UploadVideoToFolder(req.file.path, filename, req.file.mimetype, folder);
     try{ fs.unlinkSync(req.file.path); }catch(e){}
-    const warn = after.length>1 ? '&warn='+encodeURIComponent('Drive vede ancora più video: apri la cartella e cancella manualmente quelli vecchi.') : '';
-    res.redirect(`/video-mezzi/${m.id}?ok=1${warn}`);
+    res.redirect(`/video-mezzi/${m.id}?ok=1&ts=${Date.now()}`);
   }catch(e){
     try{ if(req.file && req.file.path) fs.unlinkSync(req.file.path); }catch(_){}
     res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore caricamento video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
@@ -3320,19 +3314,9 @@ app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
 
 app.post('/video-mezzi/:id/delete', async (req,res)=>{
   const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null);
-  if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
-  try{
-    const folder=await dpV223FindVideoFolderByTarga(m.targa);
-    if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
-    const r = await dpV228DeleteVideosHard(folder,m.targa);
-    if(r.rimasti && r.rimasti.length){
-      const msg = 'Drive non ha autorizzato la cancellazione automatica di '+r.rimasti.length+' video. Usa Apri cartella Drive e cancella manualmente: '+r.rimasti.map(x=>x.name).join(', ');
-      return res.redirect(`/video-mezzi/${m.id}?warn=${encodeURIComponent(msg)}&ts=${Date.now()}`);
-    }
-    res.redirect(`/video-mezzi/${m.id}?del=1&ts=${Date.now()}`);
-  }catch(e){
-    res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore cancellazione video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
-  }
+  if(!m) return res.redirect('/video-mezzi');
+  const msg='Cancellazione automatica disattivata per stabilità. Apri la cartella Drive del mezzo e cancella manualmente i video vecchi.';
+  res.redirect(`/video-mezzi/${m.id}?warn=${encodeURIComponent(msg)}&ts=${Date.now()}`);
 });
 
 app.get('/richieste-attesa', async (req, res) => {
@@ -5502,7 +5486,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V228 STABILE UFFICIO: PDF reali, video pulito, stati preventivo
+// V231 STABILE UFFICIO: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
