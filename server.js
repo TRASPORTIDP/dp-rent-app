@@ -1326,14 +1326,14 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .planning-cell{min-width:36px!important;width:36px!important;height:28px!important;border-radius:7px!important}
 }
 
-/* V224 SUPER: grafica pulita senza doppio menu */
+/* V225 STABILE: grafica pulita senza doppio menu */
 .dp-super-nav{display:grid!important;grid-template-columns:repeat(4,minmax(120px,1fr))!important;gap:10px!important;padding:14px clamp(12px,2vw,26px)!important;background:linear-gradient(135deg,#d70000,#9b0000)!important;position:sticky;top:0;z-index:60;box-shadow:0 12px 30px rgba(160,0,0,.25)}
 .dp-super-nav a{min-height:46px!important;border-radius:18px!important;background:rgba(255,255,255,.10)!important;border:1px solid rgba(255,255,255,.18)!important;font-size:18px!important;font-weight:950!important;color:#fff!important;text-decoration:none!important;display:flex!important;align-items:center!important;justify-content:center!important;text-align:center!important;box-shadow:none!important}
 .dp-home-hero{background:linear-gradient(135deg,#050505,#1b1b1d 60%,#d70000);color:#fff;border-radius:28px;padding:28px;box-shadow:0 22px 55px rgba(0,0,0,.18);margin-bottom:18px}.dp-home-hero h2{font-size:clamp(38px,5vw,64px);line-height:.95;margin:0 0 8px;font-weight:1000;letter-spacing:1px}.dp-home-hero p{font-size:clamp(18px,2.4vw,25px);font-weight:850;margin:0;color:#eee}.dp-home-alerts{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:18px}.dp-alert-card{background:#fff;border-radius:24px;padding:18px 22px;font-size:24px;font-weight:950;box-shadow:0 12px 35px rgba(0,0,0,.10);border-left:8px solid #d70000}.dp-alert-card.warn{border-left-color:#ffb000}.dp-alert-card b{font-size:38px;color:#d70000;margin-right:8px}.dp-alert-card.warn b{color:#d18a00}.dp-home-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.dp-home-card{min-height:132px;border-radius:26px;background:linear-gradient(145deg,#0a0a0b,#1f2024);color:#fff;text-decoration:none;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-weight:1000;font-size:clamp(22px,3vw,34px);box-shadow:0 8px 0 #d70000,0 14px 35px rgba(0,0,0,.16)}.dp-home-card.primary{background:linear-gradient(145deg,#e00000,#980000)}.dp-home-card small{display:block;margin-top:6px;font-size:14px;color:#ddd;font-weight:800}.dp-home-card .ico{font-size:34px;margin-bottom:8px}.dp-video-card{background:#fff;border-radius:28px;padding:26px;box-shadow:0 18px 45px rgba(0,0,0,.12);margin-bottom:18px}.dp-video-card h2{font-size:clamp(30px,4vw,48px);margin:0 0 14px}.dp-video-actions{display:flex;gap:12px;flex-wrap:wrap}.dp-video-actions .btn{min-width:190px;text-align:center}.dp-video-current{background:#fff8d8;border:1px solid #f2d16b;border-radius:18px;padding:16px;margin:14px 0;font-weight:850}.dp-upload-box{border:3px dashed #d70000;border-radius:24px;padding:22px;margin-top:16px;background:#fff7f7}.dp-upload-box input[type=file]{background:#fff;border:1px solid #bbb}.dp-one-page{max-width:980px;margin:0 auto}.top-actions{display:none!important}header h1 small{font-size:18px!important}.dp-date-it{font-weight:900}
 @media(max-width:700px){header{padding-top:calc(12px + env(safe-area-inset-top))!important;padding-bottom:14px!important}header img{height:52px!important}header h1{font-size:32px!important;line-height:1!important}.dp-super-nav{grid-template-columns:repeat(2,1fr)!important;position:relative!important;top:auto!important;padding:12px!important}.dp-super-nav a{font-size:18px!important;min-height:58px!important}.dp-home-hero{padding:22px;border-radius:24px}.dp-home-alerts{grid-template-columns:1fr;gap:10px}.dp-alert-card{font-size:25px;padding:16px 18px}.dp-alert-card b{font-size:42px}.dp-home-grid{gap:12px}.dp-home-card{min-height:120px;font-size:26px;border-radius:22px}.dp-home-card small{display:none}.dp-video-card{padding:20px;border-radius:24px}.dp-video-actions .btn,.dp-upload-box .btn{width:100%;min-width:0}.box h2,.premium-card h2{font-size:32px!important}main{padding:14px!important}}
 
 
-/* V224: niente doppio menu rosso sopra; la navigazione principale resta nelle card della home */
+/* V225: niente doppio menu rosso sopra; navigazione solo card */
 nav.dp-super-nav{display:none!important}
 header{position:relative!important;top:auto!important}
 @media(max-width:700px){
@@ -1357,7 +1357,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V224 SUPER PULITA</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V225 STABILE PULITA</small></h1></header>
 <main><div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>${content}</main>
 </body>
 </html>`;
@@ -3222,7 +3222,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V224 SUPER PULITA</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V225 STABILE PULITA</p>
       </div>
     `));
   } catch(e) {
@@ -3233,10 +3233,39 @@ app.get('/', async (req, res) => {
 
 app.get('/avanzate', async (req,res)=>{ res.send(page('Avanzate', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Avanzate</h2><p>Funzioni amministrative DP RENT</p></section><section class="dp-home-grid"><a class="dp-home-card" href="/clienti"><span class="ico">👥</span>Clienti</a><a class="dp-home-card" href="/scansione-documenti"><span class="ico">📷</span>Scansione documenti</a><a class="dp-home-card" href="/documenti-clienti"><span class="ico">📂</span>Documenti clienti</a><a class="dp-home-card" href="/import-mezzi"><span class="ico">📊</span>Import Excel</a><a class="dp-home-card" href="/cargos"><span class="ico">🚚</span>Ca.R.G.O.S.</a><a class="dp-home-card" href="/cargos-config"><span class="ico">⚙️</span>Config CARGOS</a><a class="dp-home-card" href="/richieste-attesa"><span class="ico">🚨</span>Clienti in attesa</a><a class="dp-home-card" href="/logo"><span class="ico">🎨</span>Logo</a></section></div>`)); });
 app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
-app.get('/video-mezzi', async (req,res)=>{ const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]); const cards=(mezzi||[]).map(m=>`<div class="dp-video-card"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Gestisci video</a></div></div>`).join('') || '<div class="box">Nessun mezzo trovato.</div>'; res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Un video attuale per ogni targa</p></section>${cards}</div>`)); });
-app.get('/video-mezzi/:id', async (req,res)=>{ const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null); if(!m)return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2></div>`)); let folder=null,videos=[],err=''; try{folder=await dpV223FindVideoFolderByTarga(m.targa); if(folder)videos=await dpV223ListVideoFiles(folder.id);}catch(e){err=e.message;} const current=videos[0]||null; res.send(page('Video mezzo', `<div class="dp-one-page"><div class="dp-video-card"><h2>🎥 ${esc(m.targa)} - ${esc(m.modello||m.marca||'')}</h2>${folder?`<p class="ok"><b>Cartella collegata:</b> ${esc(folder.name)}</p>`:`<p class="bad"><b>Cartella non trovata.</b> Controlla DP_RENT_VIDEO_FOLDER_ID e cartella che inizia con ${esc(m.targa)}.</p>`}${err?`<pre>${esc(err)}</pre>`:''}<div class="dp-video-actions"><a class="btn btn2" href="/video-mezzi">Torna video mezzi</a>${folder?`<a class="btn" target="_blank" href="${esc(folder.webViewLink||'')}">📂 Apri cartella Drive</a>`:''}</div>${current?`<div class="dp-video-current"><p><b>Video attuale:</b><br>${esc(current.name)}</p><a class="btn" target="_blank" href="${esc(current.webViewLink||'')}">▶️ Apri video su Drive</a>${videos.length>1?`<p class="warn">Trovati ${videos.length} video: al prossimo caricamento l'app prova a eliminare i vecchi.</p>`:''}</div>`:`<p class="notice">Nessun video attuale letto nella cartella.</p>`}<form class="dp-upload-box" method="POST" action="/video-mezzi/${m.id}/upload" enctype="multipart/form-data"><h3>⬆️ Carica / sostituisci video</h3><p>Prima elimina i vecchi video della cartella, poi carica quello nuovo.</p><input type="file" name="video" accept="video/*,.mov,.mp4" required><button>Carica e sostituisci</button></form><form method="POST" action="/video-mezzi/${m.id}/delete" onsubmit="return confirm('Eliminare video e duplicati?')"><button class="bad" type="submit">🗑️ Elimina video attuale</button></form></div></div>`)); });
-app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{ try{ const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]); if(!m||!req.file)throw new Error('Mezzo o file mancante'); const folder=await dpV223FindVideoFolderByTarga(m.targa); if(!folder)throw new Error('Cartella video non trovata per targa '+m.targa); const name=dpV223VideoFileName(m,req.file.originalname); const up=await dpV224ReplaceVideoWithAppsScript(req.file.path,name,req.file.mimetype,folder,m.targa); res.send(page('Video caricato',`<div class="box"><h2 class="ok">Video caricato e sostituito</h2><p><b>Mezzo:</b> ${esc(m.targa)} ${esc(m.modello||'')}</p><p><b>Eliminati prima:</b> ${esc(up.deleted||0)}</p>${up.errors&&up.errors.length?`<pre>${esc((up.errors||[]).join('\n'))}</pre>`:''}<p><a class="btn" target="_blank" href="${esc(up.webViewLink||up.link||folder.webViewLink||'')}">Apri video/cartella Drive</a></p><a class="btn btn2" href="/video-mezzi/${m.id}">Torna al mezzo</a></div>`)); }catch(e){res.status(500).send(page('Errore upload video',`<div class="box"><h2 class="bad">Errore upload video</h2><pre>${esc(e.message)}</pre><p class="notice">Serve aggiornare Apps Script con il codice V224 incluso nello ZIP, altrimenti Drive non può cancellare/sostituire i video già caricati dal tuo account.</p><a class="btn" href="/video-mezzi/${req.params.id}">Torna</a></div>`));} });
-app.post('/video-mezzi/:id/delete', async (req,res)=>{ try{ const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]); if(!m)throw new Error('Mezzo non trovato'); const folder=await dpV223FindVideoFolderByTarga(m.targa); if(!folder)throw new Error('Cartella video non trovata'); const del=await dpV224DeleteVideoWithAppsScript(folder,m.targa); res.send(page('Video eliminato',`<div class="box"><h2 class="ok">Video eliminati: ${esc(del.deleted||0)}</h2>${del.errors&&del.errors.length?`<pre>${esc((del.errors||[]).join('\\n'))}</pre>`:''}<a class="btn" href="/video-mezzi/${m.id}">Torna al mezzo</a></div>`)); }catch(e){res.status(500).send(page('Errore elimina video',`<div class="box"><h2 class="bad">Errore elimina video</h2><pre>${esc(e.message)}</pre><p class="notice">Serve aggiornare Apps Script con il codice V224 incluso nello ZIP.</p><a class="btn" href="/video-mezzi/${req.params.id}">Torna</a></div>`));} });
+
+// =========================
+// V225 VIDEO DRIVE STABILE (solo cartella diretta, niente errori upload/delete)
+// Motivo: upload/cancellazione automatici richiedono Apps Script aggiornato o OAuth utente.
+// Qui non duplichiamo e non rompiamo: si apre la cartella giusta del mezzo.
+// =========================
+app.get('/video-mezzi', async (req,res)=>{
+  const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
+  const cards=(mezzi||[]).map(m=>`<div class="dp-video-card"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Apri cartella video</a></div></div>`).join('') || '<div class="box">Nessun mezzo trovato.</div>';
+  res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Metodo stabile: una cartella Drive per targa. Da qui apri la cartella esatta e carichi/sostituisci il video in Drive.</p></section>${cards}</div>`));
+});
+
+app.get('/video-mezzi/:id', async (req,res)=>{
+  const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null);
+  if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna video mezzi</a></div>`));
+  let folder=null,videos=[],err='';
+  try{
+    folder=await dpV223FindVideoFolderByTarga(m.targa);
+    if(folder) videos=await dpV223ListVideoFiles(folder.id);
+  }catch(e){err=e.message;}
+  const current=videos[0]||null;
+  res.send(page('Video mezzo', `<div class="dp-one-page"><div class="dp-video-card"><h2>🎥 ${esc(m.targa)} - ${esc(m.modello||m.marca||'')}</h2>
+    ${folder?`<p class="ok"><b>Cartella collegata:</b> ${esc(folder.name)}</p>`:`<p class="bad"><b>Cartella non trovata.</b> La cartella deve stare dentro DP RENT VIDEO e iniziare con ${esc(m.targa)}.</p>`}
+    ${err?`<pre>${esc(err)}</pre>`:''}
+    ${current?`<div class="dp-video-current"><p><b>Video attuale rilevato:</b><br>${esc(current.name)}</p><a class="btn" target="_blank" href="${esc(current.webViewLink||'')}">▶️ Apri video</a></div>`:`<p class="notice">Nessun video rilevato nella cartella.</p>`}
+    ${videos.length>1?`<p class="notice"><b>Attenzione:</b> trovati ${videos.length} video. Apri Drive e lascia solo quello attuale.</p>`:''}
+    <div class="dp-video-actions">
+      <a class="btn btn2" href="/video-mezzi">Torna video mezzi</a>
+      ${folder?`<a class="btn" target="_blank" href="${esc(folder.webViewLink||'')}">📂 Apri cartella Drive del mezzo</a>`:''}
+    </div>
+    <p class="notice">Per non bloccare il lavoro: carica o elimina il video direttamente nella cartella Drive. L'upload automatico resta disattivato finché Apps Script non è aggiornato correttamente.</p>
+  </div></div>`));
+});
 
 app.get('/richieste-attesa', async (req, res) => {
   try {
@@ -5398,7 +5427,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V224 SUPER PULITA: PDF reali, video pulito, stati preventivo
+// V225 STABILE PULITA: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
