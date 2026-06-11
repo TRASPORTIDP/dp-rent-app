@@ -1368,7 +1368,7 @@ window.addEventListener('DOMContentLoaded',toggleAzienda);
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V231 STABILE UFFICIO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V232 STABILE VIDEO</small></h1></header>
 <main>${title === 'Dashboard' ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>`}${content}</main>
 </body>
 </html>`;
@@ -3242,7 +3242,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V231 STABILE UFFICIO</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V232 STABILE VIDEO</p>
       </div>
     `));
   } catch(e) {
@@ -3255,7 +3255,7 @@ app.get('/avanzate', async (req,res)=>{ res.send(page('Avanzate', `<div class="d
 app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
 
 // =========================
-// V231 VIDEO DRIVE UFFICIO: carica da telefono/PC, cancellazione manuale da Drive per stabilità
+// V232 VIDEO DRIVE UFFICIO: carica da telefono/PC, cancellazione manuale da Drive per stabilità
 // =========================
 app.get('/video-mezzi', async (req,res)=>{
   const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
@@ -3303,7 +3303,7 @@ app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
     if(!req.file) throw new Error('Nessun video caricato');
     // V231 stabile: NON cancelliamo da app. Carichiamo e lasciamo la pulizia manuale da Drive.
     const filename=dpV223VideoFileName(m, req.file.originalname);
-    await dpV223UploadVideoToFolder(req.file.path, filename, req.file.mimetype, folder);
+    await dpV232UploadVideoToFolderStable(req.file.path, filename, req.file.mimetype, folder);
     try{ fs.unlinkSync(req.file.path); }catch(e){}
     res.redirect(`/video-mezzi/${m.id}?ok=1&ts=${Date.now()}`);
   }catch(e){
@@ -5486,7 +5486,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V231 STABILE UFFICIO: PDF reali, video pulito, stati preventivo
+// V232 STABILE VIDEO: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
@@ -5525,10 +5525,37 @@ function dpV223Targa(v){ return String(v||'').trim().toUpperCase().split(/\s+/)[
 async function dpV223DriveApi(){ ensureDriveClientV172(); if(!drive) throw new Error('Google Drive API non configurata'); return drive; }
 async function dpV223FindVideoFolderByTarga(targa){
   const parentId = process.env.DP_RENT_VIDEO_FOLDER_ID || process.env.VIDEO_DRIVE_FOLDER_ID || '';
-  if(!parentId) return null;
-  const d=await dpV223DriveApi(); const tg=dpV223Targa(targa);
-  const r=await d.files.list({q:`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,fields:'files(id,name,webViewLink)',spaces:'drive',supportsAllDrives:true,includeItemsFromAllDrives:true});
-  const folders=r.data.files||[]; return folders.find(f=>dpV223Targa(f.name)===tg)||folders.find(f=>String(f.name||'').toUpperCase().includes(tg))||null;
+  const d=await dpV223DriveApi();
+  const tg=dpV223Targa(targa);
+  if(!tg) return null;
+  const pick=(folders)=>{
+    folders=folders||[];
+    return folders.find(f=>dpV223Targa(f.name)===tg)
+      || folders.find(f=>String(f.name||'').toUpperCase().startsWith(tg))
+      || folders.find(f=>String(f.name||'').toUpperCase().includes(tg))
+      || null;
+  };
+  // 1) Cerca nella cartella madre DP RENT VIDEO impostata nelle variabili Render.
+  if(parentId){
+    const r=await d.files.list({
+      q:`'${parentId}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false`,
+      fields:'files(id,name,webViewLink,parents)',
+      pageSize:1000,
+      spaces:'drive',supportsAllDrives:true,includeItemsFromAllDrives:true
+    });
+    const found=pick(r.data.files||[]);
+    if(found) return found;
+  }
+  // 2) Fallback sicuro: cerca in tutto il Drive condiviso col service account.
+  // Serve quando l'ID cartella padre è sbagliato o la cartella è condivisa/spostata.
+  const safe=tg.replace(/'/g,"\'");
+  const g=await d.files.list({
+    q:`mimeType='application/vnd.google-apps.folder' and trashed=false and name contains '${safe}'`,
+    fields:'files(id,name,webViewLink,parents)',
+    pageSize:50,
+    spaces:'drive',supportsAllDrives:true,includeItemsFromAllDrives:true
+  });
+  return pick(g.data.files||[]);
 }
 async function dpV223ListVideoFiles(folderId){
   const d=await dpV223DriveApi();
@@ -5604,6 +5631,22 @@ async function dpV223UploadVideoToFolder(localPath,fileName,mimeType,folder){
   const text=await r.text(); let data; try{data=JSON.parse(text)}catch(e){throw new Error('Risposta Apps Script non valida: '+text.slice(0,500));}
   if(data&&data.ok===false) throw new Error(data.error||'Apps Script upload video non riuscito');
   return {id:data.id||data.fileId||'',webViewLink:data.webViewLink||data.link||data.url||'',name:fileName};
+}
+
+async function dpV232UploadVideoToFolderStable(localPath,fileName,mimeType,folder){
+  // Prima prova Apps Script vecchio; se fallisce per nome cartella/permessi, carica diretto con Drive API sulla cartella trovata per ID.
+  let firstErr=null;
+  try{ return await dpV223UploadVideoToFolder(localPath,fileName,mimeType,folder); }
+  catch(e){ firstErr=e; }
+  const d=await dpV223DriveApi();
+  await assertFileReadyV173(localPath,'Video');
+  const r=await d.files.create({
+    requestBody:{name:fileName, parents:[folder.id]},
+    media:{mimeType:mimeType||'video/quicktime', body:fs.createReadStream(localPath)},
+    fields:'id,name,webViewLink,webContentLink',
+    supportsAllDrives:true
+  });
+  return r.data || {name:fileName, note:'Caricato con Drive API dopo errore Apps Script: '+(firstErr&&firstErr.message||'')};
 }
 function dpV223VideoFileName(m,original){ const ext=(path.extname(original||'')||'.MOV').toUpperCase(); return safeFileName(`VIDEO_${m.targa||'MEZZO'}_${moment().format('YYYYMMDD_HHmm')}${ext}`); }
 
