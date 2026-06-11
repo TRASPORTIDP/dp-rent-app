@@ -9655,9 +9655,88 @@ app.get('/admin/sincronizza-documenti-clienti', async (req,res)=>{
   }catch(e){ res.status(500).send(page('Errore sync documenti', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
 
+
+
+// =========================
+// V233 - AGGIUNTA MEZZI DP RENT VIDEO / APP
+// =========================
+const V233_MEZZI_DA_ASSICURARE = [
+  {
+    targa: 'FP776AW',
+    marca: 'FIAT',
+    modello: 'DUCATO',
+    tipo: 'furgone',
+    categoria: 'FURGONE',
+    posti: '',
+    prezzo_giorno: 70,
+    km_inclusi: 150,
+    cauzione: 500,
+    stato: 'attivo',
+    stato_operativo: 'attivo',
+    note: 'Aggiunto da Drive DP RENT VIDEO - V233'
+  },
+  {
+    targa: 'HC642LX',
+    marca: 'RENAULT',
+    modello: 'TRAFIC',
+    tipo: 'pulmino',
+    categoria: '9_POSTI',
+    posti: '9',
+    prezzo_giorno: 70,
+    km_inclusi: 150,
+    cauzione: 500,
+    stato: 'attivo',
+    stato_operativo: 'attivo',
+    note: 'Aggiunto/aggiornato da Drive DP RENT VIDEO - V233'
+  }
+];
+
+async function v233EnsureMezzo(m) {
+  const targa = String(m.targa || '').trim().toUpperCase();
+  if (!targa) return { skipped: true };
+  try {
+    await run(`ALTER TABLE mezzi ADD COLUMN stato_operativo TEXT`).catch(()=>{});
+    await run(`ALTER TABLE mezzi ADD COLUMN categoria TEXT`).catch(()=>{});
+    await run(`ALTER TABLE mezzi ADD COLUMN posti TEXT`).catch(()=>{});
+    await run(`ALTER TABLE mezzi ADD COLUMN prezzo_giorno REAL`).catch(()=>{});
+    await run(`ALTER TABLE mezzi ADD COLUMN km_inclusi REAL`).catch(()=>{});
+    await run(`ALTER TABLE mezzi ADD COLUMN cauzione REAL`).catch(()=>{});
+    await run(`ALTER TABLE mezzi ADD COLUMN km_attuali TEXT`).catch(()=>{});
+    await run(`ALTER TABLE mezzi ADD COLUMN note TEXT`).catch(()=>{});
+  } catch(e) {}
+  const old = await get(`SELECT id FROM mezzi WHERE UPPER(TRIM(targa))=? LIMIT 1`, [targa]).catch(()=>null);
+  const vals = [
+    targa, m.marca || '', m.modello || '', m.tipo || '', m.categoria || '', m.posti || '',
+    m.prezzo_giorno || 70, m.km_inclusi || 150, m.cauzione || 500,
+    m.stato || 'attivo', m.stato_operativo || 'attivo', m.note || ''
+  ];
+  if (old && old.id) {
+    await run(`UPDATE mezzi SET targa=?, marca=?, modello=?, tipo=?, categoria=?, posti=?, prezzo_giorno=?, km_inclusi=?, cauzione=?, stato=?, stato_operativo=?, note=? WHERE id=?`, vals.concat([old.id]));
+    return { updated: true, id: old.id, targa };
+  }
+  const r = await run(`INSERT INTO mezzi (targa,marca,modello,tipo,categoria,posti,prezzo_giorno,km_inclusi,cauzione,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
+  return { inserted: true, id: r && r.lastID, targa };
+}
+
+async function v233EnsureMezziAggiunti() {
+  const out = [];
+  for (const m of V233_MEZZI_DA_ASSICURARE) out.push(await v233EnsureMezzo(m));
+  return out;
+}
+
+app.get('/admin/aggiungi-mezzi-v233', async (req,res)=>{
+  try {
+    const out = await v233EnsureMezziAggiunti();
+    res.send(page('Mezzi aggiunti V233', `<div class="box"><h2 class="ok">Mezzi aggiunti/aggiornati</h2><pre>${esc(JSON.stringify(out,null,2))}</pre><a class="btn" href="/mezzi">Apri mezzi</a><a class="btn btn2" href="/planning">Apri planning</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+  } catch(e) {
+    res.status(500).send(page('Errore mezzi V233', `<div class="box"><h2 class="bad">Errore aggiunta mezzi</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/">Dashboard</a></div>`));
+  }
+});
+
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V137 stabile porta ' + PORT);
+  console.log('DP RENT APP V233 stabile porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
+  v233EnsureMezziAggiunti().then(r => console.log('V233 mezzi assicurati:', JSON.stringify(r))).catch(e => console.log('V233 mezzi warning:', e.message));
 });
 
 
