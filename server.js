@@ -617,7 +617,7 @@ app.use('/contracts', express.static(contractsDir));
 app.get('/logo.png', (req,res)=>res.sendFile(path.join(publicDir,'logo.png')));
 app.get('/logo-dp-rent-premium.jpg', (req,res)=>res.sendFile(path.join(publicDir,'logo-dp-rent-premium.jpg')));
 
-const upload = multer({ dest: uploadDir });
+const upload = multer({ dest: tempDir, limits: { fileSize: Number(process.env.MAX_UPLOAD_MB || 350) * 1024 * 1024 } });
 const db = new sqlite3.Database(DB_PATH);
 
 function addColumn(table, column, type) {
@@ -662,6 +662,125 @@ function all(sql, params = []) {
     db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows || []));
   });
 }
+
+
+// =========================
+// V235 ANTI ENOSPC / DISCO PIENO RENDER
+// =========================
+function v235BytesHuman(n){
+  n = Number(n || 0);
+  if (n < 1024) return n + ' B';
+  if (n < 1024*1024) return (n/1024).toFixed(1) + ' KB';
+  if (n < 1024*1024*1024) return (n/1024/1024).toFixed(1) + ' MB';
+  return (n/1024/1024/1024).toFixed(2) + ' GB';
+}
+function v235DirSize(dir){
+  let total = 0, files = 0;
+  try{
+    if(!fs.existsSync(dir)) return {bytes:0, files:0};
+    const walk = d => {
+      for(const name of fs.readdirSync(d)){
+        const f = path.join(d, name);
+        let st; try{ st = fs.statSync(f); }catch(_){ continue; }
+        if(st.isDirectory()) walk(f);
+        else { total += st.size || 0; files++; }
+      }
+    };
+    walk(dir);
+  }catch(e){ console.log('V235 dir size skip:', dir, e.message); }
+  return {bytes:total, files};
+}
+function v235SafeDeleteFile(file){
+  try{
+    if(!file) return false;
+    const full = path.resolve(String(file));
+    const allowed = [path.resolve(uploadDir), path.resolve(tempDir), path.resolve(contractsDir), path.resolve(firmeDir)];
+    if(!allowed.some(d => full.startsWith(d + path.sep) || full === d)) return false;
+    if(fs.existsSync(full) && fs.statSync(full).isFile()) { fs.unlinkSync(full); return true; }
+  }catch(e){ console.log('V235 delete skip:', e.message); }
+  return false;
+}
+function v235CleanEmptyDirs(dir){
+  try{
+    if(!fs.existsSync(dir)) return;
+    for(const name of fs.readdirSync(dir)){
+      const f = path.join(dir, name);
+      try{ if(fs.statSync(f).isDirectory()) { v235CleanEmptyDirs(f); if(fs.readdirSync(f).length === 0) fs.rmdirSync(f); } }catch(_){ }
+    }
+  }catch(_){ }
+}
+function v235CleanupDir(dir, maxAgeMs, label){
+  const now = Date.now(); let deleted = 0, bytes = 0;
+  try{
+    if(!fs.existsSync(dir)) return {deleted, bytes};
+    const walk = d => {
+      for(const name of fs.readdirSync(d)){
+        const f = path.join(d, name);
+        let st; try{ st = fs.statSync(f); }catch(_){ continue; }
+        if(st.isDirectory()) walk(f);
+        else if((now - st.mtimeMs) > maxAgeMs){
+          const size = st.size || 0;
+          if(v235SafeDeleteFile(f)){ deleted++; bytes += size; }
+        }
+      }
+    };
+    walk(dir); v235CleanEmptyDirs(dir);
+  }catch(e){ console.log('V235 cleanup '+label+' skip:', e.message); }
+  if(deleted) console.log(`V235 cleanup ${label}: ${deleted} file, ${v235BytesHuman(bytes)}`);
+  return {deleted, bytes};
+}
+async function v235CleanupLocalSyncedFiles(){
+  // Cancella copie locali solo quando esiste già il link Drive: i dati restano su Drive e nel DB.
+  let deleted = 0, bytes = 0;
+  try{
+    const rows = await all(`SELECT id,path,drive_web_link FROM allegati WHERE drive_web_link IS NOT NULL AND drive_web_link<>'' AND path IS NOT NULL AND path<>'' LIMIT 2000`).catch(()=>[]);
+    for(const a of rows){
+      try{
+        const f = String(a.path || '');
+        if(f && fs.existsSync(f) && fs.statSync(f).isFile()){
+          const size = fs.statSync(f).size || 0;
+          if(v235SafeDeleteFile(f)) { deleted++; bytes += size; }
+        }
+      }catch(_){ }
+    }
+  }catch(e){ console.log('V235 cleanup synced skip:', e.message); }
+  if(deleted) console.log(`V235 cleanup allegati Drive: ${deleted} file, ${v235BytesHuman(bytes)}`);
+  return {deleted, bytes};
+}
+async function v235RunDiskCleanup(mode='auto'){
+  const aggressive = mode === 'manual' || mode === 'startup';
+  const result = { mode, tmp:null, uploads:null, contracts:null, firme:null, synced:null };
+  // tmp: solo file tecnici, si può pulire spesso.
+  result.tmp = v235CleanupDir(tempDir, aggressive ? 15*60*1000 : 6*60*60*1000, 'tmp');
+  // uploads: copie temporanee; dopo qualche ora non devono più stare lì.
+  result.uploads = v235CleanupDir(uploadDir, aggressive ? 60*60*1000 : 12*60*60*1000, 'uploads');
+  // contracts: PDF/ICS locali già copiati su Drive; tenerli pochi giorni per anteprime recenti.
+  result.contracts = v235CleanupDir(contractsDir, aggressive ? 3*24*60*60*1000 : 7*24*60*60*1000, 'contracts');
+  result.firme = v235CleanupDir(firmeDir, aggressive ? 7*24*60*60*1000 : 30*24*60*60*1000, 'firme');
+  result.synced = await v235CleanupLocalSyncedFiles();
+  return result;
+}
+function v235DiskRowsHtml(){
+  const dirs = [
+    ['uploads', uploadDir], ['contracts', contractsDir], ['tmp', tempDir], ['firme', firmeDir], ['public', publicDir], ['data', DATA_DIR]
+  ];
+  return dirs.map(([name,dir])=>{
+    const s = v235DirSize(dir);
+    return `<tr><td><b>${esc(name)}</b></td><td>${esc(dir)}</td><td>${s.files}</td><td><b>${v235BytesHuman(s.bytes)}</b></td></tr>`;
+  }).join('');
+}
+app.get('/admin/spazio-disco', async (req,res)=>{
+  res.send(page('Spazio disco', `<div class="box"><h2>🧹 Spazio disco Render</h2><p class="notice"><b>ENOSPC</b> significa disco pieno. Qui controlli quali cartelle stanno occupando spazio.</p><table><tr><th>Cartella</th><th>Percorso</th><th>File</th><th>Spazio</th></tr>${v235DiskRowsHtml()}</table><div class="actions"><a class="btn" href="/admin/pulisci-spazio">Pulisci ora</a><a class="btn btn2" href="/">Dashboard</a></div></div>`));
+});
+app.get('/admin/pulisci-spazio', async (req,res)=>{
+  const before = v235DiskRowsHtml();
+  const r = await v235RunDiskCleanup('manual');
+  const after = v235DiskRowsHtml();
+  res.send(page('Pulizia spazio', `<div class="box"><h2>✅ Pulizia spazio eseguita</h2><p class="ok">Puliti file temporanei, upload vecchi e copie locali già presenti su Drive.</p><h3>Prima</h3><table><tr><th>Cartella</th><th>Percorso</th><th>File</th><th>Spazio</th></tr>${before}</table><h3>Dopo</h3><table><tr><th>Cartella</th><th>Percorso</th><th>File</th><th>Spazio</th></tr>${after}</table><pre>${esc(JSON.stringify(r,null,2))}</pre><a class="btn" href="/admin/spazio-disco">Ricontrolla spazio</a></div>`));
+});
+setTimeout(()=>v235RunDiskCleanup('startup').catch(e=>console.log('V235 startup cleanup:', e.message)), 5000).unref?.();
+setInterval(()=>v235RunDiskCleanup('auto').catch(e=>console.log('V235 auto cleanup:', e.message)), 30*60*1000).unref?.();
+
 
 
 db.serialize(() => {
@@ -1377,7 +1496,7 @@ window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll(
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V234 STABILE VIDEO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V235 ANTI DISCO PIENO</small></h1></header>
 <main>${title === 'Dashboard' ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>`}${content}</main>
 </body>
 </html>`;
@@ -2855,7 +2974,7 @@ runV44DbMigration();
 // =========================
 // V48 IMPORT MEZZI DEFINITIVO - NO ON CONFLICT
 // =========================
-const importUploadV48 = multer({ dest: (typeof uploadDir !== 'undefined' ? uploadDir : path.join(__dirname, 'uploads')) });
+const importUploadV48 = multer({ dest: (typeof tempDir !== 'undefined' ? tempDir : path.join(__dirname, 'tmp')), limits: { fileSize: 50 * 1024 * 1024 } });
 
 function v48Cell(row, names) {
   for (const n of names) {
@@ -3251,7 +3370,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V234 STABILE VIDEO</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V235 ANTI DISCO PIENO</p>
       </div>
     `));
   } catch(e) {
@@ -5494,7 +5613,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V234 STABILE VIDEO: PDF reali, video pulito, stati preventivo
+// V235 ANTI DISCO PIENO: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
@@ -9743,7 +9862,7 @@ app.get('/admin/aggiungi-mezzi-v233', async (req,res)=>{
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V234 stabile porta ' + PORT);
+  console.log('DP RENT APP V235 anti disco pieno porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
   v233EnsureMezziAggiunti().then(r => console.log('V234 mezzi assicurati:', JSON.stringify(r))).catch(e => console.log('V234 mezzi warning:', e.message));
 });
