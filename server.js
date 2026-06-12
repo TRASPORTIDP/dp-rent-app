@@ -2538,9 +2538,23 @@ function cargosConfigured() {
   return !!(((process.env.CARGOS_USERNAME || 'C00000100') || 'C00000100') && process.env.CARGOS_PASSWORD && process.env.CARGOS_APIKEY && process.env.CARGOS_AGENZIA_ID && process.env.CARGOS_OPERATORE_ID);
 }
 
+// V236: pulizia caratteri per tracciato Ca.R.G.O.S.
+// CaRGOS rifiuta slash, virgole, apostrofi, simboli e caratteri Unicode invisibili.
+function cargosCleanTextV236(value) {
+  return String(value === undefined || value === null ? '' : value)
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[\u200B-\u200D\uFEFF]/g, '')
+    .replace(/[\/\\,.;:°ºª'"`’‘“”()\[\]{}<>|_+=*#@!€$%&?^~]/g, ' ')
+    .replace(/[^A-Za-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase();
+}
+
 function cargosPad(value, len, type = 'string') {
   let v = String(value === undefined || value === null ? '' : value).normalize('NFC').replace(/\s+/g,' ').trim();
   if (type === 'number') { v = v.replace(/\D/g, ''); if (v.length > len) v = v.slice(0, len); return v.padStart(len, '0'); }
+  v = cargosCleanTextV236(v);
   if (v.length > len) v = v.slice(0, len);
   return v.padEnd(len, ' ');
 }
@@ -8355,6 +8369,9 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Telefono<input name="telefono" value="${esc(p.telefono)}"></label>
           <label>Email<input name="email" value="${esc(p.email)}"></label>
           <label>Codice fiscale<input name="codice_fiscale" value="${esc(p.codice_fiscale || p.cf)}"></label>
+          <label>Indirizzo residenza<input name="indirizzo" value="${esc(p.indirizzo || '')}" placeholder="Es. VIA DELLA LINCE 25"></label>
+          <label>Città residenza<input name="citta" value="${esc(p.citta || '')}" placeholder="Es. TERNI"></label>
+          <label>CAP<input name="cap" value="${esc(p.cap || '')}" placeholder="Es. 05100"></label>
           <label>Data nascita<input type="date" name="data_nascita" value="${esc(v67IsoDate(p.data_nascita))}"></label>
           <label>Luogo nascita<input name="luogo_nascita" value="${esc(p.luogo_nascita)}"></label>
           <label>Cittadinanza codice<input name="cittadinanza_cod" value="${esc(p.cittadinanza_cod || '100000100')}"></label>
@@ -8442,7 +8459,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
 
       await run(`UPDATE prenotazioni SET
         mezzo_id=COALESCE(?,mezzo_id), targa=COALESCE(?,targa), marca=COALESCE(?,marca), modello=COALESCE(?,modello), tipo=COALESCE(?,tipo), categoria=COALESCE(?,categoria),
-        nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?,
+        nome=?, cognome=?, telefono=?, email=?, codice_fiscale=?, indirizzo=?, citta=?, cap=?,
         data_nascita=?, luogo_nascita=?, cittadinanza_cod=?, documento_tipo=?, documento_numero=?, documento_scadenza=?,
         patente_numero=?, patente_scadenza=?, conducente2_nome=?, conducente2_cognome=?, conducente2=?, conducente2_cf=?, conducente2_data_nascita=?, conducente2_doc_numero=?, conducente2_doc_scadenza=?, conducente2_patente_numero=?, conducente2_patente=?, conducente2_patente_scadenza=?, conducente2_categoria_patente=?, tipo_cliente=?, ragione_sociale=?, partita_iva=?, piva=?, pec=?, codice_sdi=?, sdi=?, indirizzo_fatturazione=?,
         data_inizio=?, ora_inizio=?, data_fine=?, ora_fine=?, check_out_orario=?, check_in_orario=?,
@@ -8450,7 +8467,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
         cauzione_ricevuta=?, cauzione_importo=?, cauzione_metodo=?, note=?
         WHERE id=?`, [
           mezzoDb?.id || null, mezzoDb?.targa || null, mezzoDb?.marca || null, mezzoDb?.modello || null, mezzoDb?.tipo || null, mezzoDb?.categoria || mezzoDb?.tipo || null,
-          v62Val(b.nome), v62Val(b.cognome), v62Val(b.telefono), v62Val(b.email), v62Val(b.codice_fiscale),
+          v62Val(b.nome), v62Val(b.cognome), v62Val(b.telefono), v62Val(b.email), v62Val(b.codice_fiscale), v62Val(b.indirizzo), v62Val(b.citta), v62Val(b.cap),
           v62Val(b.data_nascita), v62Val(b.luogo_nascita), v62Val(b.cittadinanza_cod || '100000100'), v62Val(b.documento_tipo || 'IDENT'), v62Val(b.documento_numero), v62Val(b.documento_scadenza),
           v62Val(b.patente_numero), v62Val(b.patente_scadenza), v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_data_nascita), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
           dataInizio, oraInizio, dataFine, oraFine, v62Val(b.check_out_orario), v62Val(b.check_in_orario),
