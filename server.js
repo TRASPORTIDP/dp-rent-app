@@ -58,6 +58,16 @@ app.use(express.static(appPublicDir));
 // V107 CARGOS UID LOCK
 // =========================
 function v62Val(v){ return String(v===undefined||v===null?'':v).trim(); }
+function dpCleanTechnicalNotes(v){ return String(v===undefined||v===null?'':v).replace(/\[NOTIFIED_STEP:[^\]]+\]/g,'').replace(/\n{3,}/g,'\n\n').trim(); }
+function dpNormalizeTipoClienteFields(obj){
+  if(!obj || typeof obj !== 'object') return obj;
+  obj.tipo_cliente = String(obj.tipo_cliente || 'privato').toLowerCase() === 'azienda' ? 'azienda' : 'privato';
+  obj.note = dpCleanTechnicalNotes(obj.note || '');
+  if(obj.tipo_cliente !== 'azienda'){
+    ['ragione_sociale','azienda','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(k=>{ obj[k]=''; });
+  }
+  return obj;
+}
 function v62Money(v){ const n=parseFloat(String(v||'0').replace(',','.')); return isNaN(n)?0:n; }
 function v62FixTable(table, cols, done){
   const keys=Object.keys(cols||{}); if(!keys.length) return done&&done();
@@ -1358,17 +1368,16 @@ header{position:relative!important;top:auto!important}
 function toggleAzienda(){
   var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return;
   var isAz=String(el.value||'').toLowerCase()==='azienda';
+  var names=['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'];
   document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';});
   document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';});
-  ['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(function(n){
-    document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; });
-  });
+  names.forEach(function(n){document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; var wrap=f.closest('label')||f.parentElement; if(wrap && !wrap.classList.contains('azienda-grid')) wrap.style.display=isAz?'block':'none'; if(!isAz) f.value=''; });});
 }
-window.addEventListener('DOMContentLoaded',toggleAzienda);
+window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[name="tipo_cliente"]').forEach(function(el){el.addEventListener('change',toggleAzienda);}); toggleAzienda();});
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V232 STABILE VIDEO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V234 STABILE VIDEO</small></h1></header>
 <main>${title === 'Dashboard' ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>`}${content}</main>
 </body>
 </html>`;
@@ -3242,7 +3251,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V232 STABILE VIDEO</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V234 STABILE VIDEO</p>
       </div>
     `));
   } catch(e) {
@@ -3255,7 +3264,7 @@ app.get('/avanzate', async (req,res)=>{ res.send(page('Avanzate', `<div class="d
 app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
 
 // =========================
-// V232 VIDEO DRIVE UFFICIO: carica da telefono/PC, cancellazione manuale da Drive per stabilità
+// V234 VIDEO DRIVE UFFICIO: carica da telefono/PC, cancellazione manuale da Drive per stabilità
 // =========================
 app.get('/video-mezzi', async (req,res)=>{
   const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
@@ -3303,7 +3312,7 @@ app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
     if(!req.file) throw new Error('Nessun video caricato');
     // V231 stabile: NON cancelliamo da app. Carichiamo e lasciamo la pulizia manuale da Drive.
     const filename=dpV223VideoFileName(m, req.file.originalname);
-    await dpV232UploadVideoToFolderStable(req.file.path, filename, req.file.mimetype, folder);
+    await dpV234UploadVideoToFolderStable(req.file.path, filename, req.file.mimetype, folder);
     try{ fs.unlinkSync(req.file.path); }catch(e){}
     res.redirect(`/video-mezzi/${m.id}?ok=1&ts=${Date.now()}`);
   }catch(e){
@@ -3878,7 +3887,7 @@ function clienteManualForm(c, action, title) {
         </div>
         <h3>Fatturazione</h3>
         <div class="grid">
-          <div><label>Tipo cliente</label><select name="tipo_cliente"><option value="privato" ${c.tipo_cliente!=='azienda'?'selected':''}>Privato</option><option value="azienda" ${c.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></div>
+          <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${c.tipo_cliente!=='azienda'?'selected':''}>Privato</option><option value="azienda" ${c.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></div>
           <div><label>Ragione sociale</label><input name="ragione_sociale" value="${val('ragione_sociale')}"></div>
           <div><label>Partita IVA</label><input name="piva" value="${val('piva') || val('partita_iva')}"></div>
           <div><label>PEC</label><input name="pec" value="${val('pec')}"></div>
@@ -4339,13 +4348,12 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 function toggleAzienda(){
   var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return;
   var isAz=String(el.value||'').toLowerCase()==='azienda';
-  document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';});
+  var names=['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'];
   document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';});
-  ['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(function(n){
-    document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; });
-  });
+  document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';});
+  names.forEach(function(n){document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; var wrap=f.closest('label')||f.parentElement; if(wrap && !wrap.classList.contains('azienda-grid')) wrap.style.display=isAz?'block':'none'; if(!isAz) f.value=''; });});
 }
-window.addEventListener('DOMContentLoaded',toggleAzienda);
+window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[name="tipo_cliente"]').forEach(function(el){el.addEventListener('change',toggleAzienda);}); toggleAzienda();});
 </script>
 </head>
 <body>
@@ -5486,7 +5494,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V232 STABILE VIDEO: PDF reali, video pulito, stati preventivo
+// V234 STABILE VIDEO: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
@@ -5633,7 +5641,7 @@ async function dpV223UploadVideoToFolder(localPath,fileName,mimeType,folder){
   return {id:data.id||data.fileId||'',webViewLink:data.webViewLink||data.link||data.url||'',name:fileName};
 }
 
-async function dpV232UploadVideoToFolderStable(localPath,fileName,mimeType,folder){
+async function dpV234UploadVideoToFolderStable(localPath,fileName,mimeType,folder){
   // Prima prova Apps Script vecchio; se fallisce per nome cartella/permessi, carica diretto con Drive API sulla cartella trovata per ID.
   let firstErr=null;
   try{ return await dpV223UploadVideoToFolder(localPath,fileName,mimeType,folder); }
@@ -6205,8 +6213,8 @@ function publicClientePage(title, content) {
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef4ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#0b1226;-webkit-text-size-adjust:100%;font-size:18px}main{max-width:900px;margin:0 auto;padding:16px 14px 38px}.client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:#fff;border-radius:0 0 30px 30px;padding:calc(28px + env(safe-area-inset-top)) 24px 30px;margin:0 -14px 22px;box-shadow:0 16px 40px rgba(0,0,0,.18)}.client-hero h1{font-size:44px;line-height:1;margin:0 0 14px;color:#fff;letter-spacing:.8px}.client-hero p{font-size:21px;line-height:1.35;margin:0;opacity:.96}.pill{display:inline-block;background:#fff;color:#173f9d;border-radius:999px;padding:11px 18px;margin:16px 8px 0 0;font-weight:900;font-size:20px}.card,.step-card,details.manual{background:#fff;border-radius:26px;padding:24px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.10);border:1px solid #e3e7f2}.card h2,.step-card h2{font-size:34px;margin:0 0 16px;color:#0b1226}.grid,.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-weight:900;margin:10px 0 7px;color:#0b1226}input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none}textarea{min-height:110px}.notice{background:#fff8df;border:1px solid #f1d98a;border-radius:20px;padding:16px;line-height:1.35;font-size:18px}.okbox{background:#ecfff1;border:1px solid #b8efc4;border-radius:20px;padding:16px;line-height:1.35}.btn,button,.big-red{border:0;border-radius:20px;background:linear-gradient(135deg,#e21818,#a80d0d);color:#fff;padding:18px 24px;font-size:22px;font-weight:900;box-shadow:0 12px 25px rgba(210,0,0,.25);width:100%;margin-top:18px}.small{font-size:15px;color:#596275;font-weight:700}.upload-box{border:2px dashed #cbd5e1;border-radius:22px;padding:18px;background:#f8fafc}.upload-box label{font-size:20px}.upload-box input{font-size:18px;margin-top:12px}details.manual summary{font-size:30px;font-weight:900;cursor:pointer}.fixed-save{position:sticky;bottom:12px;z-index:9;background:rgba(255,255,255,.96);padding:12px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.16)}@media(max-width:720px){main{padding-left:14px;padding-right:14px}.grid,.upload-grid{grid-template-columns:1fr}.client-hero h1{font-size:36px}.client-hero p{font-size:20px}.card,.step-card,details.manual{padding:20px;border-radius:24px}.card h2,.step-card h2{font-size:31px}input,select,textarea{font-size:19px}}
 </style>
 <script>
-function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var isAz=String(el.value||'').toLowerCase()==='azienda'; document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';}); document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';}); ['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'].forEach(function(n){document.querySelectorAll('[name="'+n+'"]'); document.querySelectorAll('[name="'+n+'"]').forEach(function(f){f.required=isAz;});});}
-window.addEventListener('DOMContentLoaded',toggleAzienda);
+function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var isAz=String(el.value||'').toLowerCase()==='azienda'; var names=['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione']; document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';}); document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';}); names.forEach(function(n){document.querySelectorAll('[name="'+n+'"]').forEach(function(f){f.required=isAz; var wrap=f.closest('label')||f.parentElement; if(wrap && !wrap.classList.contains('azienda-grid')) wrap.style.display=isAz?'block':'none'; if(!isAz) f.value='';});});}
+window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[name="tipo_cliente"]').forEach(function(el){el.addEventListener('change',toggleAzienda);}); toggleAzienda();});
 </script>
 </head><body><main>${content}</main></body></html>`;
 }
@@ -6304,7 +6312,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
           <div><label>Data rilascio patente</label><input type="date" name="patente_data_rilascio" value="${esc(p.patente_data_rilascio||'')}"></div>
           <div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${esc(p.patente_scadenza||p.patente1_scadenza||'')}"></div>
           <div><label>Categoria patente</label><input name="categoria_patente" value="${esc(p.categoria_patente||'')}"></div>
-          <div><label>Tipo cliente</label><select name="tipo_cliente"><option value="privato" ${p.tipo_cliente!=='azienda'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></div>
+          <div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${p.tipo_cliente!=='azienda'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></div>
           <div><label>Ragione sociale</label><input name="ragione_sociale" value="${esc(p.ragione_sociale||'')}"></div>
           <div><label>Partita IVA</label><input name="piva" value="${esc(p.piva||p.partita_iva||'')}"></div>
           <div><label>PEC</label><input name="pec" value="${esc(p.pec||'')}"></div>
@@ -8245,7 +8253,7 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Patente 2° autista<input name="conducente2_patente_numero" value="${esc(p.conducente2_patente_numero || p.conducente2_patente || p.patente2 || '')}"></label>
           <label>Scad. patente 2<input type="date" name="conducente2_patente_scadenza" value="${esc(v67IsoDate(p.conducente2_patente_scadenza || p.patente2_scadenza))}"></label>
           <label>Cat. patente 2<input name="conducente2_categoria_patente" value="${esc(p.conducente2_categoria_patente || '')}"></label>
-          <label>Tipo cliente<select name="tipo_cliente"><option value="privato" ${(p.tipo_cliente||'privato')==='privato'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></label>
+          <label>Tipo cliente<select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato" ${(p.tipo_cliente||'privato')==='privato'?'selected':''}>Privato</option><option value="azienda" ${p.tipo_cliente==='azienda'?'selected':''}>Azienda</option></select></label>
           <label>Ragione sociale<input name="ragione_sociale" value="${esc(p.ragione_sociale)}"></label>
           <label>Partita IVA<input name="partita_iva" value="${esc(p.partita_iva || p.piva)}"></label>
           <label>PEC<input name="pec" value="${esc(p.pec)}"></label>
@@ -8278,6 +8286,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
   v67EnsureCriticalColumns(async ()=>{
     try{
       const b = req.body || {};
+      dpNormalizeTipoClienteFields(b);
       const oldP = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
       if(!oldP) return res.status(404).send(page('Non trovato', `<div class="box"><h2>Contratto non trovato</h2></div>`));
 
@@ -9605,7 +9614,7 @@ app.post('/scansione-documenti', upload.array('scan_docs', 30), async (req,res)=
 
 app.get('/scansione-documenti/controlla', (req,res)=>{
   const q=req.query||{}; const val=k=>esc(q[k]||'');
-  res.send(page('Controlla cliente da scansione', `<div class="box"><h2>Controlla dati letti da scanner</h2><p class="notice">Controlla e correggi i dati prima di salvare. Le scansioni vengono salvate nell'archivio documenti cliente.</p><form method="POST" action="/scansione-documenti/salva"><input type="hidden" name="scan_batch" value="${val('scan_batch')}"><div class="grid"><div><label>Nome</label><input name="nome" value="${val('nome')}" required></div><div><label>Cognome</label><input name="cognome" value="${val('cognome')}" required></div><div><label>Telefono</label><input name="telefono"></div><div><label>Email</label><input name="email"></div><div><label>Codice fiscale</label><input name="codice_fiscale" value="${val('codice_fiscale')}"></div><div><label>Data nascita</label><input type="date" name="data_nascita" value="${val('data_nascita')}"></div><div><label>Luogo nascita</label><input name="luogo_nascita" value="${val('luogo_nascita')}"></div><div class="full"><label>Indirizzo residenza</label><input name="indirizzo" value="${val('indirizzo')}"></div><div><label>Città</label><input name="citta"></div><div><label>Provincia</label><input name="provincia"></div><div><label>CAP</label><input name="cap"></div><div><label>Numero documento</label><input name="documento_numero" value="${val('documento_numero')}"></div><div><label>Scadenza documento</label><input type="date" name="documento_scadenza" value="${val('documento_scadenza')}"></div><div><label>Numero patente</label><input name="patente_numero" value="${val('patente_numero')}"></div><div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${val('patente_scadenza')}"></div><div><label>Categoria patente</label><input name="categoria_patente" value="${val('categoria_patente')}"></div></div><h3>Fatturazione</h3><div class="grid"><div><label>Tipo cliente</label><select name="tipo_cliente"><option value="privato">Privato</option><option value="azienda">Azienda</option></select></div><div><label>Ragione sociale</label><input name="ragione_sociale"></div><div><label>Partita IVA</label><input name="piva"></div><div><label>PEC</label><input name="pec"></div><div><label>Codice SDI</label><input name="sdi"></div><div class="full"><label>Indirizzo fatturazione</label><input name="indirizzo_fatturazione" value="${val('indirizzo')}"></div><div><label>Città fatturazione</label><input name="citta_fatturazione"></div><div><label>Provincia fatturazione</label><input name="provincia_fatturazione"></div><div><label>CAP fatturazione</label><input name="cap_fatturazione"></div></div><button>Salva anagrafica cliente</button><a class="btn btn2" href="/scansione-documenti">Rifai scansione</a></form></div>`));
+  res.send(page('Controlla cliente da scansione', `<div class="box"><h2>Controlla dati letti da scanner</h2><p class="notice">Controlla e correggi i dati prima di salvare. Le scansioni vengono salvate nell'archivio documenti cliente.</p><form method="POST" action="/scansione-documenti/salva"><input type="hidden" name="scan_batch" value="${val('scan_batch')}"><div class="grid"><div><label>Nome</label><input name="nome" value="${val('nome')}" required></div><div><label>Cognome</label><input name="cognome" value="${val('cognome')}" required></div><div><label>Telefono</label><input name="telefono"></div><div><label>Email</label><input name="email"></div><div><label>Codice fiscale</label><input name="codice_fiscale" value="${val('codice_fiscale')}"></div><div><label>Data nascita</label><input type="date" name="data_nascita" value="${val('data_nascita')}"></div><div><label>Luogo nascita</label><input name="luogo_nascita" value="${val('luogo_nascita')}"></div><div class="full"><label>Indirizzo residenza</label><input name="indirizzo" value="${val('indirizzo')}"></div><div><label>Città</label><input name="citta"></div><div><label>Provincia</label><input name="provincia"></div><div><label>CAP</label><input name="cap"></div><div><label>Numero documento</label><input name="documento_numero" value="${val('documento_numero')}"></div><div><label>Scadenza documento</label><input type="date" name="documento_scadenza" value="${val('documento_scadenza')}"></div><div><label>Numero patente</label><input name="patente_numero" value="${val('patente_numero')}"></div><div><label>Scadenza patente</label><input type="date" name="patente_scadenza" value="${val('patente_scadenza')}"></div><div><label>Categoria patente</label><input name="categoria_patente" value="${val('categoria_patente')}"></div></div><h3>Fatturazione</h3><div class="grid"><div><label>Tipo cliente</label><select name="tipo_cliente" onchange="toggleAzienda()"><option value="privato">Privato</option><option value="azienda">Azienda</option></select></div><div><label>Ragione sociale</label><input name="ragione_sociale"></div><div><label>Partita IVA</label><input name="piva"></div><div><label>PEC</label><input name="pec"></div><div><label>Codice SDI</label><input name="sdi"></div><div class="full"><label>Indirizzo fatturazione</label><input name="indirizzo_fatturazione" value="${val('indirizzo')}"></div><div><label>Città fatturazione</label><input name="citta_fatturazione"></div><div><label>Provincia fatturazione</label><input name="provincia_fatturazione"></div><div><label>CAP fatturazione</label><input name="cap_fatturazione"></div></div><button>Salva anagrafica cliente</button><a class="btn btn2" href="/scansione-documenti">Rifai scansione</a></form></div>`));
 });
 
 app.post('/scansione-documenti/salva', async (req,res)=>{
@@ -9658,9 +9667,9 @@ app.get('/admin/sincronizza-documenti-clienti', async (req,res)=>{
 
 
 // =========================
-// V233 - AGGIUNTA MEZZI DP RENT VIDEO / APP
+// V234 - AGGIUNTA MEZZI DP RENT VIDEO / APP
 // =========================
-const V233_MEZZI_DA_ASSICURARE = [
+const V234_MEZZI_DA_ASSICURARE = [
   {
     targa: 'FP776AW',
     marca: 'FIAT',
@@ -9673,7 +9682,7 @@ const V233_MEZZI_DA_ASSICURARE = [
     cauzione: 500,
     stato: 'attivo',
     stato_operativo: 'attivo',
-    note: 'Aggiunto da Drive DP RENT VIDEO - V233'
+    note: 'Aggiunto da Drive DP RENT VIDEO - V234'
   },
   {
     targa: 'HC642LX',
@@ -9687,7 +9696,7 @@ const V233_MEZZI_DA_ASSICURARE = [
     cauzione: 500,
     stato: 'attivo',
     stato_operativo: 'attivo',
-    note: 'Aggiunto/aggiornato da Drive DP RENT VIDEO - V233'
+    note: 'Aggiunto/aggiornato da Drive DP RENT VIDEO - V234'
   }
 ];
 
@@ -9720,23 +9729,23 @@ async function v233EnsureMezzo(m) {
 
 async function v233EnsureMezziAggiunti() {
   const out = [];
-  for (const m of V233_MEZZI_DA_ASSICURARE) out.push(await v233EnsureMezzo(m));
+  for (const m of V234_MEZZI_DA_ASSICURARE) out.push(await v233EnsureMezzo(m));
   return out;
 }
 
 app.get('/admin/aggiungi-mezzi-v233', async (req,res)=>{
   try {
     const out = await v233EnsureMezziAggiunti();
-    res.send(page('Mezzi aggiunti V233', `<div class="box"><h2 class="ok">Mezzi aggiunti/aggiornati</h2><pre>${esc(JSON.stringify(out,null,2))}</pre><a class="btn" href="/mezzi">Apri mezzi</a><a class="btn btn2" href="/planning">Apri planning</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+    res.send(page('Mezzi aggiunti V234', `<div class="box"><h2 class="ok">Mezzi aggiunti/aggiornati</h2><pre>${esc(JSON.stringify(out,null,2))}</pre><a class="btn" href="/mezzi">Apri mezzi</a><a class="btn btn2" href="/planning">Apri planning</a><a class="btn btn2" href="/">Dashboard</a></div>`));
   } catch(e) {
-    res.status(500).send(page('Errore mezzi V233', `<div class="box"><h2 class="bad">Errore aggiunta mezzi</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/">Dashboard</a></div>`));
+    res.status(500).send(page('Errore mezzi V234', `<div class="box"><h2 class="bad">Errore aggiunta mezzi</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/">Dashboard</a></div>`));
   }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V233 stabile porta ' + PORT);
+  console.log('DP RENT APP V234 stabile porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
-  v233EnsureMezziAggiunti().then(r => console.log('V233 mezzi assicurati:', JSON.stringify(r))).catch(e => console.log('V233 mezzi warning:', e.message));
+  v233EnsureMezziAggiunti().then(r => console.log('V234 mezzi assicurati:', JSON.stringify(r))).catch(e => console.log('V234 mezzi warning:', e.message));
 });
 
 
