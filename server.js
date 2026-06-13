@@ -754,8 +754,9 @@ async function v235RunDiskCleanup(mode='auto'){
   result.tmp = v235CleanupDir(tempDir, aggressive ? 15*60*1000 : 6*60*60*1000, 'tmp');
   // uploads: copie temporanee; dopo qualche ora non devono più stare lì.
   result.uploads = v235CleanupDir(uploadDir, aggressive ? 60*60*1000 : 12*60*60*1000, 'uploads');
-  // contracts: PDF/ICS locali già copiati su Drive; tenerli pochi giorni per anteprime recenti.
-  result.contracts = v235CleanupDir(contractsDir, aggressive ? 3*24*60*60*1000 : 7*24*60*60*1000, 'contracts');
+  // V237: NON pulire automaticamente contractsDir.
+  // I PDF locali possono essere ancora letti da email/WhatsApp/anteprime; cancellarli causava ENOENT e crash Render.
+  result.contracts = {deleted:0, bytes:0, skipped:'V237 contracts protetti'};
   result.firme = v235CleanupDir(firmeDir, aggressive ? 7*24*60*60*1000 : 30*24*60*60*1000, 'firme');
   result.synced = await v235CleanupLocalSyncedFiles();
   return result;
@@ -1496,7 +1497,7 @@ window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll(
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V235 ANTI DISCO PIENO</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V237 STABILE ENOENT</small></h1></header>
 <main>${title === 'Dashboard' ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>`}${content}</main>
 </body>
 </html>`;
@@ -1899,10 +1900,17 @@ function cleanupLocalAfterDriveV151(localPath){
   try {
     if (!localPath) return;
     const full = path.resolve(String(localPath));
-    const allowed = [path.resolve(uploadDir), path.resolve(tempDir), path.resolve(contractsDir)];
+    const ext = path.extname(full).toLowerCase();
+    // V237: mai cancellare PDF/ICS da contractsDir: alcune route/email/WA li rileggono dopo.
+    const contractsRoot = path.resolve(contractsDir);
+    if ((full.startsWith(contractsRoot + path.sep) || full === contractsRoot) && (ext === '.pdf' || ext === '.ics')) {
+      console.log('V237 keep local contract file:', full);
+      return;
+    }
+    const allowed = [path.resolve(uploadDir), path.resolve(tempDir)];
     if (!allowed.some(d => full.startsWith(d + path.sep) || full === d)) return;
     if (fs.existsSync(full)) fs.unlinkSync(full);
-  } catch(e) { console.log('V151 cleanup locale skip:', e.message); }
+  } catch(e) { console.log('V151/V237 cleanup locale skip:', e.message); }
 }
 
 async function sendEmail(to, subject, text, attachments) {
@@ -3384,7 +3392,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V235 ANTI DISCO PIENO</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V237 STABILE ENOENT</p>
       </div>
     `));
   } catch(e) {
@@ -5627,7 +5635,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V235 ANTI DISCO PIENO: PDF reali, video pulito, stati preventivo
+// V237 STABILE ENOENT: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
@@ -9879,7 +9887,7 @@ app.get('/admin/aggiungi-mezzi-v233', async (req,res)=>{
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log('DP RENT APP V235 anti disco pieno porta ' + PORT);
+  console.log('DP RENT APP V237 stabile ENOENT porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
   v233EnsureMezziAggiunti().then(r => console.log('V234 mezzi assicurati:', JSON.stringify(r))).catch(e => console.log('V234 mezzi warning:', e.message));
 });
@@ -11140,3 +11148,78 @@ syncContrattoDriveV63 = async function syncContrattoDriveV63_V178(prenotazioneId
 };
 
 console.log('DP RENT V178: email non duplica PDF Drive + blocco fallback duplicati');
+
+
+// =========================
+// V237 - FIX CRASH ENOENT PDF MANCANTE + CONTRATTI LOCALI PROTETTI
+// =========================
+(function v237InstallStabilityGuards(){
+  try {
+    const _origCreateReadStream = fs.createReadStream.bind(fs);
+    fs.createReadStream = function v237CreateReadStreamSafe(filePath, options){
+      const rs = _origCreateReadStream(filePath, options);
+      // Evita crash processo su ReadStream senza listener errore (ENOENT, file cancellato, ecc.).
+      rs.on('error', (err) => {
+        console.log('V237 ReadStream error gestito:', String(filePath || ''), err && err.message ? err.message : err);
+      });
+      return rs;
+    };
+  } catch(e) { console.log('V237 guard createReadStream non installato:', e.message); }
+  process.on('uncaughtException', (err) => {
+    console.error('V237 uncaughtException intercettata - server resta vivo:', err && (err.stack || err.message) || err);
+  });
+  process.on('unhandledRejection', (reason) => {
+    console.error('V237 unhandledRejection intercettata - server resta vivo:', reason && (reason.stack || reason.message) || reason);
+  });
+})();
+
+function v237IsContractLocalFile(file){
+  try {
+    if(!file) return false;
+    const full = path.resolve(String(file));
+    const root = path.resolve(contractsDir);
+    return (full.startsWith(root + path.sep) || full === root);
+  } catch(_) { return false; }
+}
+
+async function v237EnsurePdfForPrenotazione(id, opts={}){
+  const prenId = String(id || '').trim();
+  if(!prenId) throw new Error('ID contratto mancante');
+  let p = null;
+  try { p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [prenId]); } catch(_) {}
+  if(p && p.pdf_path && fs.existsSync(p.pdf_path)) return p.pdf_path;
+  // Se il file in DB non esiste più, rigenera invece di leggere un percorso morto.
+  const pdf = await generaPdfContratto(prenId, { skipDrive:true, forceDrive: !!opts.forceDrive });
+  if(!pdf || !fs.existsSync(pdf)) throw new Error('PDF non trovato e rigenerazione fallita');
+  try { await run(`UPDATE prenotazioni SET pdf_path=? WHERE id=?`, [pdf, prenId]); } catch(_) {}
+  return pdf;
+}
+
+// V237: non cancellare più PDF/ICS locali da contractsDir. Si puliscono solo tmp/uploads.
+try {
+  const _v235RunDiskCleanup = typeof v235RunDiskCleanup === 'function' ? v235RunDiskCleanup : null;
+  if (_v235RunDiskCleanup) {
+    v235RunDiskCleanup = async function v237RunDiskCleanupNoContracts(mode='auto'){
+      const result = await _v235RunDiskCleanup(mode).catch(e=>({error:e.message}));
+      if(result && result.contracts) result.contracts = {deleted:0, bytes:0, skipped:'V237: contractsDir protetta'};
+      return result;
+    };
+  }
+} catch(e) { console.log('V237 override cleanup skip:', e.message); }
+
+// V237: endpoint manuale sicuro: pulisce solo temporanei/upload vecchi, mai contracts.
+app.get('/admin/pulisci-spazio-sicuro', async (req,res)=>{
+  try{
+    const before = (typeof v235DiskRowsHtml === 'function') ? v235DiskRowsHtml() : '';
+    const r = {
+      tmp: (typeof v235CleanupDir === 'function') ? v235CleanupDir(tempDir, 10*60*1000, 'tmp-safe') : null,
+      uploads: (typeof v235CleanupDir === 'function') ? v235CleanupDir(uploadDir, 2*60*60*1000, 'uploads-safe') : null,
+      contracts: {deleted:0, bytes:0, skipped:'protetti V237'},
+      synced: (typeof v235CleanupLocalSyncedFiles === 'function') ? await v235CleanupLocalSyncedFiles() : null
+    };
+    const after = (typeof v235DiskRowsHtml === 'function') ? v235DiskRowsHtml() : '';
+    res.send(page('Pulizia spazio sicura', `<div class="box"><h2>✅ Pulizia spazio sicura V237</h2><p class="notice">Puliti solo tmp/uploads. I PDF contratti locali NON vengono cancellati per evitare crash ENOENT.</p><h3>Prima</h3><table><tr><th>Cartella</th><th>Percorso</th><th>File</th><th>Spazio</th></tr>${before}</table><h3>Dopo</h3><table><tr><th>Cartella</th><th>Percorso</th><th>File</th><th>Spazio</th></tr>${after}</table><pre>${esc(JSON.stringify(r,null,2))}</pre><a class="btn" href="/admin/spazio-disco">Spazio disco</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+  }catch(e){ res.status(500).send(page('Errore pulizia sicura', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(e.message)}</pre></div>`)); }
+});
+
+console.log('DP RENT V237: anti crash ENOENT PDF mancante + contractsDir protetta');
