@@ -2458,8 +2458,7 @@ async function generaPdfContratto(id, opts = {}) {
   doc.moveTo(sig1X, fy + 35).lineTo(sig1X + sigW, fy + 35).strokeColor('#222').lineWidth(0.6).stroke();
   doc.moveTo(sig2X, fy + 35).lineTo(sig2X + sigW, fy + 35).strokeColor('#222').lineWidth(0.6).stroke();
   fitText('Firma Cliente / Conducente', sig1X - 4, fy + 39, sigW + 8, 8, 4.9, false, BLACK, {align:'center'});
-  fitText('Firma DP RENT', sig2X - 4, fy + 39, sigW + 8, 8, 4.9, false, BLACK, {align:'center'});
-
+  
   // V238: firma lato DP sempre presente sul PDF.
   // Serve per inviare tutto via mail/WhatsApp senza stampare e firmare manualmente.
   // La firma cliente resta separata e viene inserita solo quando il cliente firma.
@@ -2469,8 +2468,8 @@ async function generaPdfContratto(id, opts = {}) {
   try {
     const firmaDp = DP_V239_FIRMA_DP_PATH || path.join(publicDir, 'firma_dp.png');
     if (firmaDp && fs.existsSync(firmaDp)) {
-      doc.image(firmaDp, sig2X + 2, fy + 12, { fit: [sigW - 4, 22] });
-      fitText('Trasporti DP S.r.l. - DP RENT', sig2X - 4, fy + 38, sigW + 8, 7, 4.6, false, BLACK, {align:'center'});
+      doc.image(firmaDp, sig2X + 2, fy + 4, { fit: [sigW - 4, 26] });
+      fitText('Trasporti DP S.r.l. - DP RENT', sig2X - 4, fy + 44, sigW + 8, 7, 4.6, false, BLACK, {align:'center'});
     } else {
       doc.roundedRect(sig2X + 4, fy + 16, sigW - 8, 17, 4).fillAndStroke('#fff5f5', RED);
       fitText('TRASPORTI DP S.R.L.', sig2X + 8, fy + 18.2, sigW - 16, 5, 4.6, true, RED, { align:'center' });
