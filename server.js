@@ -633,6 +633,118 @@ app.use('/public', express.static(publicDir));
 app.use('/uploads', express.static(uploadDir));
 app.use('/contracts', express.static(contractsDir));
 
+
+// =========================
+// V243 - DP RENT vista 360 reale da foto per pulmino GV145TP/CV145TP
+// Modifica isolata: non tocca planning, contratti, WhatsApp, CaRGOS.
+// Le immagini nello ZIP vengono copiate una volta nel disco persistente Render.
+// =========================
+const DP360_BUNDLED_DIR = path.join(__dirname, 'public', 'mezzi360');
+const DP360_PUBLIC_DIR = path.join(publicDir, 'mezzi360');
+function dp360NormTarga(t){ return String(t||'').toUpperCase().replace(/[^A-Z0-9]/g,''); }
+function dp360FolderKey(targa){
+  const t = dp360NormTarga(targa);
+  if (t === 'GV145TP' || t === 'CV145TP') return 'gv145tp';
+  return t.toLowerCase();
+}
+function dp360EnsureAssets(){
+  try{
+    const srcRoot = DP360_BUNDLED_DIR;
+    if(!fs.existsSync(srcRoot)) return;
+    fs.mkdirSync(DP360_PUBLIC_DIR, {recursive:true});
+    const entries = fs.readdirSync(srcRoot, {withFileTypes:true}).filter(e=>e.isDirectory());
+    for(const e of entries){
+      const src = path.join(srcRoot, e.name);
+      const dst = path.join(DP360_PUBLIC_DIR, e.name);
+      fs.mkdirSync(dst, {recursive:true});
+      const files = fs.readdirSync(src).filter(f=>/\.(jpe?g|png|webp)$/i.test(f)).sort();
+      const dstCount = fs.existsSync(dst) ? fs.readdirSync(dst).filter(f=>/\.(jpe?g|png|webp)$/i.test(f)).length : 0;
+      if(dstCount >= files.length && files.length) continue;
+      for(const f of files){
+        const sf = path.join(src, f);
+        const df = path.join(dst, f);
+        if(!fs.existsSync(df) || fs.statSync(df).size < 1000) fs.copyFileSync(sf, df);
+      }
+      console.log('V243 360 assets copiati:', e.name, files.length);
+    }
+  }catch(e){ console.log('V243 360 assets skip:', e.message); }
+}
+dp360EnsureAssets();
+function dp360ListImages(targa){
+  try{
+    const key = dp360FolderKey(targa);
+    const dir = path.join(DP360_PUBLIC_DIR, key);
+    if(!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir)
+      .filter(f=>/\.(jpe?g|png|webp)$/i.test(f))
+      .sort((a,b)=>a.localeCompare(b, undefined, {numeric:true}))
+      .map(f=>`/public/mezzi360/${encodeURIComponent(key)}/${encodeURIComponent(f)}`);
+  }catch(e){ return []; }
+}
+function dp360Has(targa){ return dp360ListImages(targa).length > 0; }
+function dp360Badge(targa){
+  const n = dp360ListImages(targa).length;
+  return n ? `<a class="btn" style="background:#111;color:#fff;padding:8px 10px;border-radius:14px;text-decoration:none" href="/cliente/mezzo-360/${encodeURIComponent(dp360NormTarga(targa))}" target="_blank">🔄 360 (${n})</a>` : '';
+}
+function dp360ViewerHtml(targa, titolo){
+  const imgs = dp360ListImages(targa);
+  if(!imgs.length){
+    return page('Vista 360 non disponibile', `<div class="box"><h2 class="bad">Vista 360 non disponibile</h2><p>Nessuna foto 360 trovata per ${esc(targa)}.</p><a class="btn" href="/video-mezzi">Torna video mezzi</a></div>`);
+  }
+  const jsImgs = JSON.stringify(imgs);
+  return page('Vista 360 ' + (titolo || targa), `
+    <div class="dp-one-page">
+      <section class="dp-home-hero" style="margin-bottom:12px">
+        <h2>🔄 Vista 360° ${esc(titolo || targa)}</h2>
+        <p>Trascina con il dito a destra/sinistra. Su iPhone puoi anche usare due dita per zoomare.</p>
+      </section>
+      <div class="box" style="padding:10px;background:#050505;border-radius:22px;overflow:hidden">
+        <div id="dp360box" style="position:relative;width:100%;height:70vh;max-height:760px;min-height:360px;display:flex;align-items:center;justify-content:center;touch-action:none;user-select:none;background:linear-gradient(180deg,#111,#000);border-radius:18px;overflow:hidden">
+          <img id="dp360img" src="${esc(imgs[0])}" style="max-width:100%;max-height:100%;object-fit:contain;transform-origin:center center;transition:opacity .08s ease;" draggable="false" alt="Vista 360">
+          <div id="dp360counter" style="position:absolute;left:12px;bottom:12px;background:rgba(255,255,255,.88);color:#111;font-weight:900;padding:8px 12px;border-radius:999px">1 / ${imgs.length}</div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;justify-content:center;margin-top:12px;flex-wrap:wrap">
+          <button class="btn" type="button" onclick="dp360Step(-1)">◀</button>
+          <button class="btn" type="button" onclick="dp360Auto()">▶ Auto</button>
+          <button class="btn" type="button" onclick="dp360Step(1)">▶</button>
+          <button class="btn btn2" type="button" onclick="dp360Zoom(1.15)">＋ Zoom</button>
+          <button class="btn btn2" type="button" onclick="dp360Zoom(1/1.15)">－ Zoom</button>
+        </div>
+        <p style="color:#fff;text-align:center;font-weight:900;margin:12px 0 4px">${imgs.length} foto 360 caricate</p>
+      </div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px">
+        <a class="btn btn2" href="/video-mezzi">🎥 Video mezzi</a>
+        <a class="btn" href="/">🏠 Dashboard</a>
+      </div>
+    </div>
+    <script>
+      const dp360Images = ${jsImgs};
+      let dp360Index = 0, dp360Dragging = false, dp360StartX = 0, dp360Scale = 1, dp360Timer = null;
+      const dp360Img = document.getElementById('dp360img');
+      const dp360Counter = document.getElementById('dp360counter');
+      const dp360Box = document.getElementById('dp360box');
+      dp360Images.forEach(src => { const im = new Image(); im.src = src; });
+      function dp360Show(){ dp360Img.src = dp360Images[dp360Index]; dp360Counter.textContent = (dp360Index+1)+' / '+dp360Images.length; dp360Img.style.transform = 'scale('+dp360Scale+')'; }
+      function dp360Step(delta){ dp360Index = (dp360Index + delta + dp360Images.length) % dp360Images.length; dp360Show(); }
+      function dp360Zoom(f){ dp360Scale = Math.max(1, Math.min(3, dp360Scale * f)); dp360Show(); }
+      function dp360Auto(){ if(dp360Timer){ clearInterval(dp360Timer); dp360Timer=null; return; } dp360Timer=setInterval(()=>dp360Step(1), 120); }
+      function clientX(e){ return (e.touches && e.touches[0]) ? e.touches[0].clientX : e.clientX; }
+      dp360Box.addEventListener('mousedown', e => { dp360Dragging=true; dp360StartX=clientX(e); });
+      dp360Box.addEventListener('touchstart', e => { dp360Dragging=true; dp360StartX=clientX(e); }, {passive:true});
+      window.addEventListener('mouseup', ()=>dp360Dragging=false);
+      window.addEventListener('touchend', ()=>dp360Dragging=false);
+      window.addEventListener('mousemove', e => { if(!dp360Dragging) return; const x=clientX(e); if(Math.abs(x-dp360StartX)>18){ dp360Step(x>dp360StartX?-1:1); dp360StartX=x; }});
+      window.addEventListener('touchmove', e => { if(!dp360Dragging) return; const x=clientX(e); if(Math.abs(x-dp360StartX)>18){ dp360Step(x>dp360StartX?-1:1); dp360StartX=x; }}, {passive:true});
+    </script>
+  `);
+}
+app.get('/cliente/mezzo-360/:targa', async (req,res)=>{
+  const t = dp360NormTarga(req.params.targa);
+  const m = await get(`SELECT * FROM mezzi WHERE UPPER(REPLACE(targa,' ',''))=?`, [t]).catch(()=>null);
+  res.send(dp360ViewerHtml(t, m ? `${m.targa} - ${m.modello || m.marca || ''}` : t));
+});
+app.get('/mezzo-360/:targa', (req,res)=>res.redirect('/cliente/mezzo-360/'+encodeURIComponent(req.params.targa)));
+
 app.get('/logo.png', (req,res)=>res.sendFile(path.join(publicDir,'logo.png')));
 app.get('/logo-dp-rent-premium.jpg', (req,res)=>res.sendFile(path.join(publicDir,'logo-dp-rent-premium.jpg')));
 
@@ -1516,7 +1628,7 @@ window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll(
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V241 VIDEO BADGE 360</small></h1></header>
+<header>${logoHtml}<h1>DP RENT APP <small style="font-size:13px;color:#ddd">V237 STABILE ENOENT</small></h1></header>
 <main>${title === 'Dashboard' ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button><a class="home-btn" href="/">Dashboard</a></div>`}${content}</main>
 </body>
 </html>`;
@@ -3427,7 +3539,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V241 VIDEO BADGE 360</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V237 STABILE ENOENT</p>
       </div>
     `));
   } catch(e) {
@@ -3444,30 +3556,15 @@ app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
 // =========================
 app.get('/video-mezzi', async (req,res)=>{
   const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
-  const stats = await Promise.all((mezzi||[]).map(async m=>{
-    let count=null, err='';
-    try{
-      const folder=await dpV223FindVideoFolderByTarga(m.targa);
-      if(folder){
-        const videos=await dpV223ListVideoFiles(folder.id);
-        count=videos.length;
-      } else {
-        count=0;
-      }
-    }catch(e){ count=null; err=e.message; }
-    return {m,count,err};
+  const cardsArr = await Promise.all((mezzi||[]).map(async m=>{
+    let nVideo=0;
+    try{ const folder=await dpV223FindVideoFolderByTarga(m.targa); if(folder){ const v=await dpV223ListVideoFiles(folder.id); nVideo=(v||[]).length; } }catch(e){}
+    const videoBadge = nVideo>0 ? `<span style="display:inline-block;background:#0b7a27;color:#fff;font-weight:900;padding:6px 10px;border-radius:999px">🎥 ${nVideo}</span>` : `<span style="display:inline-block;background:#777;color:#fff;font-weight:900;padding:6px 10px;border-radius:999px">🎥 0</span>`;
+    const badge360 = dp360Badge(m.targa);
+    return `<div class="dp-video-card"><h2>${videoBadge} ${badge360} ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Gestisci video</a>${badge360?`<a class="btn btn2" target="_blank" href="/cliente/mezzo-360/${encodeURIComponent(dp360NormTarga(m.targa))}">🔄 Vista 360 cliente</a>`:''}</div></div>`;
   }));
-  const cards=stats.map(({m,count,err})=>{
-    const badge = count===null
-      ? `<span class="dp-video-badge bad">⚠️ errore</span>`
-      : count>1
-        ? `<a class="dp-video-badge warn" href="/video-mezzi/${m.id}">🎥 ${count} video</a>`
-        : count===1
-          ? `<a class="dp-video-badge ok" href="/video-mezzi/${m.id}">🎥 1 video</a>`
-          : `<a class="dp-video-badge zero" href="/video-mezzi/${m.id}">❌ 0 video</a>`;
-    return `<div class="dp-video-card"><h2>🎥 ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><p>${badge}</p>${err?`<small class="bad">${esc(err)}</small>`:''}<div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Gestisci video</a></div></div>`;
-  }).join('') || '<div class="box">Nessun mezzo trovato.</div>';
-  res.send(page('Video mezzi', `<style>.dp-video-badge{display:inline-block;border-radius:999px;padding:8px 14px;font-weight:900;text-decoration:none}.dp-video-badge.ok{background:#16a34a;color:white}.dp-video-badge.warn{background:#f59e0b;color:#111}.dp-video-badge.zero{background:#e5e7eb;color:#111}.dp-video-badge.bad{background:#dc2626;color:white}</style><div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Vedi subito quali targhe hanno video: verde = 1 video, arancio = più video da pulire, grigio = nessun video.</p></section>${cards}</div>`));
+  const cards=cardsArr.join('') || '<div class="box">Nessun mezzo trovato.</div>';
+  res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Carica video da telefono o PC. Ora vedi subito quanti video ha ogni targa e se è disponibile la Vista 360.</p></section>${cards}</div>`));
 });
 
 app.get('/video-mezzi/:id', async (req,res)=>{
@@ -3495,9 +3592,8 @@ app.get('/video-mezzi/:id', async (req,res)=>{
     </form>
     <div class="dp-video-actions">
       <a class="btn btn2" href="/video-mezzi">Torna video mezzi</a>
-      ${current?`<a class="btn" href="/video-mezzi/${m.id}/360">🔄 Prova 360 da ultimo video</a>`:''}
-      ${current?`<a class="btn" href="/cliente/mezzo/${m.id}/360">👤 Link cliente 360</a>`:''}
       ${folder?`<a class="btn" target="_blank" href="${esc(folder.webViewLink||'')}">📂 Apri cartella Drive del mezzo</a>`:''}
+      ${dp360Has(m.targa)?`<a class="btn" target="_blank" href="/cliente/mezzo-360/${encodeURIComponent(dp360NormTarga(m.targa))}">🔄 Vista 360 cliente</a>`:''}
     </div>
   </div></div>`));
 });
@@ -3519,99 +3615,6 @@ app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
     try{ if(req.file && req.file.path) fs.unlinkSync(req.file.path); }catch(_){}
     res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore caricamento video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
   }
-});
-
-
-// =========================
-// V241 SAFE: 360 da ultimo video già caricato su Drive.
-// Non duplica video, non tocca contratti, planning, WhatsApp o CaRGOS.
-// =========================
-async function dpV241GetLastVideoForMezzo(id){
-  const m=await get(`SELECT * FROM mezzi WHERE id=?`,[id]).catch(()=>null);
-  if(!m) return {m:null, folder:null, current:null, videos:[]};
-  const folder=await dpV223FindVideoFolderByTarga(m.targa);
-  let videos=[];
-  if(folder) videos=await dpV223ListVideoFiles(folder.id);
-  return {m, folder, current:videos[0]||null, videos};
-}
-
-app.get('/video-mezzi/:id/video-stream', async (req,res)=>{
-  try{
-    const {m,current}=await dpV241GetLastVideoForMezzo(req.params.id);
-    if(!m || !current) return res.status(404).send('Video non trovato');
-    const d=await dpV223DriveApi();
-    const range=req.headers.range;
-    const opt={responseType:'stream'};
-    if(range) opt.headers={Range:range};
-    const r=await d.files.get({fileId:current.id, alt:'media', supportsAllDrives:true}, opt);
-    res.setHeader('Content-Type', current.mimeType || 'video/mp4');
-    if(r.headers && r.headers['content-length']) res.setHeader('Content-Length', r.headers['content-length']);
-    if(r.headers && r.headers['content-range']) { res.status(206); res.setHeader('Content-Range', r.headers['content-range']); }
-    res.setHeader('Accept-Ranges','bytes');
-    r.data.on('error', e=>{ try{ console.error('V241 stream video error', e.message); res.end(); }catch(_){} });
-    r.data.pipe(res);
-  }catch(e){
-    console.error('V241 video stream error', e);
-    res.status(500).send('Errore video: '+(e.message||e));
-  }
-});
-
-function dpV241Html360(m, isCliente){
-  const back = isCliente ? `/cliente` : `/video-mezzi/${m.id}`;
-  const prenota = isCliente ? `<a class="btn" href="/cliente?noleggio=1&mezzo=${encodeURIComponent(m.targa||'')}">📅 Prenota ora</a>` : '';
-  return page('Vista 360 DP RENT', `
-    <div class="dp-one-page">
-      <section class="dp-home-hero">
-        <h2>🔄 Vista 360° DP RENT</h2>
-        <p>${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</p>
-        <p>Trascina la barra o il video per muoverti avanti e indietro.</p>
-      </section>
-      <div class="box">
-        <video id="dp360video" playsinline muted preload="metadata" style="width:100%;border-radius:22px;background:#111;box-shadow:0 12px 30px #0003">
-          <source src="/video-mezzi/${m.id}/video-stream" type="video/mp4">
-        </video>
-        <input id="dp360range" type="range" min="0" max="1000" value="0" style="width:100%;margin:22px 0;height:42px">
-        <div class="dp-video-actions">
-          <button type="button" onclick="dp360Play()">▶️ Play</button>
-          <button type="button" onclick="dp360Pause()">⏸️ Stop</button>
-          ${prenota}
-          <a class="btn btn2" href="${back}">Torna</a>
-        </div>
-        <p class="notice"><b>Demo 360:</b> usa lo stesso ultimo video caricato nella scheda mezzo. Non crea copie e non modifica Drive.</p>
-      </div>
-      <script>
-        const v=document.getElementById('dp360video');
-        const r=document.getElementById('dp360range');
-        let ready=false, dragging=false;
-        v.addEventListener('loadedmetadata',()=>{ready=true;});
-        r.addEventListener('input',()=>{ if(!ready || !v.duration) return; dragging=true; v.currentTime=(Number(r.value)/1000)*v.duration; });
-        r.addEventListener('change',()=>{dragging=false;});
-        v.addEventListener('timeupdate',()=>{ if(!ready || dragging || !v.duration) return; r.value=Math.round((v.currentTime/v.duration)*1000); });
-        let sx=null, st=0;
-        v.addEventListener('touchstart',e=>{ if(!ready || !v.duration) return; sx=e.touches[0].clientX; st=v.currentTime; }, {passive:true});
-        v.addEventListener('touchmove',e=>{ if(sx===null || !ready || !v.duration) return; const dx=e.touches[0].clientX-sx; v.currentTime=Math.max(0, Math.min(v.duration, st + dx/140*v.duration)); }, {passive:true});
-        function dp360Play(){ v.play(); }
-        function dp360Pause(){ v.pause(); }
-      </script>
-    </div>`);
-}
-
-app.get('/video-mezzi/:id/360', async (req,res)=>{
-  try{
-    const {m,current}=await dpV241GetLastVideoForMezzo(req.params.id);
-    if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
-    if(!current) return res.send(page('Vista 360',`<div class="box"><h2>🔄 Vista 360° DP RENT</h2><p class="notice"><b>Nessun video trovato per questo mezzo.</b> Prima carica un video da Gestione Video Mezzi.</p><a class="btn" href="/video-mezzi/${m.id}">Torna al mezzo</a></div>`));
-    res.send(dpV241Html360(m,false));
-  }catch(e){ res.status(500).send(page('Errore 360',`<div class="box"><h2 class="bad">Errore 360</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi">Torna</a></div>`)); }
-});
-
-app.get('/cliente/mezzo/:id/360', async (req,res)=>{
-  try{
-    const {m,current}=await dpV241GetLastVideoForMezzo(req.params.id);
-    if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2></div>`));
-    if(!current) return res.send(page('Vista 360',`<div class="box"><h2>🔄 Vista 360° DP RENT</h2><p class="notice"><b>Nessun video disponibile per questo mezzo.</b></p><a class="btn" href="/cliente">Torna</a></div>`));
-    res.send(dpV241Html360(m,true));
-  }catch(e){ res.status(500).send(page('Errore 360',`<div class="box"><h2 class="bad">Errore 360</h2><pre>${esc(e.message)}</pre></div>`)); }
 });
 
 app.post('/video-mezzi/:id/delete', async (req,res)=>{
@@ -3780,6 +3783,7 @@ app.get('/mezzo/:id', async (req, res) => {
       </form>
       <ul>${lista}</ul>
       <a class="btn" href="/nuova-prenotazione?mezzo_id=${m.id}">Prenota questo mezzo</a>
+      ${dp360Has(m.targa)?`<a class="btn btn2" target="_blank" href="/cliente/mezzo-360/${encodeURIComponent(dp360NormTarga(m.targa))}">🔄 Vista 360 cliente</a>`:''}
     </div>
   `));
 });
@@ -5787,7 +5791,7 @@ function condizioniHtmlV40() {
 
 
 // =========================
-// V241 VIDEO BADGE 360: PDF reali, video pulito, stati preventivo
+// V237 STABILE ENOENT: PDF reali, video pulito, stati preventivo
 // =========================
 function dpV223DateIt(v){
   if(!v) return '';
