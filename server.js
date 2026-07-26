@@ -531,13 +531,19 @@ app.get('/clausole.pdf', (req, res) => sendPdfDocumentoStatico(res, 'clausole.pd
 app.get('/privacy_file.pdf', (req, res) => sendPdfDocumentoStatico(res, 'privacy_file.pdf', 'Informativa privacy'));
 app.get('/terms_file.pdf', (req, res) => sendPdfDocumentoStatico(res, 'terms_file.pdf', 'Condizioni generali di noleggio'));
 
+app.get('/cookie-policy', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.send(`<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Cookie Policy - DP RENT</title><style>body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;background:#f3f4f6;color:#171717;margin:0;padding:24px}.box{max-width:820px;margin:auto;background:#fff;border-radius:20px;padding:26px;box-shadow:0 12px 35px rgba(0,0,0,.1);border-top:7px solid #c60000}h1{margin-top:0}a{color:#b00000}.note{background:#f7f7f7;border-left:4px solid #c60000;padding:14px;border-radius:8px}</style></head><body><main class="box"><h1>Cookie Policy DP RENT</h1><p><b>Titolare:</b> Trasporti DP S.r.l., Via Tuderte 466, Narni Scalo (TR).</p><p>Questa applicazione utilizza esclusivamente cookie tecnici necessari al funzionamento e alla sicurezza del servizio, compreso il cookie di autenticazione riservato all’ufficio. Tali cookie non vengono utilizzati per profilazione pubblicitaria.</p><div class="note"><b>Cookie amministrativo:</b> viene creato solo dopo il login del personale autorizzato, è HttpOnly, ha durata limitata ed è usato per impedire accessi non autorizzati alle pagine interne.</div><p>Le pagine cliente possono essere utilizzate senza cookie pubblicitari o di profilazione. Qualora in futuro vengano aggiunti strumenti di analisi o marketing non strettamente necessari, questa informativa e il relativo sistema di scelta saranno aggiornati prima dell’attivazione.</p><p>Per il trattamento dei dati personali consulta l’<a href="${DP_PRIVACY_URL}" target="_blank" rel="noopener">Informativa Privacy</a>.</p><p><a href="javascript:history.back()">Torna indietro</a></p></main></body></html>`);
+});
+
 const PORT = process.env.PORT || 10000;
 
 app.use(bodyParser.urlencoded({ extended: true, limit: '80mb' }));
 app.use(bodyParser.json({ limit: '80mb' }));
 
 // ============================================================
-// V267 SICUREZZA ACCESSI DP RENT
+// V268 SICUREZZA ACCESSI + PRIVACY GDPR DP RENT
 // Protegge tutto il gestionale con login amministratore.
 // Le sole pagine cliente esplicitamente elencate restano pubbliche.
 // Configurare su Render:
@@ -667,7 +673,7 @@ function dpIsPublicRoute(req) {
   const p = String(req.path || '/');
 
   if (p === '/accesso-dp' || p === '/esci-dp') return true;
-  if (p === '/privacy' || p === '/condizioni' || p === '/condizioni-noleggio' || p === '/termini-noleggio') return true;
+  if (p === '/privacy' || p === '/condizioni' || p === '/condizioni-noleggio' || p === '/termini-noleggio' || p === '/cookie-policy') return true;
   if (p === '/privacy.pdf' || p === '/clausole.pdf' || p === '/privacy_file.pdf' || p === '/terms_file.pdf') return true;
   if (p === '/logo.png' || p === '/logo-dp-rent-premium.jpg' || p === '/versione') return true;
 
@@ -692,6 +698,37 @@ function dpIsPublicRoute(req) {
   return false;
 }
 
+const DP_LOGIN_ATTEMPTS = new Map();
+const DP_LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const DP_LOGIN_MAX_ATTEMPTS = 8;
+
+function dpClientIp(req) {
+  const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwarded || req.ip || req.socket?.remoteAddress || 'unknown';
+}
+
+function dpLoginAttemptState(req) {
+  const key = dpClientIp(req);
+  const now = Date.now();
+  let state = DP_LOGIN_ATTEMPTS.get(key);
+  if (!state || now - state.startedAt > DP_LOGIN_WINDOW_MS) {
+    state = { count: 0, startedAt: now };
+    DP_LOGIN_ATTEMPTS.set(key, state);
+  }
+  return { key, state, now };
+}
+
+function dpRegisterFailedLogin(req) {
+  const x = dpLoginAttemptState(req);
+  x.state.count += 1;
+  DP_LOGIN_ATTEMPTS.set(x.key, x.state);
+  return x.state.count;
+}
+
+function dpClearFailedLogins(req) {
+  DP_LOGIN_ATTEMPTS.delete(dpClientIp(req));
+}
+
 app.get('/accesso-dp', (req, res) => {
   if (dpIsAdminAuthenticated(req)) return res.redirect('/');
   res.setHeader('Cache-Control', 'no-store');
@@ -702,14 +739,22 @@ app.get('/accesso-dp', (req, res) => {
 
 app.post('/accesso-dp', (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  const attempt = dpLoginAttemptState(req);
+  if (attempt.state.count >= DP_LOGIN_MAX_ATTEMPTS) {
+    const waitMin = Math.max(1, Math.ceil((DP_LOGIN_WINDOW_MS - (attempt.now - attempt.state.startedAt)) / 60000));
+    res.setHeader('Retry-After', String(waitMin * 60));
+    return res.status(429).send(dpLoginHtml(`Troppi tentativi non riusciti. Riprova tra circa ${waitMin} minuti.`));
+  }
   if (!DP_ADMIN_PASSWORD) {
     return res.status(503).send(dpLoginHtml('Accesso non configurato. Imposta DP_ADMIN_PASSWORD su Render.'));
   }
   const userOk = dpSafeEqual(String(req.body?.username || ''), DP_ADMIN_USER);
   const passOk = dpSafeEqual(String(req.body?.password || ''), DP_ADMIN_PASSWORD);
   if (!userOk || !passOk) {
+    dpRegisterFailedLogin(req);
     return res.status(401).send(dpLoginHtml('Utente o password non corretti.'));
   }
+  dpClearFailedLogins(req);
   dpSetAuthCookie(res);
   const next = String(req.body?.next || '/');
   const safeNext = next.startsWith('/') && !next.startsWith('//') ? next : '/';
@@ -1794,18 +1839,36 @@ function euro(v) { return Number(v || 0).toFixed(2); }
 const DP_PRIVACY_URL = process.env.DP_PRIVACY_URL || '/privacy_file.pdf';
 const DP_TERMS_URL = process.env.DP_TERMS_URL || '/terms_file.pdf';
 
+const DP_PRIVACY_VERSION = String(process.env.DP_PRIVACY_VERSION || '2026-07-26');
+const DP_TERMS_VERSION = String(process.env.DP_TERMS_VERSION || '2026-07-26');
+
 function privacyCheckboxHtml() {
   return `
-    <div class="notice">
-      <label style="display:flex;gap:8px;align-items:flex-start">
-        <input type="checkbox" name="accetta_privacy_termini" value="SI" required style="width:auto;margin-top:4px">
+    <div class="notice" style="margin-top:18px">
+      <h3 style="margin:0 0 12px">Privacy e condizioni</h3>
+      <label style="display:flex;gap:10px;align-items:flex-start;margin:10px 0">
+        <input type="checkbox" name="privacy_presa_visione" value="SI" required style="width:auto;margin-top:4px;transform:scale(1.2)">
         <span>
-          Dichiaro di aver letto e accettare
-          <a target="_blank" href="${DP_PRIVACY_URL}">Privacy</a>
-          e
-          <a target="_blank" href="${DP_TERMS_URL}">Condizioni generali di noleggio</a>.
+          Dichiaro di aver letto l’<a target="_blank" rel="noopener" href="${DP_PRIVACY_URL}"><b>Informativa Privacy</b></a>.
+          <small style="display:block;color:#555">Presa visione obbligatoria per inviare i dati della prenotazione.</small>
         </span>
       </label>
+      <label style="display:flex;gap:10px;align-items:flex-start;margin:10px 0">
+        <input type="checkbox" name="condizioni_accettate" value="SI" required style="width:auto;margin-top:4px;transform:scale(1.2)">
+        <span>
+          Accetto le <a target="_blank" rel="noopener" href="${DP_TERMS_URL}"><b>Condizioni generali di noleggio</b></a>.
+        </span>
+      </label>
+      <label style="display:flex;gap:10px;align-items:flex-start;margin:10px 0">
+        <input type="checkbox" name="marketing_consenso" value="SI" style="width:auto;margin-top:4px;transform:scale(1.2)">
+        <span>
+          Acconsento a ricevere offerte e comunicazioni promozionali DP RENT.
+          <small style="display:block;color:#555">Facoltativo: la prenotazione può essere inviata anche senza selezionarlo.</small>
+        </span>
+      </label>
+      <div style="margin-top:12px;font-size:13px">
+        <a target="_blank" rel="noopener" href="/cookie-policy">Cookie Policy</a>
+      </div>
     </div>
   `;
 }
@@ -5545,7 +5608,8 @@ async function ensureClienteWebColumnsV92(){
     patente_numero:'TEXT', patente_scadenza:'TEXT', patente_rilascio:'TEXT', categoria_patente:'TEXT',
     conducente1_cf:'TEXT', conducente1_doc_numero:'TEXT', conducente1_doc_scadenza:'TEXT', conducente1_patente_numero:'TEXT', conducente1_patente_scadenza:'TEXT', conducente1_categoria_patente:'TEXT',
     conducente2_cf:'TEXT', conducente2_data_nascita:'TEXT', conducente2_doc_scadenza:'TEXT', conducente2_patente_scadenza:'TEXT', conducente2_categoria_patente:'TEXT', tipo_cliente:'TEXT', partita_iva:'TEXT', piva:'TEXT', ragione_sociale:'TEXT', pec:'TEXT', codice_sdi:'TEXT', sdi:'TEXT', indirizzo_fatturazione:'TEXT', citta_fatturazione:'TEXT', provincia_fatturazione:'TEXT', cap_fatturazione:'TEXT',
-    provincia:'TEXT', citta:'TEXT', cap:'TEXT', giorni:'INTEGER', km_previsti:'TEXT', extra_fuori_orario:'REAL', extra_km:'REAL', imponibile:'REAL', iva:'REAL', cauzione:'REAL', tipo_record:'TEXT', note:'TEXT'
+    provincia:'TEXT', citta:'TEXT', cap:'TEXT', giorni:'INTEGER', km_previsti:'TEXT', extra_fuori_orario:'REAL', extra_km:'REAL', imponibile:'REAL', iva:'REAL', cauzione:'REAL', tipo_record:'TEXT', note:'TEXT',
+    privacy_presa_visione_at:'TEXT', privacy_versione:'TEXT', condizioni_accettate_at:'TEXT', condizioni_versione:'TEXT', marketing_consenso:'TEXT', consenso_ip:'TEXT', consenso_user_agent:'TEXT'
   };
   for (const [c,t] of Object.entries(cols)) await run(`ALTER TABLE prenotazioni ADD COLUMN ${c} ${t}`).catch(()=>{});
 }
@@ -5799,6 +5863,15 @@ app.post('/prenota-cliente', upload.fields([
   try {
     await ensureClienteWebColumnsV92();
     const b = req.body || {};
+    if (String(b.privacy_presa_visione || '').toUpperCase() !== 'SI') {
+      return res.status(400).send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Informativa Privacy</h1><p>Per inviare la richiesta devi dichiarare di aver letto l’Informativa Privacy.</p><a href="javascript:history.back()">Torna</a>`);
+    }
+    if (String(b.condizioni_accettate || '').toUpperCase() !== 'SI') {
+      return res.status(400).send(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><h1>Condizioni di noleggio</h1><p>Per inviare la richiesta devi accettare le Condizioni generali di noleggio.</p><a href="javascript:history.back()">Torna</a>`);
+    }
+    const consensoTimestamp = new Date().toISOString();
+    const consensoIp = dpClientIp(req);
+    const consensoUserAgent = String(req.headers['user-agent'] || '').slice(0, 500);
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(`<!doctype html><meta charset="utf-8"><h1>Errore date</h1><p>${esc(erroreDate)}</p><a href="javascript:history.back()">Torna</a>`);
     if (String(b.tipo_cliente || '').toLowerCase() === 'azienda') {
@@ -5865,7 +5938,11 @@ app.post('/prenota-cliente', upload.fields([
       data_inizio:b.data_inizio, data_fine:b.data_fine, ora_inizio:b.ora_inizio || '08:30', ora_fine:b.ora_fine || '18:00', giorni:calc.giorni,
       km_previsti:Number(b.km_previsti || 0), extra_fuori_orario:calc.extra_fuori_orario, extra_km:calc.extraKm,
       imponibile:calc.imponibile, iva:calc.iva, totale:calc.totale, cauzione:mezzo.cauzione || CAUZIONE,
-      stato:'richiesta_cliente', tipo_record:'preventivo', note:b.note || ''
+      stato:'richiesta_cliente', tipo_record:'preventivo', note:b.note || '',
+      privacy_presa_visione_at:consensoTimestamp, privacy_versione:DP_PRIVACY_VERSION,
+      condizioni_accettate_at:consensoTimestamp, condizioni_versione:DP_TERMS_VERSION,
+      marketing_consenso:String(b.marketing_consenso || '').toUpperCase() === 'SI' ? 'SI' : 'NO',
+      consenso_ip:consensoIp, consenso_user_agent:consensoUserAgent
     };
     const cols = Object.keys(data);
     let targetId;
@@ -5950,7 +6027,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .contract-main-actions .btn{width:100%!important;}
 }
 
-</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p></div><div class="box"><h2 class="ok">Dati ricevuti</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>Ora scegli il metodo di pagamento per completare la richiesta.</p><p><b>Totale noleggio:</b> € ${euro(calc.totale)}</p><div style="margin-top:18px"><a class="btn" href="/cliente/nexi/${result.lastID}">💳 Nexi (carta)</a><a class="btn" style="background:#333;margin-left:8px" href="/cliente/bonifico/${result.lastID}">🏦 Bonifico bancario</a></div><p style="margin-top:16px;color:#555">La prenotazione sarà confermata dopo verifica del pagamento da parte dello staff DP RENT.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" style="background:#555" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a></div></div></body></html>`);
+</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p><p style="font-size:14px;opacity:.9">Presa visione Privacy e accettazione delle Condizioni registrate.</p></div><div class="box"><h2 class="ok">Dati ricevuti</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>Ora scegli il metodo di pagamento per completare la richiesta.</p><p><b>Totale noleggio:</b> € ${euro(calc.totale)}</p><div style="margin-top:18px"><a class="btn" href="/cliente/nexi/${result.lastID}">💳 Nexi (carta)</a><a class="btn" style="background:#333;margin-left:8px" href="/cliente/bonifico/${result.lastID}">🏦 Bonifico bancario</a></div><p style="margin-top:16px;color:#555">La prenotazione sarà confermata dopo verifica del pagamento da parte dello staff DP RENT.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" style="background:#555" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a></div></div></body></html>`);
   } catch (e) {
     res.status(500).send(`<!doctype html><meta charset="utf-8"><h1>Errore invio dati</h1><pre>${esc(e.stack || e.message)}</pre><a href="javascript:history.back()">Torna</a>`);
   }
