@@ -822,6 +822,51 @@ try { fs.mkdirSync(PERSISTENT_DATA_DIR, { recursive: true }); } catch(e) {}
 const DB_PATH = process.env.DB_PATH || path.join(PERSISTENT_DATA_DIR, 'database.sqlite');
 const DATA_DIR = PERSISTENT_DATA_DIR;
 
+// =========================
+// V272 - MODALITA FERIE MANUALE CON DATE E TESTO
+// Le date sono solo informative: quando enabled=true tutte le nuove prenotazioni sono bloccate.
+// =========================
+const DP_CLOSURE_CONFIG_PATH = path.join(DATA_DIR, 'chiusure_aziendali.json');
+function dpClosureDefaults(){
+  return {
+    enabled: false,
+    start: '2026-08-07',
+    end: '2026-08-23',
+    reason: 'Chiusura estiva',
+    message: 'DP RENT è chiusa per ferie dal 7 al 23 agosto compresi. Riprenderemo regolarmente le attività dal 24 agosto. Ti risponderemo appena possibile. Grazie!'
+  };
+}
+function dpClosureRead(){
+  const d = dpClosureDefaults();
+  try {
+    const x = JSON.parse(fs.readFileSync(DP_CLOSURE_CONFIG_PATH, 'utf8'));
+    return { enabled:x.enabled===true, start:String(x.start||d.start), end:String(x.end||d.end), reason:String(x.reason||d.reason), message:String(x.message||d.message) };
+  } catch(e) { return d; }
+}
+function dpClosureWrite(cfg){
+  try { fs.mkdirSync(DATA_DIR, {recursive:true}); } catch(e) {}
+  fs.writeFileSync(DP_CLOSURE_CONFIG_PATH, JSON.stringify(cfg, null, 2));
+  return cfg;
+}
+function dpIsoDay(v){
+  const x=String(v||'').trim();
+  if(/^\d{4}-\d{2}-\d{2}$/.test(x)) return x;
+  if(/^\d{2}\/\d{2}\/\d{4}$/.test(x)){ const [d,m,y]=x.split('/'); return `${y}-${m}-${d}`; }
+  return '';
+}
+function dpDateItSimple(v){ const x=dpIsoDay(v); if(!x) return ''; const [y,m,d]=x.split('-'); return `${d}/${m}/${y}`; }
+function dpClosureBlocks(){ return dpClosureRead().enabled === true; }
+function dpClosureWhatsAppText(){
+  const c=dpClosureRead();
+  return `🌴 *${c.reason || 'DP RENT chiusa'}*\n\n${c.message || 'Siamo temporaneamente chiusi per ferie.'}`;
+}
+function dpClosureMessageHtml(){
+  const c=dpClosureRead();
+  const dateLine = c.start && c.end ? `<p style="font-size:18px"><b>Dal ${esc(dpDateItSimple(c.start))} al ${esc(dpDateItSimple(c.end))} compresi</b></p>` : '';
+  return `<div style="max-width:760px;margin:30px auto;padding:26px;border-radius:18px;background:#fff3cd;border:2px solid #ffcf33;font-family:Arial,sans-serif;text-align:center"><div style="font-size:46px">🌴</div><h1 style="margin:8px 0;color:#111">DP RENT - ${esc(c.reason)}</h1>${dateLine}<p style="font-size:20px;line-height:1.45;white-space:pre-line">${esc(c.message)}</p></div>`;
+}
+
+
 const uploadDir = path.join(DATA_DIR, 'uploads');
 const uploadsDir = uploadDir;
 const contractsDir = path.join(DATA_DIR, 'contracts');
@@ -2591,6 +2636,44 @@ async function sendEmail(to, subject, text, attachments) {
   });
 }
 
+// =========================
+// V269 - AVVISO EMAIL KM IN ECCEDENZA
+// =========================
+function dpV269KmExtraEmails(){
+  return String(process.env.KM_EXTRA_ALERT_EMAILS || process.env.ADMIN_EMAILS || AZIENDA.email || '')
+    .split(/[;,\n]+/).map(x=>x.trim()).filter(Boolean);
+}
+async function dpV269SendKmExtraAlert(p, c){
+  if (!p || !c || Number(c.extraKm || 0) <= 0) return {ok:false, skipped:'nessuna eccedenza'};
+  const destinatari = dpV269KmExtraEmails();
+  if (!destinatari.length) return {ok:false, skipped:'nessun destinatario'};
+  const codice = p.codice || ('DPR-' + p.id);
+  const mezzo = [p.targa, p.marca, p.modello].filter(Boolean).join(' - ') || 'Mezzo non indicato';
+  const cliente = [p.nome, p.cognome].filter(Boolean).join(' ') || 'Cliente non indicato';
+  const totaleFinale = v180Money(v188TotaleFinale(p.totale, c.supplemento));
+  const subject = `DP RENT - KM IN ECCEDENZA ${codice} - ${p.targa || ''}`.trim();
+  const text = [
+    'ATTENZIONE: rilevati km in eccedenza al rientro.',
+    '',
+    `Contratto: ${codice}`,
+    `Cliente: ${cliente}`,
+    `Telefono: ${p.telefono || '-'}`,
+    `Mezzo: ${mezzo}`,
+    `Km uscita: ${Number(p.km_uscita || 0)}`,
+    `Km rientro: ${Number(c.kmIn || 0)}`,
+    `Km percorsi: ${Number(c.kmPercorsi || 0)}`,
+    `Km concordati: ${Number(c.inclusi || 0)}`,
+    `Km in eccedenza: ${Number(c.extraKm || 0)}`,
+    `Tariffa extra: EUR ${Number(EXTRA_KM || 0).toFixed(2)} + IVA/km`,
+    `Supplemento: EUR ${v180Money(c.supplemento)} IVA inclusa`,
+    `Totale finale contratto: EUR ${totaleFinale}`,
+    '',
+    `Apri contratto: ${dpV265BaseUrl()}/contratto/${p.id}/gestisci`
+  ].join('\n');
+  await sendEmail(destinatari.join(','), subject, text, []);
+  return {ok:true, destinatari};
+}
+
 
 // =========================
 // V265 - FATTURE DA FARE + AVVISO 48H
@@ -4159,8 +4242,9 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/prenotazioni"><span class="ico">📄</span>Contratti<small>Storico e gestione PDF</small></a>
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
+          <a class="dp-home-card" href="/chiusura-aziendale"><span class="ico">🌴</span>Chiusura aziendale<small>ON/OFF manuale: blocca sito e WhatsApp</small></a>
         </section>
-        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V265 FATTURE 48H</p>
+        <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0} • V272 FERIE MANUALI</p>
       </div>
     `));
   } catch(e) {
@@ -4169,81 +4253,20 @@ app.get('/', async (req, res) => {
 });
 
 
-app.get('/avanzate', async (req,res)=>{ res.send(page('Avanzate', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Avanzate</h2><p>Funzioni amministrative DP RENT</p></section><section class="dp-home-grid"><a class="dp-home-card" href="/clienti"><span class="ico">👥</span>Clienti</a><a class="dp-home-card" href="/scansione-documenti"><span class="ico">📷</span>Scansione documenti</a><a class="dp-home-card" href="/documenti-clienti"><span class="ico">📂</span>Documenti clienti</a><a class="dp-home-card" href="/import-mezzi"><span class="ico">📊</span>Import Excel</a><a class="dp-home-card" href="/cargos"><span class="ico">🚚</span>Ca.R.G.O.S.</a><a class="dp-home-card" href="/cargos-config"><span class="ico">⚙️</span>Config CARGOS</a><a class="dp-home-card" href="/richieste-attesa"><span class="ico">🚨</span>Clienti in attesa</a><a class="dp-home-card" href="/fatture-da-fare"><span class="ico">🧾</span>Fatture da fare</a><a class="dp-home-card" href="/logo"><span class="ico">🎨</span>Logo</a></section></div>`)); });
-app.get('/storico', (req,res)=>res.redirect('/prenotazioni'));
 
-// =========================
-// V234 VIDEO DRIVE UFFICIO: carica da telefono/PC, cancellazione manuale da Drive per stabilità
-// =========================
-app.get('/video-mezzi', async (req,res)=>{
-  const mezzi=await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
-  const cardsArr = await Promise.all((mezzi||[]).map(async m=>{
-    let nVideo=0;
-    try{ const folder=await dpV223FindVideoFolderByTarga(m.targa); if(folder){ const v=await dpV223ListVideoFiles(folder.id); nVideo=(v||[]).length; } }catch(e){}
-    const videoBadge = nVideo>0 ? `<span style="display:inline-block;background:#0b7a27;color:#fff;font-weight:900;padding:6px 10px;border-radius:999px">🎥 ${nVideo}</span>` : `<span style="display:inline-block;background:#777;color:#fff;font-weight:900;padding:6px 10px;border-radius:999px">🎥 0</span>`;
-    const badge360 = dp360Badge(m.targa);
-    return `<div class="dp-video-card"><h2>${videoBadge} ${esc(m.targa||'')} - ${esc(m.modello||m.marca||'')}</h2><div class="dp-video-actions"><a class="btn" href="/video-mezzi/${m.id}">Gestisci video</a>${nVideo>0?`<a class="btn btn2" target="_blank" href="/cliente/mezzo-360/${encodeURIComponent(dp360NormTarga(m.targa))}">🔄 Vista 360 cliente</a>`:''}</div></div>`;
-  }));
-  const cards=cardsArr.join('') || '<div class="box">Nessun mezzo trovato.</div>';
-  res.send(page('Video mezzi', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Video mezzi</h2><p>Carica video da telefono o PC. Ora vedi subito quanti video ha ogni targa e se è disponibile la Vista 360.</p><p><a class="btn" href="/mezzi/nuovo">➕ Nuovo mezzo</a> <a class="btn btn2" href="/gestione-mezzi">⚙️ Gestione mezzi</a> <a class="btn btn2" href="/mezzi-web">Elenco mezzi</a></p></section>${cards}</div>`));
+app.get('/chiusura-aziendale', (req,res)=>{
+  const c=dpClosureRead();
+  const stato=c.enabled?'<b class="bad">🔴 CHIUSO PER FERIE</b>':'<b class="ok">🟢 APERTO</b>';
+  res.send(page('Modalità ferie', `<div class="box"><h2>🌴 Modalità ferie manuale</h2><p style="font-size:20px">Stato: ${stato}</p><form method="POST" action="/chiusura-aziendale"><label>Dal (solo informativo)</label><input type="date" name="start" value="${esc(c.start)}"><label>Al (solo informativo)</label><input type="date" name="end" value="${esc(c.end)}"><label>Titolo</label><input name="reason" value="${esc(c.reason)}" required><label>Messaggio sito e WhatsApp</label><textarea name="message" rows="5" required>${esc(c.message)}</textarea><div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px"><button name="azione" value="attiva">🔴 ATTIVA FERIE</button><button class="btn btn2" name="azione" value="disattiva">🟢 DISATTIVA E RIAPRI</button></div></form><div class="notice" style="margin-top:18px"><b>Funzionamento manuale:</b> quando è attiva blocca tutte le nuove prenotazioni e WhatsApp risponde con il messaggio ferie. Resta attiva finché premi DISATTIVA. Le date sono solo mostrate ai clienti.</div><a class="btn btn2" href="/">Torna alla Dashboard</a></div>`));
+});
+app.post('/chiusura-aziendale', (req,res)=>{
+  const b=req.body||{}; const old=dpClosureRead();
+  const start=dpIsoDay(b.start)||old.start, end=dpIsoDay(b.end)||old.end;
+  if(start && end && start>end) return res.status(400).send(page('Errore date','<div class="box"><h2 class="bad">La data finale non può precedere quella iniziale</h2><a class="btn" href="/chiusura-aziendale">Torna</a></div>'));
+  dpClosureWrite({enabled:b.azione==='attiva', start, end, reason:String(b.reason||old.reason||'Chiusura aziendale').trim(), message:String(b.message||old.message||'Siamo temporaneamente chiusi.').trim()});
+  res.redirect('/chiusura-aziendale');
 });
 
-app.get('/video-mezzi/:id', async (req,res)=>{
-  const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null);
-  if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="javascript:history.back()">Torna</a></div>`));
-  let folder=null,videos=[],err='';
-  try{
-    folder=await dpV223FindVideoFolderByTarga(m.targa);
-    if(folder) videos=await dpV223ListVideoFiles(folder.id);
-  }catch(e){err=e.message;}
-  const current=videos[0]||null;
-  const msg=req.query.ok==='1'?'<p class="ok"><b>Video caricato.</b> Per cancellare video vecchi usa la cartella Drive del mezzo.</p>':(req.query.warn?`<p class="notice"><b>Attenzione:</b> ${esc(req.query.warn)}</p>`:'');
-  const altriVideo = videos.length>1 ? `<p class="notice"><b>Nota:</b> nella cartella Drive ci sono ${videos.length} video. L'app mostra l'ultimo caricato. Per pulire i vecchi, apri Drive e cancellali manualmente.</p>` : '';
-  res.send(page('Video mezzo', `<div class="dp-one-page"><div class="dp-video-card"><h2>🎥 ${esc(m.targa)} - ${esc(m.modello||m.marca||'')}</h2>
-    ${msg}
-    ${folder?`<p class="ok"><b>Cartella collegata:</b> ${esc(folder.name)}</p>`:`<p class="bad"><b>Cartella non trovata.</b> La cartella deve stare dentro DP RENT VIDEO e iniziare con ${esc(m.targa)}.</p>`}
-    ${err?`<pre>${esc(err)}</pre>`:''}
-    ${current?`<div class="dp-video-current"><p><b>Ultimo video rilevato:</b><br>${esc(current.name)}</p><a class="btn" target="_blank" href="${esc(current.webViewLink||current.webContentLink||'')}">▶️ Apri ultimo video</a> <a class="btn btn2" target="_blank" href="/cliente/mezzo-360/${encodeURIComponent(dp360NormTarga(m.targa))}">🔄 Vista 360 cliente</a></div>`:`<p class="notice">Nessun video rilevato nella cartella.</p>`}
-    ${altriVideo}
-    <form method="POST" action="/video-mezzi/${m.id}/upload" enctype="multipart/form-data" class="box">
-      <h3>Carica nuovo video / foto</h3>
-      <p class="notice"><b>Stabile ufficio:</b> l'app carica e visualizza. Per cancellare i video vecchi usa il pulsante “Apri cartella Drive del mezzo”.</p>
-      <input type="file" name="video" accept="video/*,image/*,.mov,.mp4,.m4v,.jpg,.jpeg,.png,.webp" multiple required>
-      <button type="submit">📤 Carica file</button>
-    </form>
-    <div class="dp-video-actions">
-      <a class="btn btn2" href="/video-mezzi">Torna video mezzi</a>
-      ${folder?`<a class="btn" target="_blank" href="${esc(folder.webViewLink||'')}">📂 Apri cartella Drive del mezzo</a>`:''}
-      ${current?`<a class="btn" target="_blank" href="/cliente/mezzo-360/${encodeURIComponent(dp360NormTarga(m.targa))}">🔄 Vista 360 cliente</a>`:''}
-    </div>
-  </div></div>`));
-});
-
-app.post('/video-mezzi/:id/upload', upload.single('video'), async (req,res)=>{
-  const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null);
-  if(!m) return res.status(404).send(page('Mezzo non trovato',`<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna</a></div>`));
-  let folder=null;
-  try{
-    folder=await dpV223FindVideoFolderByTarga(m.targa);
-    if(!folder) throw new Error('Cartella Drive del mezzo non trovata');
-    if(!req.file) throw new Error('Nessun video caricato');
-    // V231 stabile: NON cancelliamo da app. Carichiamo e lasciamo la pulizia manuale da Drive.
-    const filename=dpV223VideoFileName(m, req.file.originalname);
-    await dpV234UploadVideoToFolderStable(req.file.path, filename, req.file.mimetype, folder);
-    try{ fs.unlinkSync(req.file.path); }catch(e){}
-    res.redirect(`/video-mezzi/${m.id}?ok=1&ts=${Date.now()}`);
-  }catch(e){
-    try{ if(req.file && req.file.path) fs.unlinkSync(req.file.path); }catch(_){}
-    res.status(500).send(page('Errore video',`<div class="box"><h2 class="bad">Errore caricamento video</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${m.id}">Torna</a></div>`));
-  }
-});
-
-app.post('/video-mezzi/:id/delete', async (req,res)=>{
-  const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]).catch(()=>null);
-  if(!m) return res.redirect('/video-mezzi');
-  const msg='Cancellazione automatica disattivata per stabilità. Apri la cartella Drive del mezzo e cancella manualmente i video vecchi.';
-  res.redirect(`/video-mezzi/${m.id}?warn=${encodeURIComponent(msg)}&ts=${Date.now()}`);
-});
 
 app.get('/richieste-attesa', async (req, res) => {
   try {
@@ -5660,7 +5683,12 @@ app.get('/prenota', async (req, res) => {
       }
     }
   } catch(e) { console.log('V148 riconoscimento cliente/docs warning:', e.message); }
-  res.send(clienteWebHtml(req));
+  let htmlCliente = clienteWebHtml(req);
+  const cChiusura = dpClosureRead();
+  if (cChiusura.enabled) {
+    return res.send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>DP RENT chiusa</title></head><body style="background:#f4f4f4;margin:0;padding:20px">${dpClosureMessageHtml()}</body></html>`);
+  }
+  res.send(htmlCliente);
 });
 
 
@@ -5874,6 +5902,7 @@ app.post('/prenota-cliente', upload.fields([
     const consensoUserAgent = String(req.headers['user-agent'] || '').slice(0, 500);
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(`<!doctype html><meta charset="utf-8"><h1>Errore date</h1><p>${esc(erroreDate)}</p><a href="javascript:history.back()">Torna</a>`);
+    if (dpClosureBlocks(b.data_inizio, b.data_fine)) return res.status(409).send(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chiusura DP RENT</title></head><body style="background:#f4f4f4;margin:0;padding:20px">${dpClosureMessageHtml()}</body></html>`);
     if (String(b.tipo_cliente || '').toLowerCase() === 'azienda') {
       const mancanti = [];
       if (!b.ragione_sociale) mancanti.push('ragione sociale');
@@ -7721,7 +7750,17 @@ KM RIENTRO: percorsi ${c.kmPercorsi}, concordati ${c.inclusi}, nessun extra km.`
   await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, km_percorsi=?, km_extra_rientro=?, supplemento_km_rientro=?, totale_finale=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, c.kmIn, c.kmPercorsi, c.extraKm, v180Money(c.supplemento), v180Money(v188TotaleFinale(p.totale, c.supplemento)), noteBase + noteExtra, noteBase + noteExtra, req.params.id]);
   if (p && c.kmIn) await run(`UPDATE mezzi SET km_attuali=?, km=? WHERE id=?`, [c.kmIn, c.kmIn, p.mezzo_id]);
   try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
-  const msg = c.extraKm > 0 ? `Check-in salvato. Km percorsi ${c.kmPercorsi}. Extra km ${c.extraKm}. Supplemento cliente: €${v180Money(c.supplemento)} IVA inclusa.` : `Check-in salvato. Km percorsi ${c.kmPercorsi}. Nessun supplemento km.`;
+  let avvisoKm = '';
+  if (c.extraKm > 0) {
+    try {
+      const rKm = await dpV269SendKmExtraAlert(p, c);
+      avvisoKm = rKm && rKm.ok ? ' Email interna inviata per segnalare i km in eccedenza.' : '';
+    } catch (e) {
+      console.log('V269 avviso km eccedenza non inviato:', e.message);
+      avvisoKm = ' Attenzione: il check-in è salvato, ma la mail interna non è partita. Controllare la configurazione SMTP.';
+    }
+  }
+  const msg = c.extraKm > 0 ? `Check-in salvato. Km percorsi ${c.kmPercorsi}. Extra km ${c.extraKm}. Supplemento cliente: €${v180Money(c.supplemento)} IVA inclusa.${avvisoKm}` : `Check-in salvato. Km percorsi ${c.kmPercorsi}. Nessun supplemento km.`;
   res.send(actionScreen(req.params.id, 'Check-in salvato', msg));
 });
 
@@ -10321,6 +10360,12 @@ async function dpHandleWhatsApp(req,res){
   console.log('DP BOT IN:', { from, body, profileName, sid, state: DP_BOT_SESSIONS[from]?.state });
   if(dpAlreadySid(sid)){ res.writeHead(200, {'Content-Type':'text/xml; charset=utf-8'}); return res.end('<Response/>'); }
   if(!from) return dpTwimlResponse(res, 'Errore ricezione messaggio.');
+
+  // V272: risposta automatica ferie. Finché l'interruttore è ON il bot non avvia alcun flusso.
+  if(dpClosureRead().enabled){
+    delete DP_BOT_SESSIONS[from];
+    return dpTwimlResponse(res, dpClosureWhatsAppText());
+  }
 
   let session = dpSession(from, profileName);
 
