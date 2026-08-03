@@ -2207,14 +2207,18 @@ function categoriaFromRow(row) {
   if (modello.includes('GOLF') || desc.includes('GOLF')) return 'AUTO_GOLF';
   if (codice.includes('X-ESC') || desc.includes('ESCAVATORE')) return 'ESCAVATORE';
   if (desc.includes('PIATTAFORMA') || desc.includes('SEMOVENTE')) return 'SEMOVENTE';
+  if (desc.includes('4 POSTI') || desc.includes('4P') || desc.includes('QUATTRO POSTI')) return 'AUTO_4_POSTI';
   if (desc.includes('7 POSTI') || desc.includes('7P') || desc.includes('SETTE POSTI')) return '7_POSTI';
+  if (desc.includes('8 POSTI') || desc.includes('8P') || desc.includes('OTTO POSTI')) return 'PULMINO_8_POSTI';
   if (codice.includes('P') || desc.includes('PERSONE') || desc.includes('9P') || desc.includes('9 POSTI')) return '9_POSTI';
   return 'FURGONE';
 }
 function descrizionePubblica(m) {
   if (m.descrizione_pubblica) return m.descrizione_pubblica;
   const modello = `${m.marca || ''} ${m.modello || ''}`.trim();
+  if (m.categoria === 'AUTO_4_POSTI') return `${modello} - auto 4 posti`;
   if (m.categoria === '7_POSTI') return `${modello} - 7 posti`;
+  if (m.categoria === 'PULMINO_8_POSTI') return `${modello} - pulmino 8 posti`;
   if (m.categoria === '9_POSTI') return `${modello} - pulmino 9 posti`;
   if (m.categoria === 'FURGONE') return `${modello} - furgone cargo/merci`;
   if (m.categoria === 'AUTO_DACIA') return `${modello} - auto economica`;
@@ -2227,7 +2231,9 @@ function descrizionePubblica(m) {
 // V112 FIX categoria cliente: impedisce assegnazione mezzo sbagliato (es. pulmino -> ribaltabile)
 function categoriaClienteNorm(v) {
   const k = normalize(v || '').toUpperCase().replace(/[\s\-]+/g, '_');
+  if (k === '4_POSTI' || k === 'AUTO_4_POSTI' || k.includes('AUTO_4_POSTI') || k.includes('QUATTRO_POSTI')) return 'AUTO_4_POSTI';
   if (k === '7' || k === '7_POSTI' || k.includes('7_POSTI') || k.includes('SETTE_POSTI')) return '7_POSTI';
+  if (k === '8' || k === '8_POSTI' || k === 'PULMINO_8_POSTI' || k.includes('PULMINO_8_POSTI') || k.includes('OTTO_POSTI')) return 'PULMINO_8_POSTI';
   if (k === '9' || k === '9_POSTI' || k === 'PULMINO' || k === 'PULMINO_8_9_POSTI' || k.includes('9_POSTI') || k.includes('PULMINO')) return '9_POSTI';
   if (k.includes('AUTO_GOLF') || k.includes('GOLF')) return 'AUTO_GOLF';
   if (k.includes('AUTO_DACIA') || k.includes('DACIA')) return 'AUTO_DACIA';
@@ -2240,11 +2246,21 @@ function mezzoCompatibileCategoriaCliente(m, categoriaRichiesta) {
   const cat = categoriaClienteNorm(categoriaRichiesta);
   const testo = normalize(`${m.categoria || ''} ${m.tipo || ''} ${m.marca || ''} ${m.modello || ''} ${m.descrizione || ''} ${m.descrizione_pubblica || ''} ${m.codice_tipo || ''}`).toUpperCase();
   const posti = Number(m.posti || 0);
+  if (cat === 'AUTO_4_POSTI') {
+    const esplicito4 = testo.includes('AUTO 4 POSTI') || testo.includes('AUTO_4_POSTI') || testo.includes('4 POSTI') || testo.includes('QUATTRO POSTI') || posti === 4;
+    const segnaliMerci = testo.includes('RIBALT') || testo.includes('CASSON') || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI');
+    return esplicito4 && !segnaliMerci;
+  }
   if (cat === '7_POSTI') {
     const esplicito7 = testo.includes('7 POSTI') || testo.includes('7_POSTI') || testo.includes('SETTE POSTI') || testo.includes('SETTE_POSTI') || posti === 7;
     const segnaliMerci = testo.includes('RIBALT') || testo.includes('CASSON') || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI');
     if (segnaliMerci && !esplicito7) return false;
     return esplicito7;
+  }
+  if (cat === 'PULMINO_8_POSTI') {
+    const esplicito8 = testo.includes('PULMINO 8 POSTI') || testo.includes('PULMINO_8_POSTI') || testo.includes('8 POSTI') || testo.includes('OTTO POSTI') || posti === 8;
+    const segnaliMerci = testo.includes('RIBALT') || testo.includes('CASSON') || testo.includes('FURG') || testo.includes('CARGO') || testo.includes('MERCI');
+    return esplicito8 && !segnaliMerci;
   }
   if (cat === '9_POSTI') {
     // V118: pulmino solo con segnali chiari. Se c'e ribaltabile/cassone/furgone/cargo/merci NON basta la categoria sbagliata.
@@ -2262,6 +2278,8 @@ function mezzoCompatibileCategoriaCliente(m, categoriaRichiesta) {
 }
 
 function prezzoCategoria(cat) {
+  if (cat === 'AUTO_4_POSTI') return 50;
+  if (cat === 'PULMINO_8_POSTI') return 70;
   if (cat === 'AUTO_DACIA') return 50;
   if (cat === 'AUTO_GOLF') return 60;
   if (cat === '7_POSTI') return 70;
@@ -2304,9 +2322,12 @@ function calcolaTotale(mezzo, data_inizio, data_fine, ora_inizio, ora_fine, km_p
   const kmPrev = Number(km_previsti || 0);
   const extraKm = kmGiorno > 0 && kmPrev > kmInclusiTot ? (kmPrev - kmInclusiTot) * EXTRA_KM : 0;
   const extra = extraOrario(ora_inizio) + extraOrario(ora_fine);
-  const imponibile = giorni * prezzo + extra + extraKm;
-  const iva = imponibile * IVA;
-  const totale = imponibile + iva;
+  // V273: il prezzo giornaliero inserito e gia IVA compresa.
+  // Calcolo in centesimi per evitare errori di arrotondamento: totale = giorni x prezzo + eventuali extra.
+  const totaleCentesimi = Math.round(giorni * Math.round(prezzo * 100)) + Math.round(extra * 100) + Math.round(extraKm * 100);
+  const totale = totaleCentesimi / 100;
+  const imponibile = Math.round((totale / (1 + IVA)) * 100) / 100;
+  const iva = Math.round((totale - imponibile) * 100) / 100;
   return { giorni, kmInclusiTot, extraKm, imponibile, iva, totale, extra_fuori_orario: extra };
 }
 function dpDateTimeSafe(data, ora, fallbackOra) {
@@ -4074,8 +4095,10 @@ function v123CategoriaMezzo(m){
   const catRaw = String(m.categoria || '').trim().toUpperCase().replace(/[\s\-]+/g,'_');
   const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''} ${m.descrizione_pubblica||''} ${m.codice_tipo||''}`.toUpperCase();
   const posti = Number(m.posti || 0);
+  if(catRaw.includes('AUTO_4_POSTI') || /\b4\s*POSTI\b/.test(hay) || (posti === 4 && /AUTO|AUTOVETTURA|MACCHINA/.test(hay))) return 'AUTO_4_POSTI';
   if(catRaw.includes('7_POSTI') || /\b7\s*POSTI\b/.test(hay) || posti === 7) return '7_POSTI';
-  if(catRaw.includes('9_POSTI') || catRaw.includes('PULMINO') || /\b9\s*POSTI\b/.test(hay) || posti >= 8) return '9_POSTI';
+  if(catRaw.includes('PULMINO_8_POSTI') || /\b8\s*POSTI\b/.test(hay) || (posti === 8 && /PULMINO|MINIBUS|PERSONE|PASSEGGERI/.test(hay))) return 'PULMINO_8_POSTI';
+  if(catRaw.includes('9_POSTI') || /\b9\s*POSTI\b/.test(hay) || posti === 9) return '9_POSTI';
   if(catRaw.includes('AUTO_DACIA') || hay.includes('DACIA') || hay.includes('SANDERO')) return 'AUTO_DACIA';
   if(catRaw.includes('AUTO_GOLF') || hay.includes('GOLF')) return 'AUTO_GOLF';
   if(catRaw.includes('ESCAV') || hay.includes('ESCAV')) return 'ESCAVATORE';
@@ -4087,7 +4110,9 @@ function v123MezzoCompatibile(m, catInfo){
   const target = categoriaClienteNorm(catInfo?.categoria || catInfo || '');
   const actual = v123CategoriaMezzo(m);
   if(target === 'FURGONE') return actual === 'FURGONE';
+  if(target === 'AUTO_4_POSTI') return actual === 'AUTO_4_POSTI';
   if(target === '7_POSTI') return actual === '7_POSTI';
+  if(target === 'PULMINO_8_POSTI') return actual === 'PULMINO_8_POSTI';
   if(target === '9_POSTI') return actual === '9_POSTI';
   if(target === 'AUTO_DACIA') return actual === 'AUTO_DACIA';
   if(target === 'AUTO_GOLF') return actual === 'AUTO_GOLF';
@@ -4456,7 +4481,7 @@ app.get('/mezzi/nuovo', async (req, res) => {
         <div><label>Targa</label><input name="targa" placeholder="HE151WC" required></div>
         <div><label>Marca</label><input name="marca" placeholder="RENAULT"></div>
         <div><label>Modello</label><input name="modello" placeholder="TRAFIC"></div>
-        <div><label>Categoria</label><select name="categoria">${['FURGONE','7_POSTI','9_POSTI','AUTO_DACIA','AUTO_GOLF','AUTO_PREMIUM','ESCAVATORE','SEMOVENTE'].map(c=>`<option>${c}</option>`).join('')}</select></div>
+        <div><label>Categoria</label><select name="categoria">${['FURGONE','AUTO_4_POSTI','7_POSTI','PULMINO_8_POSTI','9_POSTI','AUTO_DACIA','AUTO_GOLF','AUTO_PREMIUM','ESCAVATORE','SEMOVENTE'].map(c=>`<option>${c}</option>`).join('')}</select></div>
         <div><label>Posti</label><input name="posti" type="number" placeholder="9"></div>
         <div><label>Prezzo giorno</label><input name="prezzo_giorno" type="number" step="0.01" value="70"></div>
         <div><label>Km inclusi/giorno</label><input name="km_inclusi" type="number" value="150"></div>
@@ -4508,7 +4533,7 @@ app.get('/mezzo/:id', async (req, res) => {
           <div><label>Targa</label><input name="targa" value="${esc(m.targa)}" required></div>
           <div><label>Marca</label><input name="marca" value="${esc(m.marca)}"></div>
           <div><label>Modello</label><input name="modello" value="${esc(m.modello)}"></div>
-          <div><label>Categoria</label><select name="categoria">${['FURGONE','7_POSTI','9_POSTI','AUTO_DACIA','AUTO_GOLF','ESCAVATORE','SEMOVENTE'].map(c=>`<option ${m.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
+          <div><label>Categoria</label><select name="categoria">${['FURGONE','AUTO_4_POSTI','7_POSTI','PULMINO_8_POSTI','9_POSTI','AUTO_DACIA','AUTO_GOLF','ESCAVATORE','SEMOVENTE'].map(c=>`<option ${m.categoria===c?'selected':''}>${c}</option>`).join('')}</select></div>
           <div><label>Posti</label><input type="number" name="posti" value="${esc(m.posti)}"></div>
           <div><label>Descrizione pubblica cliente</label><input name="descrizione_pubblica" value="${esc(descrizionePubblica(m))}"></div>
           <div><label>Prezzo giorno</label><input type="number" step="0.01" name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></div>
@@ -5488,8 +5513,10 @@ window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll(
     <div class="grid">
       <div class="full"><label>Tipo mezzo richiesto</label><select name="categoria" required>
         <option value="FURGONE" ${categoria==='FURGONE'?'selected':''}>Furgone cargo/merci</option>
+        <option value="AUTO_4_POSTI" ${categoria==='AUTO_4_POSTI'?'selected':''}>Auto 4 posti</option>
         <option value="7_POSTI" ${categoria==='7_POSTI'?'selected':''}>Auto / SUV 7 posti</option>
-        <option value="9_POSTI" ${categoria==='9_POSTI'?'selected':''}>Pulmino 8/9 posti</option>
+        <option value="PULMINO_8_POSTI" ${categoria==='PULMINO_8_POSTI'?'selected':''}>Pulmino 8 posti</option>
+        <option value="9_POSTI" ${categoria==='9_POSTI'?'selected':''}>Pulmino 9 posti</option>
         <option value="AUTO_DACIA" ${categoria==='AUTO_DACIA'?'selected':''}>Auto economica</option>
         <option value="AUTO_GOLF" ${categoria==='AUTO_GOLF'?'selected':''}>Auto categoria Golf</option>
         <option value="ESCAVATORE" ${categoria==='ESCAVATORE'?'selected':''}>Escavatore / mezzo speciale</option>
@@ -9345,7 +9372,7 @@ app.post('/prenotazione/:id/elimina',async(req,res)=>{await run(`DELETE FROM all
 app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=preventivo'));
 app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=?`,[req.params.id]);res.redirect(`/prenotazione/${req.params.id}`);});
 
-app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="furgone">Furgone</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi/giorno<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo">Attivo</option><option value="officina">Officina/Fermo</option></select></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
+app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="AUTO_4_POSTI">Auto 4 posti</option><option value="furgone">Furgone</option><option value="PULMINO_8_POSTI">Pulmino 8 posti</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi/giorno<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo">Attivo</option><option value="officina">Officina/Fermo</option></select></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
 app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||'attivo');await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.note)]);res.redirect('/mezzi');});
 app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km attuali<input name="km" value="${esc(m.km_attuali||m.km)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi/giorno<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo" ${!v180StatoMezzoOff(m)?'selected':''}>Attivo / disponibile</option><option value="officina" ${v180StatoMezzoOff(m)?'selected':''}>Officina / fermo</option></select></label></div><label>Motivo fermo/officina</label><textarea name="fermo_motivo">${esc(m.fermo_motivo||'')}</textarea><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi/${m.id}/officina">Fermo/officina veloce</a><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
 app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||b.stato||'attivo');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi');});
@@ -9983,12 +10010,14 @@ function dpCategoryFromChoice(txt){
   // V179 FIX: non basta trovare il numero 9 dentro una frase.
   // Prima "Panda del 2019/2910" veniva letto come Pulmino 9 posti.
   // Il pulmino si riconosce solo da scelta 2 o parole esplicite: pulmino, minibus, 8/9 posti, 9 posti, persone/passeggeri.
+  if(t === '2' || /\b(auto|macchina)\s*(4|quattro)\s*(posti|p|persone|passeggeri)\b/.test(t) || /\b(4|quattro)\s*(posti|p)\b/.test(t)) return { label:'Auto 4 posti', categoria:'AUTO_4_POSTI', cats:['AUTO_4_POSTI','4_POSTI'] };
   if(/\b(7|sette)\s*(posti|p|persone|passeggeri)\b/.test(t) || /\b7\s*\/?\s*posti\b/.test(t)) return { label:'Auto / SUV 7 posti', categoria:'7_POSTI', cats:['7_POSTI','SETTE_POSTI'] };
-  if(t === '2' || /\b(pulmino|minibus|pulman|pullman)\b/.test(t) || /\b(8|9|otto|nove)\s*(posti|p|persone|passeggeri)\b/.test(t) || /\b8\s*\/?\s*9\s*(posti|p)\b/.test(t)) return { label:'Pulmino 8/9 posti', categoria:'9_POSTI', cats:['9_POSTI','PULMINO','P2-9P','P1-8P'] };
+  if(t === '3' || /\b(pulmino|minibus|pulman|pullman)\s*(8|otto)?\s*(posti|p|persone|passeggeri)?\b/.test(t) || /\b(8|otto)\s*(posti|p|persone|passeggeri)\b/.test(t)) return { label:'Pulmino 8 posti', categoria:'PULMINO_8_POSTI', cats:['PULMINO_8_POSTI','8_POSTI','P1-8P'] };
+  if(t === '4' || /\b(9|nove)\s*(posti|p|persone|passeggeri)\b/.test(t)) return { label:'Pulmino 9 posti', categoria:'9_POSTI', cats:['9_POSTI','PULMINO','P2-9P'] };
 
-  if(t === '3' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', categoria:'AUTO_DACIA', cats:['AUTO_DACIA','DACIA'] };
-  if(t === '4' || t.includes('golf')) return { label:'Auto categoria Golf', categoria:'AUTO_GOLF', cats:['AUTO_GOLF','GOLF'] };
-  if(t === '5' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', categoria:'ESCAVATORE', cats:['ESCAVATORE','SEMOVENTE','X-ESC'] };
+  if(t === '5' || t.includes('dacia') || t.includes('econom')) return { label:'Auto economica tipo Dacia', categoria:'AUTO_DACIA', cats:['AUTO_DACIA','DACIA'] };
+  if(t === '6' || t.includes('golf')) return { label:'Auto categoria Golf', categoria:'AUTO_GOLF', cats:['AUTO_GOLF','GOLF'] };
+  if(t === '7' || t.includes('escav')) return { label:'Escavatore / mezzo speciale', categoria:'ESCAVATORE', cats:['ESCAVATORE','SEMOVENTE','X-ESC'] };
   return null;
 }
 
@@ -10042,10 +10071,12 @@ function dpPromptNoleggioCategorie(){
 Che mezzo ti serve?
 
 ${EMJ.one} Furgone cargo/merci
-${EMJ.two} Pulmino 8/9 posti
-${EMJ.three} Auto economica tipo Dacia
-${EMJ.four} Auto categoria Golf
-${EMJ.five} Escavatore / mezzo speciale
+${EMJ.two} Auto 4 posti
+${EMJ.three} Pulmino 8 posti
+${EMJ.four} Pulmino 9 posti
+${EMJ.five} Auto economica tipo Dacia
+${EMJ.six || '6️⃣'} Auto categoria Golf
+${EMJ.seven || '7️⃣'} Escavatore / mezzo speciale
 
 Scrivi il numero oppure il tipo di mezzo.`;
 }
@@ -10054,9 +10085,11 @@ function dpVehicleMatchesCat(m, catInfo){
   try { return v123MezzoCompatibile(m, catInfo); } catch(e) {}
   const target = catInfo?.categoria || '';
   const hay = `${m.categoria||''} ${m.tipo||''} ${m.marca||''} ${m.modello||''} ${m.descrizione||''}`.toUpperCase();
-  if(target === 'FURGONE') return /(FURG|VAN|CARGO|MERCI|DAILY|DUCATO|TRANSIT)/.test(hay) && !/(DACIA|GOLF|PULMINO|9\s*POSTI|ESCAV|SEMOV)/.test(hay);
+  if(target === 'FURGONE') return /(FURG|VAN|CARGO|MERCI|DAILY|DUCATO|TRANSIT)/.test(hay) && !/(DACIA|GOLF|PULMINO|9\s*POSTI|8\s*POSTI|ESCAV|SEMOV)/.test(hay);
+  if(target === 'AUTO_4_POSTI') return /(AUTO_4_POSTI|AUTO\s*4\s*POSTI|4\s*POSTI)/.test(hay) && !/(FURG|CARGO|MERCI)/.test(hay);
   if(target === '7_POSTI') return /(7_POSTI|7\s*POSTI|SETTE\s*POSTI)/.test(hay);
-  if(target === '9_POSTI') return /(9_POSTI|PULMINO|9\s*POSTI|8\s*POSTI|MINIBUS)/.test(hay);
+  if(target === 'PULMINO_8_POSTI') return /(PULMINO_8_POSTI|PULMINO.*8\s*POSTI|8\s*POSTI|MINIBUS)/.test(hay);
+  if(target === '9_POSTI') return /(9_POSTI|PULMINO.*9\s*POSTI|9\s*POSTI)/.test(hay);
   if(target === 'AUTO_DACIA') return /DACIA|SANDERO|AUTO_DACIA/.test(hay);
   if(target === 'AUTO_GOLF') return /GOLF|AUTO_GOLF/.test(hay);
   if(target === 'ESCAVATORE') return /ESCAV|SEMOVENTE|PIATTAFORMA|X-ESC|SPECIALE/.test(hay);
@@ -11153,6 +11186,112 @@ async function dpV262EnsureHe151wc(){
 app.get('/admin/aggiungi-he151wc-v262', async (req,res)=>{
   const r = await dpV262EnsureHe151wc();
   res.send(page('HE151WC V262', `<div class="box"><h2 class="${r.ok?'ok':'bad'}">HE151WC Renault Trafic</h2><pre>${esc(JSON.stringify(r,null,2))}</pre><a class="btn" href="/mezzi-web">Mezzi</a><a class="btn btn2" href="/video-mezzi">Video mezzi</a></div>`));
+});
+
+
+
+// =========================
+// V274 FIX VIDEO MEZZI: pagina non piu vuota + upload/elimina affidabili
+// =========================
+function dpV274VideoOpenUrl(f){
+  if(!f) return '';
+  return f.webViewLink || f.webContentLink || (f.id ? `/cliente/drive-video/${encodeURIComponent(f.id)}` : '');
+}
+
+async function dpV274VideoCard(m){
+  const titolo = [m.targa, m.marca, m.modello].filter(Boolean).join(' - ');
+  try{
+    const folder = await dpV223FindVideoFolderByTarga(m.targa).catch(()=>null);
+    const videos = folder ? await dpV223ListVideoFiles(folder.id).catch(()=>[]) : [];
+    const ultimo = videos[0] || null;
+    const open = ultimo ? dpV274VideoOpenUrl(ultimo) : '';
+    return `<div class="box" style="margin-bottom:14px">
+      <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;flex-wrap:wrap">
+        <div><h3 style="margin:0 0 5px">🎥 ${esc(titolo || ('Mezzo '+m.id))}</h3>
+        <div class="small">Categoria: ${esc(m.categoria || m.tipo || '-')} • Video: <b>${videos.length}</b></div></div>
+        <div class="actions">
+          ${open ? `<a class="btn" target="_blank" href="${esc(open)}">▶️ Apri ultimo video</a>` : ''}
+          <a class="btn btn2" href="/video-mezzi/${m.id}">${videos.length ? 'Gestisci video' : 'Carica video'}</a>
+        </div>
+      </div>
+      ${!folder ? `<p class="notice" style="margin-top:10px">Cartella Drive non ancora collegata. Verrà cercata o creata quando carichi il video.</p>` : ''}
+      ${folder && !videos.length ? `<p class="notice" style="margin-top:10px">Nessun video presente per questo mezzo.</p>` : ''}
+    </div>`;
+  }catch(e){
+    return `<div class="box"><h3>🎥 ${esc(titolo || ('Mezzo '+m.id))}</h3><p class="bad">Errore lettura video: ${esc(e.message)}</p><a class="btn btn2" href="/video-mezzi/${m.id}">Apri gestione</a></div>`;
+  }
+}
+
+app.get('/video-mezzi', async (req,res)=>{
+  try{
+    const mezzi = await all(`SELECT * FROM mezzi ORDER BY COALESCE(categoria,tipo,''), targa`).catch(()=>[]);
+    if(!mezzi.length){
+      return res.send(page('Video mezzi', `<div class="box"><h2>🎥 Video mezzi</h2><p class="notice">Nessun mezzo presente nell'anagrafica.</p><a class="btn" href="/mezzi/nuovo">➕ Aggiungi mezzo</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+    }
+    const cards=[];
+    for(const m of mezzi) cards.push(await dpV274VideoCard(m));
+    res.send(page('Video mezzi', `<div class="box"><h2>🎥 Video mezzi</h2><p>Video raggruppati per targa. Da qui puoi vedere, sostituire o eliminare il video di ogni mezzo.</p><a class="btn" href="/mezzi/nuovo">➕ Nuovo mezzo</a><a class="btn btn2" href="/">Dashboard</a></div>${cards.join('')}`));
+  }catch(e){
+    res.status(500).send(page('Errore Video mezzi', `<div class="box"><h2 class="bad">Video mezzi non disponibili</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn btn2" href="/">Dashboard</a></div>`));
+  }
+});
+
+app.get('/video-mezzi/:id', async (req,res)=>{
+  try{
+    const m = await get(`SELECT * FROM mezzi WHERE id=?`, [req.params.id]);
+    if(!m) return res.status(404).send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/video-mezzi">Torna ai video</a></div>`));
+    let folder = await dpV223FindVideoFolderByTarga(m.targa).catch(()=>null);
+    let videos = folder ? await dpV223ListVideoFiles(folder.id).catch(()=>[]) : [];
+    const rows = videos.map(v=>{
+      const open=dpV274VideoOpenUrl(v);
+      return `<tr><td>${esc(v.name||'Video')}</td><td>${esc(dpV223DateIt(v.modifiedTime||v.createdTime||''))}</td><td>${open?`<a class="btn" target="_blank" href="${esc(open)}">▶️ Apri</a>`:''}</td></tr>`;
+    }).join('') || '<tr><td colspan="3">Nessun video caricato.</td></tr>';
+    res.send(page('Video '+(m.targa||''), `<div class="box"><h2>🎥 ${esc([m.targa,m.marca,m.modello].filter(Boolean).join(' - '))}</h2>
+      <p class="small">${folder ? `Cartella Drive: ${esc(folder.name||folder.id)}` : 'Cartella Drive non ancora trovata: sarà creata automaticamente al caricamento.'}</p>
+      <form method="POST" action="/video-mezzi/${m.id}/carica" enctype="multipart/form-data">
+        <label>Seleziona video</label><input type="file" name="video" accept="video/*" required>
+        <button type="submit">📤 Carica / sostituisci video</button>
+      </form>
+      <div class="actions" style="margin-top:12px"><a class="btn btn2" href="/video-mezzi">← Tutti i video</a><a class="btn btn2" href="/mezzo/${m.id}">Scheda mezzo</a></div>
+    </div>
+    <div class="box"><h3>Video presenti (${videos.length})</h3><table><tr><th>File</th><th>Data</th><th>Azioni</th></tr>${rows}</table>
+      ${videos.length ? `<form method="POST" action="/video-mezzi/${m.id}/elimina" onsubmit="return confirm('Eliminare tutti i video di questo mezzo?');"><button class="btn bad" type="submit">🗑️ Elimina video</button></form>` : ''}
+    </div>`));
+  }catch(e){
+    res.status(500).send(page('Errore video mezzo', `<div class="box"><h2 class="bad">Errore video mezzo</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi">Torna ai video</a></div>`));
+  }
+});
+
+app.post('/video-mezzi/:id/carica', upload.single('video'), async (req,res)=>{
+  let localPath=req.file && req.file.path;
+  try{
+    if(!req.file) throw new Error('Seleziona un file video');
+    const m = await get(`SELECT * FROM mezzi WHERE id=?`, [req.params.id]);
+    if(!m) throw new Error('Mezzo non trovato');
+    const folder = await dpV262GetOrCreateVideoFolder(m);
+    // Un solo video attivo per mezzo: elimina i precedenti prima di caricare il nuovo.
+    await dpV228DeleteVideosHard(folder,m.targa).catch(()=>({rimasti:[],errors:[]}));
+    const fileName = dpV223VideoFileName(m, req.file.originalname);
+    await dpV234UploadVideoToFolderStable(req.file.path,fileName,req.file.mimetype,folder);
+    try { await run(`UPDATE mezzi SET drive_video_folder_id=?, drive_video_folder_link=? WHERE id=?`, [folder.id,folder.webViewLink||'',m.id]); } catch(e) {}
+    res.redirect(`/video-mezzi/${m.id}?ok=caricato`);
+  }catch(e){
+    res.status(500).send(page('Errore caricamento video', `<div class="box"><h2 class="bad">Caricamento non riuscito</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${req.params.id}">Riprova</a></div>`));
+  }finally{
+    if(localPath) fs.unlink(localPath,()=>{});
+  }
+});
+
+app.post('/video-mezzi/:id/elimina', async (req,res)=>{
+  try{
+    const m = await get(`SELECT * FROM mezzi WHERE id=?`, [req.params.id]);
+    if(!m) throw new Error('Mezzo non trovato');
+    const folder = await dpV223FindVideoFolderByTarga(m.targa).catch(()=>null);
+    if(folder) await dpV228DeleteVideosHard(folder,m.targa);
+    res.redirect(`/video-mezzi/${m.id}?ok=eliminato`);
+  }catch(e){
+    res.status(500).send(page('Errore eliminazione video', `<div class="box"><h2 class="bad">Eliminazione non riuscita</h2><pre>${esc(e.stack||e.message)}</pre><a class="btn" href="/video-mezzi/${req.params.id}">Torna</a></div>`));
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {
