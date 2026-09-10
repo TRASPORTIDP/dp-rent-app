@@ -8570,23 +8570,11 @@ app.get('/nexi-ko/:id', async (req, res) => {
 // V265 - pagina fatture da emettere
 app.get('/fatture-da-fare', async (req,res)=>{
   await dpV265CheckInvoiceAlerts().catch(()=>{});
-  const rows = await all(`SELECT * FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata'))) ORDER BY COALESCE(fattura_pagamento_data,data_inizio) DESC, id DESC`).catch(()=>[]);
-  const cards = (rows||[]).map(p=>{
-    const code = p.codice || codicePratica(p.id);
-    const age = p.fattura_pagamento_data ? Math.floor((Date.now()-new Date(p.fattura_pagamento_data).getTime())/3600000) : '';
-    const red = age !== '' && age >= 48 && !Number(p.fattura_alert_48h_inviato||0);
-    return `<div class="box" style="border-left:10px solid ${red?'#d70000':'#ffb000'};margin-bottom:14px">
-      <h2>${red?'🔴':'🟡'} ${esc(code)}</h2>
-      <p><b>Cliente:</b> ${esc((p.nome||'')+' '+(p.cognome||''))}</p>
-      <p><b>Importo:</b> € ${euro(p.totale || 0)} &nbsp; <b>Metodo:</b> ${esc(p.fattura_metodo || p.pagamento_metodo || p.nexi_stato || '')}</p>
-      <p><b>Pagamento:</b> ${esc(p.fattura_pagamento_data ? dpV223DateIt(String(p.fattura_pagamento_data).slice(0,10)) : '')} ${age!==''?`(${age}h fa)`:''}</p>
-      <p><b>Alert 48h:</b> ${Number(p.fattura_alert_48h_inviato||0)?'inviato':'da inviare se supera 48h'}</p>
-      <form method="POST" action="/fatture-da-fare/${p.id}/emessa" style="display:inline"><button class="btn">✅ Segna fatturato</button></form>
-      <a class="btn btn2" href="/contratto/${p.id}/gestisci">Apri contratto</a>
-      <a class="btn btn3" href="/pdf-view/${p.id}">PDF</a>
-    </div>`;
-  }).join('') || '<div class="box"><h2 class="ok">✅ Nessuna fattura da fare</h2><p>Tutti i pagamenti risultano fatturati.</p></div>';
-  res.send(page('Fatture da fare', `<div class="dp-one-page"><section class="dp-home-hero"><h2>Fatture da fare</h2><p>Pagamenti Nexi/Bonifico da fatturare</p></section>${cards}<a class="btn btn2" href="/">Dashboard</a></div>`));
+  const rows = await all(`SELECT * FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata','pronta_fic'))) ORDER BY COALESCE(fattura_pagamento_data,data_inizio) DESC, id DESC`).catch(()=>[]);
+  const history=await all(`SELECT * FROM noleggio_fatture ORDER BY data_fattura DESC,id DESC LIMIT 100`).catch(()=>[]);
+  const cards=(rows||[]).map(p=>{const code=p.codice||codicePratica(p.id);const age=p.fattura_pagamento_data?Math.floor((Date.now()-new Date(p.fattura_pagamento_data).getTime())/3600000):'';const red=age!==''&&age>=48&&!Number(p.fattura_alert_48h_inviato||0);return `<div class="box" style="border-left:10px solid ${red?'#d70000':'#ffb000'};margin-bottom:14px"><h2>${red?'🔴':'🟡'} ${esc(code)}</h2><p><b>Cliente:</b> ${esc((p.ragione_sociale||((p.nome||'')+' '+(p.cognome||''))))}</p><p><b>Importo:</b> € ${euro(dpNRentGross(p))} &nbsp; <b>Metodo:</b> ${esc(p.fattura_metodo||p.pagamento_metodo||p.nexi_stato||'')}</p><a class="btn" href="/noleggio/fattura/crea/${p.id}">🧾 CREA FATTURA N</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">Apri contratto</a><a class="btn btn3" href="/pdf-view/${p.id}">Contratto PDF</a></div>`;}).join('')||'<div class="box"><h2 class="ok">✅ Nessun noleggio da fatturare</h2></div>';
+  const hist=history.length?`<div class="box" style="overflow:auto"><h2>📚 Storico fatture DP RENT</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${history.map(f=>`<tr><td><b>${esc(f.numero_display)}</b></td><td>${esc(dpTItDate(f.data_fattura))}</td><td>${esc(f.cliente)}</td><td>€ ${euro(f.totale||0)}</td><td>${esc(f.stato)}</td><td><a class="btn" href="/noleggio/fattura/${f.id}">APRI</a><a class="btn btn2" target="_blank" href="/noleggio/fattura/${f.id}.pdf">PDF</a></td></tr>`).join('')}</table></div>`:'';
+  res.send(page('Fatture DP RENT',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURE DP RENT</h2><p>Numerazione separata: serie N</p></section>${cards}${hist}<a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div>`));
 });
 
 app.post('/contratto/:id/pagato-fattura-da-fare', async (req,res)=>{
@@ -11883,7 +11871,7 @@ app.get('/trasporti/clienti', async(req,res)=>{
   if(q) rows=await all(`SELECT * FROM trasporti_clienti WHERE ragione_sociale LIKE ? OR codice LIKE ? OR piva LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 1000`,Array(4).fill('%'+q+'%')).catch(()=>[]);
   else rows=await all(`SELECT * FROM trasporti_clienti ORDER BY ragione_sociale LIMIT 1000`).catch(()=>[]);
   const tot=(await get(`SELECT COUNT(*) n FROM trasporti_clienti`).catch(()=>({n:0}))).n;
-  const trs=rows.map(x=>`<tr><td>${esc(x.codice||'')}</td><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.piva||'')}</td><td>${esc(x.codice_fiscale||'')}</td><td>${esc(x.indirizzo||'')}<br>${esc(x.citta||'')} ${esc(x.provincia||'')}</td><td>${esc(x.telefono||'')}</td><td><a class="btn btn2" href="/trasporti/cliente/${x.id}/modifica">Modifica</a> <a class="btn" href="/trasporti/cliente/${x.id}/portale">🔗 Portale cliente</a></td></tr>`).join('');
+  const trs=rows.map(x=>`<tr><td>${esc(x.codice||'')}</td><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.piva||'')}</td><td>${esc(x.codice_fiscale||'')}</td><td>${esc(x.indirizzo||'')}<br>${esc(x.citta||'')} ${esc(x.provincia||'')}</td><td>${esc(x.telefono||'')}</td><td style="white-space:nowrap"><a class="btn btn2" href="/trasporti/cliente/${x.id}/modifica">Modifica</a> <a class="btn" href="/trasporti/cliente/${x.id}/portale">🔗 Portale</a> <form method="POST" action="/trasporti/cliente/${x.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questa anagrafica cliente?')"><button class="btn" style="background:#b00020">Elimina</button></form></td></tr>`).join('');
   res.send(page('Clienti trasporto',`<div class="box"><h2>👥 Clienti (${tot})</h2><form><input name="q" value="${esc(q)}" placeholder="Cerca cliente, P.IVA, città"><button>Cerca</button></form><p><a class="btn" href="/trasporti/cliente/nuovo">＋ Nuovo cliente</a></p><h3>Importa/aggiorna clienti</h3><form method="POST" enctype="multipart/form-data" action="/trasporti/clienti/importa"><input type="file" name="file" accept=".xlsx,.xls,.ods,.csv" required><button>Importa Excel / ODS</button></form><a class="btn btn2" href="/trasporti">Torna</a></div><div class="box" style="overflow:auto"><table><tr><th>Codice</th><th>Cliente</th><th>P.IVA</th><th>Cod. fiscale</th><th>Indirizzo / Località</th><th>Telefono</th><th></th></tr>${trs}</table></div>`));
 });
 
@@ -11902,9 +11890,21 @@ app.post('/trasporti/cliente/:id/modifica',async(req,res)=>{const b=req.body||{}
 
 app.get('/trasporti/modello/nuovo',(req,res)=>res.send(page('Nuovo modello',`<div class="box"><h2>🚗 Nuovo modello auto</h2><form method="POST"><label>Modello</label><input name="nome" required autofocus><button>Salva modello</button></form><a class="btn btn2" href="/trasporti/ordine/nuovo">Annulla</a></div>`)));
 app.post('/trasporti/modello/nuovo',async(req,res)=>{await dpTUpsertModel(req.body.nome);res.redirect('/trasporti/ordine/nuovo');});
-function dpTSiteForm(tipo){return `<div class="box"><h2>📍 Nuovo sito ${esc(tipo||'')}</h2><form method="POST"><label>Ragione sociale</label><input name="ragione_sociale" required><label>Indirizzo</label><input name="indirizzo"><label>CAP</label><input name="cap"><label>Città</label><input name="citta" required><label>Provincia</label><input name="provincia"><label>Regione</label><input name="regione"><label>Telefono</label><input name="telefono"><label>Email</label><input name="email"><label>P.IVA</label><input name="piva"><button>Salva sito</button></form><a class="btn btn2" href="/trasporti/ordine/nuovo">Annulla</a></div>`;}
-app.get('/trasporti/sito/nuovo',(req,res)=>res.send(page('Nuovo sito',dpTSiteForm(req.query.tipo))));
-app.post('/trasporti/sito/nuovo',async(req,res)=>{const b=req.body||{};const id=await dpTUpsertSite(b.ragione_sociale,b.citta,b.provincia,b.regione,b.indirizzo,b.telefono);if(id)await run(`UPDATE trasporti_siti SET cap=?,email=?,piva=? WHERE id=?`,[dpTClean(b.cap),dpTClean(b.email),dpTClean(b.piva),id]).catch(()=>{});res.redirect('/trasporti/ordine/nuovo');});
+app.post('/trasporti/cliente/:id/elimina',async(req,res)=>{
+  const c=await get(`SELECT * FROM trasporti_clienti WHERE id=?`,[req.params.id]).catch(()=>null);
+  if(!c)return res.status(404).send('Cliente non trovato');
+  const used=await get(`SELECT COUNT(*) n FROM trasporti_ordini WHERE cliente=?`,[c.ragione_sociale]).catch(()=>({n:0}));
+  if(Number(used?.n||0)>0)return res.status(400).send(page('Cliente utilizzato',`<div class="box"><h2 class="bad">Cliente non eliminato</h2><p>Questa anagrafica è collegata a <b>${used.n}</b> ordini. Puoi modificarla ma non eliminarla.</p><a class="btn" href="/trasporti/clienti">Torna ai clienti</a></div>`));
+  await run(`DELETE FROM trasporti_clienti WHERE id=?`,[c.id]);
+  res.redirect('/trasporti/clienti');
+});
+
+function dpTSiteForm(tipo,da){const qs=da==='siti'?'?da=siti':'';const back=da==='siti'?'/trasporti/siti':'/trasporti/ordine/nuovo';return `<div class="box"><h2>📍 Nuovo sito ${esc(tipo||'')}</h2><form method="POST" action="/trasporti/sito/nuovo${qs}"><label>Ragione sociale</label><input name="ragione_sociale" required><label>Indirizzo</label><input name="indirizzo"><label>CAP</label><input name="cap"><label>Città</label><input name="citta" required><label>Provincia</label><input name="provincia"><label>Regione</label><input name="regione"><label>Telefono</label><input name="telefono"><label>Email</label><input name="email"><label>P.IVA</label><input name="piva"><button>Salva sito</button></form><a class="btn btn2" href="${back}">Annulla</a></div>`;}
+app.get('/trasporti/sito/nuovo',(req,res)=>res.send(page('Nuovo sito',dpTSiteForm(req.query.tipo,req.query.da))));
+app.post('/trasporti/sito/nuovo',async(req,res)=>{const b=req.body||{};const id=await dpTUpsertSite(b.ragione_sociale,b.citta,b.provincia,b.regione,b.indirizzo,b.telefono);if(id)await run(`UPDATE trasporti_siti SET cap=?,email=?,piva=?,lat=NULL,lon=NULL WHERE id=?`,[dpTClean(b.cap),dpTClean(b.email),dpTClean(b.piva),id]).catch(()=>{});res.redirect(req.query.da==='siti'?'/trasporti/siti':'/trasporti/ordine/nuovo');});
+app.get('/trasporti/sito/:id/modifica',async(req,res)=>{const x=await get(`SELECT * FROM trasporti_siti WHERE id=?`,[req.params.id]).catch(()=>null);if(!x)return res.status(404).send('Sito non trovato');res.send(page('Modifica sito',`<div class="box"><h2>📍 Modifica sito</h2><form method="POST" action="/trasporti/sito/${x.id}/modifica"><label>Ragione sociale</label><input name="ragione_sociale" value="${esc(x.ragione_sociale||'')}"><label>Indirizzo</label><input name="indirizzo" value="${esc(x.indirizzo||'')}"><label>CAP</label><input name="cap" value="${esc(x.cap||'')}"><label>Città</label><input name="citta" value="${esc(x.citta||'')}" required><label>Provincia</label><input name="provincia" value="${esc(x.provincia||'')}"><label>Regione</label><input name="regione" value="${esc(x.regione||'')}"><label>Telefono</label><input name="telefono" value="${esc(x.telefono||'')}"><label>Email</label><input name="email" value="${esc(x.email||'')}"><label>P.IVA</label><input name="piva" value="${esc(x.piva||'')}"><button>Salva sito</button></form><a class="btn btn2" href="/trasporti/siti">Annulla</a></div>`));});
+app.post('/trasporti/sito/:id/modifica',async(req,res)=>{const b=req.body||{};const key=dpTSiteKey(b.ragione_sociale,b.citta,b.provincia);await run(`UPDATE trasporti_siti SET ragione_sociale=?,indirizzo=?,cap=?,citta=?,provincia=?,regione=?,telefono=?,email=?,piva=?,chiave=?,lat=NULL,lon=NULL WHERE id=?`,[dpTClean(b.ragione_sociale),dpTClean(b.indirizzo),dpTClean(b.cap),dpTClean(b.citta),dpTClean(b.provincia),dpTClean(b.regione),dpTClean(b.telefono),dpTClean(b.email),dpTClean(b.piva),key,req.params.id]);res.redirect('/trasporti/siti');});
+app.post('/trasporti/sito/:id/elimina',async(req,res)=>{const used=await get(`SELECT COUNT(*) n FROM trasporti_ordini WHERE sito_carico_id=? OR sito_scarico_id=?`,[req.params.id,req.params.id]).catch(()=>({n:0}));if(Number(used?.n||0)>0)return res.status(400).send(page('Sito utilizzato',`<div class="box"><h2 class="bad">Sito non eliminato</h2><p>Questo sito è collegato a <b>${used.n}</b> ordini. Puoi modificarlo ma non eliminarlo.</p><a class="btn" href="/trasporti/siti">Torna ai siti</a></div>`));await run(`DELETE FROM trasporti_siti WHERE id=?`,[req.params.id]);res.redirect('/trasporti/siti');});
 
 app.post('/trasporti/clienti/importa',dpTUpload.single('file'),async(req,res)=>{
   let fp=req.file&&req.file.path;
@@ -11935,10 +11935,33 @@ app.get('/trasporti/ordini', async (req,res)=>{
   const [autisti,bis]=await Promise.all([all(`SELECT * FROM trasporti_autisti WHERE attivo=1 ORDER BY nome`).catch(()=>[]),all(`SELECT * FROM trasporti_bisarche WHERE attiva=1 AND COALESCE(stato,'ATTIVO')='ATTIVO' ORDER BY nome`).catch(()=>[])]);
   const val=k=>esc(f[k]||'');
   const trs=rows.length?rows.map(o=>`<tr><td>${['DA_ASSEGNARE','IN_DEPOSITO'].includes(o.stato)?`<input class="dp-trip-check" type="checkbox" name="ordine_id" value="${o.id}" onchange="dpSelCount()">`:''}</td><td>${o.id}</td><td>${esc(dpTItDate(o.data_ordine))}</td><td><b>${esc(o.cliente)}</b></td><td>${esc(o.modello)}<br><small>${esc(o.targa_telaio)}</small></td><td>${esc(o.ragione_carico||'')}<br><small>${esc(o.citta_carico)} ${esc(o.provincia_carico)} ${esc(o.regione_carico||'')}</small></td><td>${esc(o.ragione_scarico||'')}<br><small>${esc(o.citta_scarico)} ${esc(o.provincia_scarico)} ${esc(o.regione_scarico||'')}</small></td><td>€ ${euro(o.prezzo||0)}</td><td><b>${esc(o.stato||'')}</b></td><td><a class="btn" href="/trasporti/ordine/${o.id}">Apri</a></td></tr>`).join(''):`<tr><td colspan="10">Nessun ordine.</td></tr>`;
-  const filtri=`<tr><form method="GET"><th></th><th></th><th><input type="date" name="data" value="${val('data')}" style="min-width:135px"></th><th><input name="cliente" value="${val('cliente')}" placeholder="Cliente"></th><th><input name="modello" value="${val('modello')}" placeholder="Modello"><input name="targa" value="${val('targa')}" placeholder="Targa"></th><th><input name="citta_carico" value="${val('citta_carico')}" placeholder="Città carico"><input name="provincia_carico" value="${val('provincia_carico')}" placeholder="Prov."><input name="regione_carico" value="${val('regione_carico')}" placeholder="Regione"></th><th><input name="citta_scarico" value="${val('citta_scarico')}" placeholder="Città scarico"><input name="provincia_scarico" value="${val('provincia_scarico')}" placeholder="Prov."><input name="regione_scarico" value="${val('regione_scarico')}" placeholder="Regione"></th><th><input name="prezzo" value="${val('prezzo')}" placeholder="Prezzo"></th><th><select name="stato"><option value="">Tutti</option>${['DA_ASSEGNARE','ASSEGNATO','IN_VIAGGIO','IN_DEPOSITO','DA_FATTURARE','FATTURA_PRONTA','FATTURATO'].map(x=>`<option ${f.stato===x?'selected':''}>${x}</option>`).join('')}</select></th><th><button>Filtra</button><a class="btn btn2" href="/trasporti/ordini">Azzera</a></th></form></tr>`;
+  const filtri=`<tr><th></th><th></th><th><input form="dpFilterForm" type="date" name="data" value="${val('data')}" style="min-width:135px"></th><th><input form="dpFilterForm" name="cliente" value="${val('cliente')}" placeholder="Cliente"></th><th><input form="dpFilterForm" name="modello" value="${val('modello')}" placeholder="Modello"><input form="dpFilterForm" name="targa" value="${val('targa')}" placeholder="Targa"></th><th><input form="dpFilterForm" name="citta_carico" value="${val('citta_carico')}" placeholder="Città carico"><input form="dpFilterForm" name="provincia_carico" value="${val('provincia_carico')}" placeholder="Prov."><input form="dpFilterForm" name="regione_carico" value="${val('regione_carico')}" placeholder="Regione"></th><th><input form="dpFilterForm" name="citta_scarico" value="${val('citta_scarico')}" placeholder="Città scarico"><input form="dpFilterForm" name="provincia_scarico" value="${val('provincia_scarico')}" placeholder="Prov."><input form="dpFilterForm" name="regione_scarico" value="${val('regione_scarico')}" placeholder="Regione"></th><th><input form="dpFilterForm" name="prezzo" value="${val('prezzo')}" placeholder="Prezzo"></th><th><select form="dpFilterForm" name="stato"><option value="">Tutti</option>${['DA_ASSEGNARE','ASSEGNATO','IN_VIAGGIO','IN_DEPOSITO','DA_FATTURARE','FATTURA_PRONTA','FATTURATO'].map(x=>`<option ${f.stato===x?'selected':''}>${x}</option>`).join('')}</select></th><th><button form="dpFilterForm" type="submit">Filtra</button><a class="btn btn2" href="/trasporti/ordini">Azzera</a></th></tr>`;
   const tripBox=`<div class="box"><h3>🚛 Crea viaggio dalle auto selezionate</h3><p><b id="dpSelNum">0</b> auto selezionate</p><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px"><div><label>Data viaggio</label><input type="date" name="data_viaggio" value="${new Date().toISOString().slice(0,10)}" required></div><div><label>Autista</label><select name="autista" required><option value="">Scegli...</option>${autisti.map(a=>`<option>${esc(a.nome)}</option>`).join('')}</select></div><div><label>Bisarca</label><select name="automezzo" required><option value="">Scegli...</option>${bis.map(b=>`<option>${esc(b.nome)} — ${esc(b.targa||'')}</option>`).join('')}</select></div></div><label>Note viaggio</label><textarea name="note"></textarea><button>CREA VIAGGIO CON LE AUTO SELEZIONATE</button></div>`;
-  res.send(page('Ordini trasporto', `<div class="box"><h2>📋 Ordini trasporto</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/trasporti/ordine/nuovo">＋ Nuovo ordine</a><a class="btn" href="/trasporti/mappa-carichi">🗺️ Mappa carichi</a><a class="btn btn2" href="/trasporti">Dashboard</a></div></div><form method="POST" action="/trasporti/viaggio/crea">${tripBox}<div class="box" style="overflow:auto"><table><tr><th>✓</th><th>ID</th><th>Data</th><th>Cliente</th><th>Auto</th><th>Carico</th><th>Scarico</th><th>Prezzo</th><th>Stato</th><th></th></tr>${filtri}${trs}</table></div></form><script>function dpSelCount(){document.getElementById('dpSelNum').textContent=document.querySelectorAll('.dp-trip-check:checked').length}</script>`));
+  res.send(page('Ordini trasporto', `<div class="box"><h2>📋 Ordini trasporto</h2><div style="display:flex;gap:8px;flex-wrap:wrap"><a class="btn" href="/trasporti/ordine/nuovo">＋ Nuovo ordine</a><a class="btn" href="/trasporti/mappa-carichi">🗺️ Mappa carichi</a><a class="btn btn2" href="/trasporti">Dashboard</a></div></div><form id="dpFilterForm" method="GET" action="/trasporti/ordini"></form><form method="POST" action="/trasporti/viaggio/crea">${tripBox}<div class="box" style="overflow:auto"><table><tr><th>✓</th><th>ID</th><th>Data</th><th>Cliente</th><th>Auto</th><th>Carico</th><th>Scarico</th><th>Prezzo</th><th>Stato</th><th></th></tr>${filtri}${trs}</table></div></form><script>function dpSelCount(){document.getElementById('dpSelNum').textContent=document.querySelectorAll('.dp-trip-check:checked').length}</script>`));
 });
+
+
+async function dpTGeocodeLoadSite(site){
+  if(!site||!site.id)return null;
+  const full=await get(`SELECT * FROM trasporti_siti WHERE id=?`,[site.id]).catch(()=>site);
+  if(Number(full?.lat)&&Number(full?.lon))return {lat:Number(full.lat),lon:Number(full.lon)};
+  const parts=[full?.indirizzo,full?.cap,full?.citta,full?.provincia,'Italia'].filter(Boolean);
+  const queries=[parts.join(', '),[full?.citta,full?.provincia,'Italia'].filter(Boolean).join(', ')].filter(Boolean);
+  for(const q of queries){
+    try{
+      const url='https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=it&q='+encodeURIComponent(q);
+      const rr=await fetch(url,{headers:{'User-Agent':'TrasportiDP/1.0 (info@trasportidp.com)','Accept':'application/json'}});
+      if(!rr.ok)continue;
+      const arr=await rr.json();
+      if(Array.isArray(arr)&&arr[0]){
+        const lat=Number(arr[0].lat),lon=Number(arr[0].lon);
+        if(Number.isFinite(lat)&&Number.isFinite(lon)){await run(`UPDATE trasporti_siti SET lat=?,lon=? WHERE id=?`,[lat,lon,site.id]);return {lat,lon};}
+      }
+    }catch(_){}
+    await new Promise(r=>setTimeout(r,1050));
+  }
+  return null;
+}
 
 app.get('/trasporti/mappa-carichi',async(req,res)=>{
   const rows=await all(`SELECT o.*,s.lat,s.lon,s.indirizzo,s.cap,s.telefono FROM trasporti_ordini o LEFT JOIN trasporti_siti s ON s.id=o.sito_carico_id WHERE o.stato IN ('DA_ASSEGNARE','IN_DEPOSITO') ORDER BY o.citta_carico,o.id LIMIT 500`).catch(()=>[]);
@@ -11948,14 +11971,13 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     if(!bySite.has(k)) bySite.set(k,{id:o.sito_carico_id,citta:o.citta_carico,provincia:o.provincia_carico,regione:o.regione_carico,lat:o.lat,lon:o.lon});
   }
 
-  // Render immediato: niente attese lunghe per geocodificare tutti i siti.
-  const missing=[...bySite.values()].filter(x=>x.id && (!x.lat||!x.lon)).slice(0,5);
-  setTimeout(async()=>{
-    for(const site of missing){
-      try{ await dpTGeocodeLoadSite(site); await new Promise(r=>setTimeout(r,1100)); }catch(e){}
-    }
-  },100);
-
+  // V303: localizza progressivamente i punti mancanti PRIMA di disegnare la mappa.
+  // Massimo 8 per apertura per rispettare Nominatim e non tenere la pagina bloccata troppo a lungo.
+  const missing=[...bySite.values()].filter(x=>x.id && (!Number(x.lat)||!Number(x.lon))).slice(0,8);
+  for(const site of missing){
+    try{const c=await dpTGeocodeLoadSite(site);if(c){site.lat=c.lat;site.lon=c.lon;}}catch(_){}
+    await new Promise(r=>setTimeout(r,1100));
+  }
   const coords={};for(const [k,v] of bySite.entries())coords[k]={lat:Number(v.lat)||null,lon:Number(v.lon)||null};
   const items=rows.map(o=>{
     const k=o.sito_carico_id||('x'+o.citta_carico+'|'+o.provincia_carico),c=coords[k]||{};
@@ -11979,7 +12001,7 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     .leaflet-popup-content{max-width:88vw!important}.leaflet-popup-content-wrapper{max-height:520px}
   </style>
   <div class="box"><h2>🗺️ Mappa località di carico</h2>
-    <p><b>${rows.length}</b> auto da assegnare • <b>${items.length}</b> già visibili in mappa${missingCount?` • ${missingCount} da localizzare`:''}.</p>
+    <p><b>${rows.length}</b> auto da assegnare • <b>${items.length}</b> già visibili in mappa${missingCount?` • ${missingCount} ancora da localizzare`:''}.</p>${missingCount?'<p class="notice">La mappa localizza fino a 8 nuovi punti ad ogni apertura. Premi <b>Ricarica mappa</b> finché i punti mancanti arrivano a 0.</p>':''}
     <a class="btn btn2" href="/trasporti/ordini">Tabella ordini</a>
     <a class="btn" href="/trasporti/mappa-carichi">Ricarica mappa</a>
   </div>
@@ -12027,7 +12049,7 @@ app.get('/trasporti/ordine/nuovo', async (req,res)=>{
   const cliOpts=clienti.map(x=>`<option value="${esc(x.ragione_sociale)}">${esc([x.codice,x.indirizzo,x.citta,x.provincia].filter(Boolean).join(' • '))}</option>`).join('');
   const modOpts=modelli.map(x=>`<option value="${esc(x.nome)}"></option>`).join('');
   const js=`<script>function dpPickSite(inp,hid){const dl=document.getElementById('dp-siti-list');let id='';for(const o of dl.options){if(o.value===inp.value){id=o.dataset.id||'';break;}}document.getElementById(hid).value=id;}</script>`;
-  res.send(page('Nuovo ordine trasporto', `<div class="box"><h2>＋ Nuovo ordine trasporto</h2><p class="notice">Ordine rapido: cliente, auto, carico, scarico e prezzo. Il DDT si inserisce o si emette dopo.</p><form method="POST" action="/trasporti/ordine/nuovo">
+  res.send(page('Nuovo ordine trasporto', `<div class="box"><h2>＋ Nuovo ordine trasporto</h2><p class="notice">Ordine rapido: cliente, auto, carico, scarico e prezzo. Il DDT si inserisce o si emette dopo.</p><form method="POST" action="/trasporti/ordine/nuovo" enctype="multipart/form-data">
     <label>Data ordine</label><input type="date" name="data_ordine" value="${new Date().toISOString().slice(0,10)}" required>
     <label>Cliente</label><div style="display:flex;gap:8px"><input name="cliente" list="dp-clienti-list" autocomplete="off" placeholder="Scrivi cliente..." required><a class="btn btn2" href="/trasporti/cliente/nuovo">＋ CREA</a></div><datalist id="dp-clienti-list">${cliOpts}</datalist>
     <label>Modello auto</label><div style="display:flex;gap:8px"><input name="modello" list="dp-modelli-list" autocomplete="off" placeholder="Scrivi modello..."><a class="btn btn2" href="/trasporti/modello/nuovo">＋ CREA</a></div><datalist id="dp-modelli-list">${modOpts}</datalist>
@@ -12035,19 +12057,29 @@ app.get('/trasporti/ordine/nuovo', async (req,res)=>{
     <h3>Carico</h3><div style="display:flex;gap:8px"><input list="dp-siti-list" autocomplete="off" placeholder="Scrivi sito o città..." oninput="dpPickSite(this,'sito_carico_id')"><a class="btn btn2" href="/trasporti/sito/nuovo?tipo=carico">＋ CREA</a></div><input type="hidden" id="sito_carico_id" name="sito_carico_id">
     <h3>Scarico</h3><div style="display:flex;gap:8px"><input list="dp-siti-list" autocomplete="off" placeholder="Scrivi sito o città..." oninput="dpPickSite(this,'sito_scarico_id')"><a class="btn btn2" href="/trasporti/sito/nuovo?tipo=scarico">＋ CREA</a></div><input type="hidden" id="sito_scarico_id" name="sito_scarico_id">
     <datalist id="dp-siti-list">${sitoOpts}</datalist>
-    <label>Prezzo</label><input type="number" step="0.01" name="prezzo"><label>IVA %</label><input type="number" step="0.01" name="iva" value="22"><label>Note</label><textarea name="note"></textarea><button>Salva ordine</button>
+    <label>Prezzo</label><input type="number" step="0.01" name="prezzo"><label>IVA %</label><input type="number" step="0.01" name="iva" value="22"><label>Note</label><textarea name="note"></textarea><label>📎 Autorizzazione al ritiro (PDF o foto)</label><input type="file" name="autorizzazione" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/*"><button>Salva ordine</button>
   </form><a class="btn btn2" href="/trasporti/ordini">Annulla</a></div>${js}`));
 });
 
-app.post('/trasporti/ordine/nuovo', async (req,res)=>{
+app.post('/trasporti/ordine/nuovo', upload.single('autorizzazione'), async (req,res)=>{
   try{
     const b=req.body||{};
     let sc= b.sito_carico_id ? await get(`SELECT * FROM trasporti_siti WHERE id=?`,[b.sito_carico_id]).catch(()=>null) : null;
     let ss= b.sito_scarico_id ? await get(`SELECT * FROM trasporti_siti WHERE id=?`,[b.sito_scarico_id]).catch(()=>null) : null;
     const raw={DATA_ORD:b.data_ordine,CLIENTE:b.cliente,MOD_AUT:b.modello,TARGA:b.targa_telaio,RAG_SOC_PAR:sc?.ragione_sociale||b.ragione_carico,CITTA_PAR:sc?.citta||b.citta_carico,PROVIN_PAR:sc?.provincia||b.provincia_carico,REGIONE_PAR:sc?.regione||b.regione_carico,INDIRIZZO_CARICO:sc?.indirizzo||'',TEL_CARICO:sc?.telefono||'',RAG_SOC_ARR:ss?.ragione_sociale||b.ragione_scarico,CITTA_ARR:ss?.citta||b.citta_scarico,PROVIN_ARR:ss?.provincia||b.provincia_scarico,REGIONE_ARR:ss?.regione||b.regione_scarico,INDIRIZZO_SCARICO:ss?.indirizzo||'',TEL_SCARICO:ss?.telefono||'',PREZZO:b.prezzo,IVA:b.iva,NOTE:b.note};
     const r=await dpTImportRow(raw); if(r.duplicate) throw new Error('Ordine già presente (possibile doppione)');
-    res.redirect('/trasporti/ordini');
-  }catch(e){res.status(400).send(page('Errore ordine',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/trasporti/ordine/nuovo">Torna</a></div>`));}
+    const oid=r.id||r.lastID;
+    if(req.file){
+      const mime=String(req.file.mimetype||'').toLowerCase();
+      const ok=['application/pdf','image/jpeg','image/png','image/heic','image/heif'].includes(mime);
+      if(!ok){try{fs.unlinkSync(req.file.path)}catch(_){};throw new Error('Formato autorizzazione non ammesso: usa PDF, JPG, PNG o HEIC');}
+      const ext=path.extname(req.file.originalname||'').toLowerCase().replace(/[^.a-z0-9]/g,'').slice(0,8);
+      const final=path.join(DP_T_AUTH_DIR,`ordine_${oid}_${Date.now()}${ext||'.bin'}`);
+      fs.renameSync(req.file.path,final);
+      await run(`UPDATE trasporti_ordini SET autorizzazione_file=?,autorizzazione_nome=?,autorizzazione_mime=?,autorizzazione_uploaded_at=CURRENT_TIMESTAMP,inserito_da='UFFICIO',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[final,path.basename(req.file.originalname||'autorizzazione'),req.file.mimetype||'application/octet-stream',oid]);
+    } else await run(`UPDATE trasporti_ordini SET inserito_da='UFFICIO',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[oid]).catch(()=>{});
+    res.redirect('/trasporti/ordine/'+oid);
+  }catch(e){if(req.file&&req.file.path&&fs.existsSync(req.file.path))try{fs.unlinkSync(req.file.path)}catch(_){};res.status(400).send(page('Errore ordine',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/trasporti/ordine/nuovo">Torna</a></div>`));}
 });
 
 
@@ -12317,8 +12349,8 @@ app.get('/trasporti/siti', async (req,res)=>{
   if(q) rows=await all(`SELECT * FROM trasporti_siti WHERE ragione_sociale LIKE ? OR citta LIKE ? OR provincia LIKE ? OR indirizzo LIKE ? ORDER BY ragione_sociale,citta LIMIT 1000`,Array(4).fill('%'+q+'%')).catch(()=>[]);
   else rows=await all(`SELECT * FROM trasporti_siti ORDER BY ragione_sociale,citta LIMIT 1000`).catch(()=>[]);
   const tot=(await get(`SELECT COUNT(*) n FROM trasporti_siti`).catch(()=>({n:0}))).n;
-  const trs=rows.map(x=>`<tr><td>${esc(x.locid||x.id)}</td><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.citta)}</td><td>${esc(x.provincia)}</td><td>${esc(x.regione||'')}</td><td>${esc(x.indirizzo||'')}</td><td>${esc(x.telefono||'')}</td></tr>`).join('');
-  res.send(page('Siti trasporto',`<div class="box"><h2>📍 Siti carico / scarico (${tot})</h2><form><input name="q" value="${esc(q)}" placeholder="Cerca sito, indirizzo o città"><button>Cerca</button></form><h3>Importa/aggiorna siti</h3><form method="POST" enctype="multipart/form-data" action="/trasporti/siti/importa"><input type="file" name="file" accept=".xlsx,.xls,.ods,.csv" required><button>Importa Excel / ODS</button></form><a class="btn btn2" href="/trasporti">Torna</a></div><div class="box" style="overflow:auto"><table><tr><th>ID</th><th>Ragione sociale</th><th>Città</th><th>Prov.</th><th>Regione</th><th>Indirizzo</th><th>Telefono</th></tr>${trs}</table></div>`));
+  const trs=rows.map(x=>`<tr><td>${esc(x.locid||x.id)}</td><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.citta)}</td><td>${esc(x.provincia)}</td><td>${esc(x.regione||'')}</td><td>${esc(x.indirizzo||'')}</td><td>${esc(x.telefono||'')}</td><td style="white-space:nowrap"><a class="btn btn2" href="/trasporti/sito/${x.id}/modifica">Modifica</a> <form method="POST" action="/trasporti/sito/${x.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questo sito?')"><button class="btn" style="background:#b00020">Elimina</button></form></td></tr>`).join('');
+  res.send(page('Siti trasporto',`<div class="box"><h2>📍 Siti carico / scarico (${tot})</h2><form><input name="q" value="${esc(q)}" placeholder="Cerca sito, indirizzo o città"><button>Cerca</button></form><p><a class="btn" href="/trasporti/sito/nuovo?da=siti">＋ Nuovo sito</a></p><h3>Importa/aggiorna siti</h3><form method="POST" enctype="multipart/form-data" action="/trasporti/siti/importa"><input type="file" name="file" accept=".xlsx,.xls,.ods,.csv" required><button>Importa Excel / ODS</button></form><a class="btn btn2" href="/trasporti">Torna</a></div><div class="box" style="overflow:auto"><table><tr><th>ID</th><th>Ragione sociale</th><th>Città</th><th>Prov.</th><th>Regione</th><th>Indirizzo</th><th>Telefono</th><th>Azioni</th></tr>${trs}</table></div>`));
 });
 app.post('/trasporti/siti/importa',dpTUpload.single('file'),async(req,res)=>{
   let fp=req.file&&req.file.path;
@@ -13264,17 +13296,8 @@ app.get('/trasporti/fattura/:id.pdf',async(req,res)=>{
       doc.rect(28,y,300,24).fill(RED);
       T('PAGAMENTO',40,y+7,180,9,'Helvetica-Bold','#fff');
 
-      const opts=['Bonifico vista fattura','Ri.Ba.','Bonifico 30 gg','Bonifico 60 gg','Bonifico 90 gg'];
-      let py=y+32;
-      for(const op of opts){
-        doc.rect(40,py,10,10).stroke('#888');
-        if(String(f.pagamento||'').toLowerCase()===op.toLowerCase()){
-          doc.rect(40,py,10,10).fill(RED);
-          T('X',42,py+1,6,6.5,'Helvetica-Bold','#fff','center');
-        }
-        T(op,57,py,235,8);
-        py+=15;
-      }
+      T(f.pagamento||'Bonifico vista fattura',40,y+36,265,10,'Helvetica-Bold');
+      T('Modalita selezionata per questa fattura',40,y+55,265,7.4,'Helvetica','#555');
 
       BOX(340,y,227,108);
       T('Imponibile',353,y+18,90,9);
@@ -13371,16 +13394,176 @@ app.post('/trasporti/fatturazione/segna', async(req,res)=>{
   }catch(e){res.status(500).send(e.message);}
 });
 
+
+// =========================
+// V304 - FATTURAZIONE DP RENT SERIE N
+// =========================
+db.run(`CREATE TABLE IF NOT EXISTS noleggio_fatture (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  anno INTEGER,
+  numero INTEGER,
+  serie TEXT DEFAULT 'N',
+  numero_display TEXT,
+  data_fattura TEXT,
+  prenotazione_id INTEGER UNIQUE,
+  cliente TEXT,
+  cliente_id INTEGER,
+  imponibile REAL DEFAULT 0,
+  iva REAL DEFAULT 0,
+  totale REAL DEFAULT 0,
+  pagamento TEXT DEFAULT 'Bonifico vista fattura',
+  note TEXT,
+  stato TEXT DEFAULT 'PRONTA_FIC',
+  fic_id TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE(anno,numero,serie)
+)`);
+
+function dpNFattNumero(numero,serie='N'){
+  return `${Number(numero)||0}/${String(serie||'N').trim().toUpperCase()||'N'}`;
+}
+async function dpNNextInvoiceNumber(anno,serie='N'){
+  const r=await get(`SELECT COALESCE(MAX(numero),0)+1 n FROM noleggio_fatture WHERE anno=? AND serie=?`,[Number(anno),String(serie||'N').trim().toUpperCase()]).catch(()=>({n:1}));
+  return Number(r?.n||1);
+}
+function dpNRentGross(p){
+  const vals=[p?.totale_finale,p?.prezzo_manual_totale,p?.totale];
+  for(const v of vals){const n=Number(String(v??'').replace(',','.'));if(Number.isFinite(n)&&n>0)return n;}
+  return 0;
+}
+async function dpNRentInvoiceData(id){
+  const p=await get(`SELECT p.*,m.targa AS mezzo_targa,m.marca AS mezzo_marca,m.modello AS mezzo_modello,m.categoria AS mezzo_categoria FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`,[id]).catch(()=>null);
+  if(!p)return null;
+  const c=p.cliente_id?await get(`SELECT * FROM clienti WHERE id=?`,[p.cliente_id]).catch(()=>null):null;
+  const x={...(c||{}),...p};
+  x.ragione_sociale=p.ragione_sociale||c?.ragione_sociale||'';
+  x.partita_iva=p.partita_iva||p.piva||c?.partita_iva||c?.piva||'';
+  x.codice_fiscale=p.codice_fiscale||c?.codice_fiscale||'';
+  x.pec=p.pec||c?.pec||'';
+  x.sdi=p.codice_sdi||p.sdi||c?.codice_sdi||c?.sdi||'';
+  x.indirizzo_fatturazione=p.indirizzo_fatturazione||c?.indirizzo_fatturazione||p.indirizzo||c?.indirizzo||'';
+  x.citta_fatturazione=p.citta_fatturazione||c?.citta_fatturazione||p.citta||c?.citta||'';
+  x.provincia_fatturazione=p.provincia_fatturazione||c?.provincia_fatturazione||p.provincia||c?.provincia||'';
+  x.cap_fatturazione=p.cap_fatturazione||c?.cap_fatturazione||p.cap||c?.cap||'';
+  return x;
+}
+function dpNClienteLabel(p){
+  return String(p?.ragione_sociale||p?.azienda||`${p?.nome||''} ${p?.cognome||''}`).trim()||'Cliente';
+}
+
+app.get('/noleggio/fattura/crea/:id',async(req,res)=>{
+  const p=await dpNRentInvoiceData(req.params.id);
+  if(!p)return res.status(404).send('Contratto non trovato');
+  const ex=await get(`SELECT * FROM noleggio_fatture WHERE prenotazione_id=?`,[p.id]).catch(()=>null);
+  if(ex)return res.redirect(`/noleggio/fattura/${ex.id}`);
+  const data=new Date().toISOString().slice(0,10),anno=Number(data.slice(0,4));
+  const next=await dpNNextInvoiceNumber(anno,'N');
+  const totale=dpNRentGross(p),imponibile=totale/1.22,iva=totale-imponibile;
+  res.send(page('Crea fattura DP RENT',`<div class="box"><h2>🧾 Crea fattura DP RENT</h2>
+    <p><b>Contratto:</b> ${esc(p.codice||codicePratica(p.id))}<br><b>Cliente:</b> ${esc(dpNClienteLabel(p))}<br><b>Mezzo:</b> ${esc([p.mezzo_marca,p.mezzo_modello,p.mezzo_targa].filter(Boolean).join(' '))}<br><b>Periodo:</b> ${esc(dpDateIt(p.data_inizio))} - ${esc(dpDateIt(p.data_fine))}</p>
+    <p><b>Totale IVA compresa:</b> € ${euro(totale)} &nbsp; <b>Imponibile:</b> € ${euro(imponibile)} &nbsp; <b>IVA 22%:</b> € ${euro(iva)}</p>
+    <form method="POST" action="/noleggio/fattura/crea/${p.id}"><div class="grid">
+      <div><label>Numero</label><input type="number" name="numero" min="1" value="${next}" required></div>
+      <div><label>Serie</label><input name="serie" value="N" required></div>
+      <div><label>Data fattura</label><input type="date" name="data_fattura" value="${data}" required></div>
+      <div><label>Pagamento</label>${dpTPaymentField(p.fattura_metodo||p.pagamento_metodo||'Bonifico vista fattura')}</div>
+    </div><label>Note</label><textarea name="note"></textarea><button>CREA FATTURA DP RENT</button></form>
+    <a class="btn btn2" href="/fatture-da-fare">Annulla</a></div>`));
+});
+
+app.post('/noleggio/fattura/crea/:id',async(req,res)=>{
+  try{
+    const p=await dpNRentInvoiceData(req.params.id);if(!p)throw new Error('Contratto non trovato');
+    const ex=await get(`SELECT id FROM noleggio_fatture WHERE prenotazione_id=?`,[p.id]).catch(()=>null);if(ex)return res.redirect(`/noleggio/fattura/${ex.id}`);
+    const data=req.body.data_fattura||new Date().toISOString().slice(0,10),anno=Number(data.slice(0,4))||new Date().getFullYear();
+    const serie=String(req.body.serie||'N').trim().toUpperCase()||'N',numero=Number(req.body.numero)||await dpNNextInvoiceNumber(anno,serie),display=dpNFattNumero(numero,serie);
+    const totale=dpNRentGross(p),imponibile=totale/1.22,iva=totale-imponibile,cliente=dpNClienteLabel(p);
+    const ins=await run(`INSERT INTO noleggio_fatture (anno,numero,serie,numero_display,data_fattura,prenotazione_id,cliente,cliente_id,imponibile,iva,totale,pagamento,note,stato) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[anno,numero,serie,display,data,p.id,cliente,p.cliente_id||null,imponibile,iva,totale,String(req.body.pagamento||'Bonifico vista fattura').trim(),String(req.body.note||'').trim(),'PRONTA_FIC']);
+    await run(`UPDATE prenotazioni SET fattura_stato='pronta_fic',fattura_numero=?,fattura_metodo=?,fattura_note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[display,String(req.body.pagamento||'Bonifico vista fattura').trim(),String(req.body.note||'').trim(),p.id]).catch(()=>{});
+    res.redirect(`/noleggio/fattura/${ins.lastID}`);
+  }catch(e){res.status(400).send(page('Errore fattura DP RENT',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/fatture-da-fare">Torna</a></div>`));}
+});
+
+app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
+  const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(!f)return res.status(404).send('Fattura non trovata');
+  const p=await dpNRentInvoiceData(f.prenotazione_id);
+  res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p>
+    <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a>
+    ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura e rimettere il noleggio da fatturare?')"><button class="btn" style="background:#8b0000">ELIMINA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
+    <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
+});
+
+app.get('/noleggio/fattura/:id/modifica',async(req,res)=>{
+  const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(!f)return res.status(404).send('Fattura non trovata');
+  if(f.stato==='INVIATA_FIC')return res.status(400).send('Fattura gia inviata');
+  res.send(page('Modifica fattura DP RENT',`<div class="box"><h2>✏️ Modifica fattura ${esc(f.numero_display)}</h2><form method="POST" action="/noleggio/fattura/${f.id}/modifica"><div class="grid">
+    <div><label>Numero</label><input type="number" name="numero" value="${esc(f.numero)}" required></div><div><label>Serie</label><input name="serie" value="${esc(f.serie||'N')}" required></div><div><label>Data</label><input type="date" name="data_fattura" value="${esc(f.data_fattura||'')}" required></div><div><label>Pagamento</label>${dpTPaymentField(f.pagamento)}</div></div><label>Note</label><textarea name="note">${esc(f.note||'')}</textarea><button>Salva fattura</button></form></div>`));
+});
+app.post('/noleggio/fattura/:id/modifica',async(req,res)=>{
+  try{const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]);if(!f)throw new Error('Fattura non trovata');if(f.stato==='INVIATA_FIC')throw new Error('Fattura gia inviata');const numero=Number(req.body.numero||f.numero),serie=String(req.body.serie||'N').trim().toUpperCase(),display=dpNFattNumero(numero,serie);await run(`UPDATE noleggio_fatture SET numero=?,serie=?,numero_display=?,data_fattura=?,pagamento=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[numero,serie,display,req.body.data_fattura||f.data_fattura,String(req.body.pagamento||f.pagamento).trim(),String(req.body.note||'').trim(),f.id]);await run(`UPDATE prenotazioni SET fattura_numero=?,fattura_metodo=?,fattura_note=? WHERE id=?`,[display,String(req.body.pagamento||f.pagamento).trim(),String(req.body.note||'').trim(),f.prenotazione_id]).catch(()=>{});res.redirect(`/noleggio/fattura/${f.id}`);}catch(e){res.status(400).send(page('Errore',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}
+});
+app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
+  const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(!f)return res.redirect('/fatture-da-fare');if(f.stato==='INVIATA_FIC')return res.status(400).send('Fattura gia inviata fiscalmente');await run(`DELETE FROM noleggio_fatture WHERE id=?`,[f.id]);await run(`UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=0 WHERE id=?`,[f.prenotazione_id]).catch(()=>{});res.redirect('/fatture-da-fare');
+});
+app.post('/noleggio/fattura/:id/inviata-fic',async(req,res)=>{
+  const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(f){await run(`UPDATE noleggio_fatture SET stato='INVIATA_FIC',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[f.id]);await run(`UPDATE prenotazioni SET fattura_stato='emessa',fattura_numero=? WHERE id=?`,[f.numero_display,f.prenotazione_id]).catch(()=>{});}res.redirect(`/noleggio/fattura/${req.params.id}`);
+});
+
+app.get('/noleggio/fattura/:id.pdf',async(req,res)=>{
+  try{
+    const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]);if(!f)throw new Error('Fattura non trovata');const p=await dpNRentInvoiceData(f.prenotazione_id);if(!p)throw new Error('Contratto non trovato');
+    const doc=new PDFDocument({size:'A4',margin:0});res.setHeader('Content-Type','application/pdf');res.setHeader('Cache-Control','no-store');res.setHeader('Content-Disposition',`inline; filename="FATTURA_DPRENT_${String(f.numero_display).replace(/[^A-Za-z0-9_-]/g,'_')}.pdf"`);doc.pipe(res);
+    const W=595.28,H=841.89,RED='#d71920',BLACK='#111317',LINE='#d5d8dc',PALE='#f4f5f6';const logo=path.join(appPublicDir,'logo.png');
+    const T=(v,x,y,w,size=8,font='Helvetica',color=BLACK,align='left')=>doc.fillColor(color).font(font).fontSize(size).text(String(v??''),x,y,{width:w,align,lineBreak:false});
+    const BOX=(x,y,w,h,fill='#fff',stroke=LINE,r=5)=>doc.roundedRect(x,y,w,h,r).fillAndStroke(fill,stroke);
+    doc.rect(0,0,W,H).fill('#fff');
+    if(fs.existsSync(logo)){try{doc.image(logo,28,20,{fit:[120,75]});}catch(_){T('DP RENT',28,30,135,25,'Helvetica-Bold',RED);}}else T('DP RENT',28,30,135,25,'Helvetica-Bold',RED);
+    doc.moveTo(168,20).lineTo(168,108).lineWidth(2).stroke(RED);T('DP RENT',185,28,245,24,'Helvetica-BoldOblique',BLACK);T('NOLEGGIO VEICOLI',185,59,260,10,'Helvetica-Bold',BLACK);doc.moveTo(185,77).lineTo(385,77).lineWidth(1.5).stroke(RED);T('NOLEGGIO SEMPLICE E VELOCE',185,87,250,8.6,'Helvetica-Bold',BLACK);
+    doc.polygon([446,0],[474,0],[420,106],[392,106]).fill('#149447');doc.polygon([474,0],[502,0],[448,106],[420,106]).fill('#fff');doc.polygon([502,0],[530,0],[476,106],[448,106]).fill('#e31b23');doc.polygon([476,64],[W,64],[W,122],[447,122]).fill(BLACK);T('FATTURA',482,78,92,17,'Helvetica-Bold','#fff','right');T(`N. ${f.numero_display}`,482,101,92,10.5,'Helvetica-Bold','#fff','right');
+    T('Trasporti DP S.R.L. - DP RENT',28,130,300,10.5,'Helvetica-Bold');T('Via Tuderte 466 - 05035 Narni (TR)',28,146,280,8.1);T('P.IVA 01385450554 - C.F. 01385450554',28,160,280,8.1);T('Tel. 0744 817108',28,174,280,8.1);T('info@trasportidp.com - www.trasportidp.com',28,188,300,8.1);
+    BOX(365,132,202,72);T('Data fattura:',378,143,75,8.5,'Helvetica-Bold');T(dpTItDate(f.data_fattura),455,143,100,8.5,'Helvetica-Bold',RED);T('Protocollo:',378,161,66,8.5,'Helvetica-Bold');T(`FN-${f.anno}-${String(f.numero).padStart(4,'0')}`,446,161,110,8.5);T('Serie:',378,179,42,8.5,'Helvetica-Bold');T(f.serie||'N',422,179,80,8.5,'Helvetica-Bold',RED);
+    const gap=10,bw=(W-56-gap)/2,y=222;doc.roundedRect(28,y,bw,24,5).fill(RED);doc.roundedRect(28+bw+gap,y,bw,24,5).fill(RED);T('CLIENTE / DESTINATARIO',40,y+7,bw-24,9,'Helvetica-Bold','#fff');T('DATI NOLEGGIO',40+bw+gap,y+7,bw-24,9,'Helvetica-Bold','#fff');BOX(28,y+22,bw,118);BOX(28+bw+gap,y+22,bw,118);
+    T(dpNClienteLabel(p),40,y+37,bw-24,10.5,'Helvetica-Bold');T(p.indirizzo_fatturazione||'',40,y+54,bw-24,8);T(`${p.cap_fatturazione||''} ${p.citta_fatturazione||''} ${p.provincia_fatturazione||''}`,40,y+68,bw-24,8);T(`P.IVA: ${p.partita_iva||''}`,40,y+84,bw-24,8);T(`C.F.: ${p.codice_fiscale||''}`,40,y+98,bw-24,8);T(`SDI: ${p.sdi||''}`,40,y+112,bw-24,8);T(`PEC: ${p.pec||''}`,40,y+126,bw-24,8);
+    T(`Contratto: ${p.codice||codicePratica(p.id)}`,40+bw+gap,y+38,bw-24,8.3,'Helvetica-Bold');T(`Mezzo: ${[p.mezzo_marca,p.mezzo_modello].filter(Boolean).join(' ')}`,40+bw+gap,y+54,bw-24,8.3);T(`Targa: ${p.mezzo_targa||''}`,40+bw+gap,y+70,bw-24,8.3);T(`Dal: ${dpDateIt(p.data_inizio)} ${p.ora_inizio||''}`,40+bw+gap,y+86,bw-24,8.3);T(`Al: ${dpDateIt(p.data_fine)} ${p.ora_fine||''}`,40+bw+gap,y+102,bw-24,8.3);T(`Km inclusi/extra: ${p.km_inclusi||''} ${p.km_extra_rientro?'- Extra '+p.km_extra_rientro:''}`,40+bw+gap,y+118,bw-24,8.1);
+    const ty=375;doc.rect(28,ty,539,25).fill(RED);T('DESCRIZIONE',40,ty+8,300,8,'Helvetica-Bold','#fff');T('IMPONIBILE',365,ty+8,78,8,'Helvetica-Bold','#fff','right');T('IVA',458,ty+8,42,8,'Helvetica-Bold','#fff','right');T('TOTALE',510,ty+8,47,8,'Helvetica-Bold','#fff','right');doc.rect(28,ty+25,539,52).stroke(LINE);T(`Noleggio ${[p.mezzo_marca,p.mezzo_modello,p.mezzo_targa].filter(Boolean).join(' ')}`,40,ty+33,300,8,'Helvetica-Bold');T(`${dpDateIt(p.data_inizio)} - ${dpDateIt(p.data_fine)}`,40,ty+49,300,7.4);T(`€ ${euro(f.imponibile)}`,365,ty+37,78,8,'Helvetica',BLACK,'right');T('22%',458,ty+37,42,8,'Helvetica',BLACK,'right');T(`€ ${euro(f.totale)}`,510,ty+37,47,8,'Helvetica-Bold',BLACK,'right');
+    const sy=520;BOX(28,sy,300,90);doc.rect(28,sy,300,24).fill(RED);T('PAGAMENTO',40,sy+7,180,9,'Helvetica-Bold','#fff');T(f.pagamento||'Bonifico vista fattura',40,sy+37,265,10,'Helvetica-Bold');T('Modalita selezionata per questa fattura',40,sy+56,265,7.4,'Helvetica','#555');BOX(340,sy,227,90);T('Imponibile',353,sy+18,90,9);T(`€ ${euro(f.imponibile)}`,456,sy+18,98,9,'Helvetica',BLACK,'right');T('IVA 22%',353,sy+42,90,9);T(`€ ${euro(f.iva)}`,456,sy+42,98,9,'Helvetica',BLACK,'right');doc.rect(340,sy+61,227,29).fill(PALE);doc.rect(466,sy+61,101,29).fill(RED);T('TOTALE',353,sy+70,110,9,'Helvetica-Bold');T(`€ ${euro(f.totale)}`,473,sy+68,85,11,'Helvetica-Bold','#fff','right');
+    BOX(28,625,300,78);BOX(340,625,227,78);T('COORDINATE BANCARIE',40,634,250,9,'Helvetica-Bold');T('Intestatario: Trasporti DP S.r.l.',40,653,265,7.6);T(`IBAN: ${typeof DP_BANK_IBAN!=='undefined'?DP_BANK_IBAN:''}`,40,668,265,7.6);T(`Causale: Fattura ${f.numero_display} del ${dpTItDate(f.data_fattura)}`,40,683,265,7.6);T('NOTE',352,634,190,9,'Helvetica-Bold');T(f.note||'',352,654,195,7.6);T('Grazie per la fiducia!',40,720,270,18,'Helvetica-Oblique',RED);doc.moveTo(40,743).lineTo(248,743).lineWidth(2).stroke(RED);
+    const fy=775;doc.rect(0,fy,W,H-fy).fill(BLACK);doc.rect(0,fy,6,H-fy).fill(RED);doc.rect(W-78,fy,26,H-fy).fill('#149447');doc.rect(W-52,fy,26,H-fy).fill('#fff');doc.rect(W-26,fy,26,H-fy).fill('#e31b23');T('DP RENT',25,fy+17,100,7,'Helvetica-Bold','#fff','center');T('AFFIDABILITA',120,fy+17,105,6.5,'Helvetica-Bold','#fff','center');T('PUNTUALITA',220,fy+17,105,6.5,'Helvetica-Bold','#fff','center');T('0744 817108 - info@trasportidp.com',330,fy+14,165,6.4,'Helvetica-Bold','#fff','center');T('NOLEGGIO VEICOLI',330,fy+32,165,6.6,'Helvetica-Bold','#fff','center');doc.end();
+  }catch(e){try{res.status(500).send(e.message);}catch(_){}}
+});
+
+// Pulizia controllata delle sole fatture INTERNE non inviate fiscalmente.
+app.get('/admin/pulisci-fatture-test',async(req,res)=>{
+  const t=await get(`SELECT COUNT(*) n FROM trasporti_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`).catch(()=>({n:0}));
+  const n=await get(`SELECT COUNT(*) n FROM noleggio_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`).catch(()=>({n:0}));
+  res.send(page('Pulizia fatture test',`<div class="box"><h2>🧹 Pulizia fatture di prova</h2><p>Verranno eliminate solo le fatture interne NON segnate come inviate fiscalmente.</p><p>Trasporti: <b>${t.n||0}</b> - Noleggio: <b>${n.n||0}</b></p><form method="POST" action="/admin/pulisci-fatture-test" onsubmit="return confirm('Confermi la pulizia delle fatture interne di prova?')"><button class="btn" style="background:#8b0000">PULISCI FATTURE DI PROVA</button></form><a class="btn btn2" href="/fatturazione">Annulla</a></div>`));
+});
+app.post('/admin/pulisci-fatture-test',async(req,res)=>{
+  await run('BEGIN');
+  try{
+    const ids=(await all(`SELECT DISTINCT ordine_id FROM trasporti_fattura_ordini WHERE fattura_id IN (SELECT id FROM trasporti_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC')`).catch(()=>[])).map(x=>x.ordine_id);
+    if(ids.length){const qs=ids.map(()=>'?').join(',');await run(`UPDATE trasporti_ordini SET stato=CASE WHEN COALESCE(data_consegna,'')<>'' THEN 'DA_FATTURARE' ELSE 'DA_ASSEGNARE' END,num_fattura='',data_fattura='',updated_at=CURRENT_TIMESTAMP WHERE id IN (${qs})`,ids);}
+    await run(`DELETE FROM trasporti_fattura_ordini WHERE fattura_id IN (SELECT id FROM trasporti_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC')`);
+    await run(`DELETE FROM trasporti_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`);
+    const nr=await all(`SELECT * FROM noleggio_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`).catch(()=>[]);
+    for(const f of nr)await run(`UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=0 WHERE id=?`,[f.prenotazione_id]).catch(()=>{});
+    await run(`DELETE FROM noleggio_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`);
+    await run(`DELETE FROM sqlite_sequence WHERE name IN ('trasporti_fatture','noleggio_fatture')`).catch(()=>{});
+    await run('COMMIT');res.send(page('Pulizia completata',`<div class="box"><h2 class="ok">✅ Fatture di prova pulite</h2><p>Gli ordini/contratti collegati sono tornati da fatturare. Le fatture storiche importate non sono state toccate.</p><a class="btn" href="/fatturazione">Vai a fatturazione</a></div>`));
+  }catch(e){await run('ROLLBACK').catch(()=>{});res.status(500).send(page('Errore pulizia',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}
+});
+
 app.get('/fatturazione', async(req,res)=>{
   const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
   const tr=await get(`SELECT COUNT(*) tot,COALESCE(SUM(prezzo),0) totale FROM trasporti_ordini WHERE stato IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0,totale:0}));
-  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Noleggi da fatturare<small>${rent.tot||0} pratiche</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Trasporti da fatturare<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section></div>`));
+  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Trasporti serie T - Noleggio serie N</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/admin/pulisci-fatture-test">🧹 Pulizia fatture di prova</a></div></div>`));
 });
 
 console.log('DP GESTIONALE V279: anagrafiche autisti complete + mezzi modificabili persistenti');
 
 
-// DP GESTIONALE V302 - PDF grafica definitiva DP Trasporti con logo reale e tricolore
+// DP GESTIONALE V304 - Fatture DP RENT serie N + pulizia test + pagamento PDF pulito
 app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP V237 stabile ENOENT porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
