@@ -13212,7 +13212,7 @@ app.get('/trasporti/fattura/:id.pdf',async(req,res)=>{
       T('Via Tuderte 466 - 05035 Narni (TR)',28,146,280,8.1);
       T('P.IVA 01385450554 - C.F. 01385450554',28,160,280,8.1);
       T('Tel. 0744 817108',28,174,280,8.1);
-      T('info@trasportidp.com  -  www.trasportidp.com',28,188,300,8.1);
+      T('logistica@trasportidp.com  -  www.trasportidp.com',28,188,300,8.1);
 
       BOX(365,132,202,72);
       T('Data fattura:',378,143,75,8.5,'Helvetica-Bold');
@@ -13339,7 +13339,7 @@ app.get('/trasporti/fattura/:id.pdf',async(req,res)=>{
       T('PUNTUALITA',115,y+17,105,6.5,'Helvetica-Bold','#fff','center');
       T('TUTTA ITALIA',210,y+17,105,6.5,'Helvetica-Bold','#fff','center');
       T('SOLUZIONI PER FLOTTE',300,y+17,130,6.5,'Helvetica-Bold','#fff','center');
-      T('0744 817108  •  info@trasportidp.com',405,y+14,105,6.4,'Helvetica-Bold','#fff','center');
+      T('0744 817108  •  logistica@trasportidp.com',405,y+14,105,6.4,'Helvetica-Bold','#fff','center');
       T('TRASPORTO AUTO IN TUTTA ITALIA',405,y+32,105,6.6,'Helvetica-Bold','#fff','center');
     }
 
