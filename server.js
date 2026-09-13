@@ -10586,9 +10586,11 @@ async function dpHandleWhatsApp(req,res){
     session.data = {};
     session.ts = Date.now();
     if(globalIntent === 'officina'){
-      session.state = 'officina_data';
-      session.data.descrizione = body;
-      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nHo segnato la richiesta:\n${body}\n\nOra scrivi la data desiderata per l appuntamento.\nEsempio: 20/05/2026`);
+      session.state = 'menu'; session.data = {}; session.ts = Date.now();
+      const waNum = String(from || '').replace(/^whatsapp:/i,'');
+      const base = String(process.env.APP_BASE_URL || 'https://dp-rent-app.onrender.com').replace(/\/$/,'');
+      const link = `${base}/service/richiesta?nome=${encodeURIComponent(profileName||'Cliente')}&telefono=${encodeURIComponent(waNum)}`;
+      return dpTwimlResponse(res, `${EMJ.wrench} *DP SERVICE*\n\nPer richiedere un intervento o un appuntamento apri questo link:\n${link}\n\nCompila targa, veicolo, km e problema/intervento. La richiesta arriverà direttamente in officina.`);
     }
     if(globalIntent === 'noleggio'){
       session.state = 'noleggio_model';
@@ -10620,8 +10622,11 @@ async function dpHandleWhatsApp(req,res){
     // Prima il numero "2" veniva letto da dpNaturalRentalRequest come Pulmino 8/9 posti.
     // Ora "2" apre sempre il sotto-menu noleggio e resetta eventuali dati vecchi.
     if(body === '1'){
-      session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
-      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
+      session.state = 'menu'; session.data = {}; session.ts = Date.now();
+      const waNum = String(from || '').replace(/^whatsapp:/i,'');
+      const base = String(process.env.APP_BASE_URL || 'https://dp-rent-app.onrender.com').replace(/\/$/,'');
+      const link = `${base}/service/richiesta?nome=${encodeURIComponent(profileName||'Cliente')}&telefono=${encodeURIComponent(waNum)}`;
+      return dpTwimlResponse(res, `${EMJ.wrench} *DP SERVICE*\n\nPer richiedere un intervento o un appuntamento apri questo link:\n${link}\n\nCompila targa, veicolo, km e problema/intervento. La richiesta arriverà direttamente in officina.`);
     }
     if(body === '2'){
       session.state = 'noleggio_model'; session.data = {}; session.ts = Date.now();
@@ -10654,8 +10659,11 @@ async function dpHandleWhatsApp(req,res){
       session.ts = Date.now();
       return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Perfetto, iniziamo il noleggio.\n\n` + dpPromptNoleggioCategorie());
     } else if(serviceIntent === 'officina'){
-      session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
-      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
+      session.state = 'menu'; session.data = {}; session.ts = Date.now();
+      const waNum = String(from || '').replace(/^whatsapp:/i,'');
+      const base = String(process.env.APP_BASE_URL || 'https://dp-rent-app.onrender.com').replace(/\/$/,'');
+      const link = `${base}/service/richiesta?nome=${encodeURIComponent(profileName||'Cliente')}&telefono=${encodeURIComponent(waNum)}`;
+      return dpTwimlResponse(res, `${EMJ.wrench} *DP SERVICE*\n\nPer richiedere un intervento o un appuntamento apri questo link:\n${link}\n\nCompila targa, veicolo, km e problema/intervento. La richiesta arriverà direttamente in officina.`);
     } else if(serviceIntent === 'vendita'){
       session.state = 'vendita'; session.data = {}; session.ts = Date.now();
       return dpTwimlResponse(res, `${EMJ.auto} *DP AUTO - Vendita auto*\n\nPuoi vedere le auto disponibili qui:\n${DP_AUTOSUPERMARKET_URL}\n\nSe cerchi qualcosa in particolare, scrivi modello, budget, permuta o finanziamento.`);
