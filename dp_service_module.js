@@ -4,6 +4,9 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
+let nodemailer = null;
+try { nodemailer = require('nodemailer'); } catch(e) { console.log('Nodemailer non disponibile DP SERVICE:',e.message); }
+
 let twilio = null;
 try { twilio = require('twilio'); } catch(e) { console.log('Twilio non disponibile in DP SERVICE:', e.message); }
 
@@ -147,6 +150,13 @@ async function initDb(){
     stato TEXT DEFAULT 'EMESSO',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   )`);
+
+
+  const pcols = await all(`PRAGMA table_info(preventivi_service)`);
+  const phave = new Set(pcols.map(x=>x.name));
+  for(const [name,type] of [
+    ['token_cliente','TEXT'],['approvato_at','TEXT'],['rifiutato_at','TEXT'],['inviato_wa_at','TEXT'],['inviato_email_at','TEXT']
+  ]) if(!phave.has(name)) await run(`ALTER TABLE preventivi_service ADD COLUMN ${name} ${type}`);
 
   await run(`CREATE TABLE IF NOT EXISTS fatture_service (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -397,6 +407,44 @@ async function dpServiceNotifyStaff(body){
   return {ok:sent>0,sent,errors};
 }
 
+
+function dpServiceUrl(req, rel=''){
+  const base=(process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/,'');
+  const p=String(rel||'').startsWith('/')?String(rel):('/'+String(rel||''));
+  return base + '/service' + p;
+}
+function dpServiceToken(){
+  return require('crypto').randomBytes(24).toString('hex');
+}
+async function dpServiceSendEmail(to,subject,text,attachments=[]){
+  if(!to) throw new Error('Email cliente mancante');
+  if(!nodemailer || !process.env.SMTP_HOST) throw new Error('SMTP non configurato');
+  const transporter=nodemailer.createTransport({
+    host:process.env.SMTP_HOST,
+    port:Number(process.env.SMTP_PORT||587),
+    secure:String(process.env.SMTP_SECURE||'').toLowerCase()==='true' || Number(process.env.SMTP_PORT||587)===465,
+    auth:{user:process.env.SMTP_USER,pass:process.env.SMTP_PASS},
+    tls:{rejectUnauthorized:false}
+  });
+  return transporter.sendMail({
+    from:process.env.SMTP_FROM || process.env.SMTP_USER || DP_SERVICE_AZIENDA.email,
+    to,subject,text,attachments
+  });
+}
+function dpServicePdfBuffer(tipo,numero,data,d,opts={}){
+  return new Promise((resolve,reject)=>{
+    try{
+      const chunks=[];
+      const doc=new PDFDocument({size:'A4',margin:0,bufferPages:true});
+      doc.on('data',c=>chunks.push(c));
+      doc.on('end',()=>resolve(Buffer.concat(chunks)));
+      doc.on('error',reject);
+      dpDrawServicePdf(doc,tipo,numero,data,d,opts);
+      doc.end();
+    }catch(e){ reject(e); }
+  });
+}
+
 async function dpServiceDocData(ordineId){
   const o=await get(`SELECT o.*,v.targa,v.marca,v.modello,v.versione,v.telaio,
       c.ragione_sociale,c.piva,c.cf,c.indirizzo,c.citta,c.provincia,c.telefono,c.email,c.pec,c.sdi
@@ -543,7 +591,7 @@ router.get('/', async (req,res)=>{
       <a class="card" href="/preventivi">📄 Preventivi<br><small>${pv.n} emessi</small></a>
       <a class="card" href="/fatture">💶 Fatture serie S<br><small>${fsrv.n} emesse</small></a>
       <a class="card ${Number(al.n)>0?'red':''}" href="/alert">🔔 Avvisi officina<br><small>${al.n} da leggere</small></a>
-      <a class="card blue" href="/richiesta">📲 Pagina richiesta cliente<br><small>Link pubblico officina</small></a>
+      <a class="card blue" href="/richiesta">📲 Pagina richiesta cliente<br><small>Link pubblico officina</small></a><div class="card" style="grid-column:1/-1;cursor:default"><b>⚡ FLUSSO RAPIDO DP SERVICE</b><br><small>Richiesta cliente → Ordine di lavoro → Ricambi/Manodopera → Preventivo → Approvazione cliente online → Lavorazione → Fattura → WhatsApp/Email</small></div>
     </div>`));
 });
 
@@ -853,8 +901,13 @@ router.get('/ordini/:id', async (req,res)=>{
       <h1>🧾 Ordine di lavoro ${o.numero}/${o.anno}</h1>
       <p><b>${esc(o.ragione_sociale)}</b><br>🚗 <b>${esc(o.targa)}</b> — ${esc(o.marca)} ${esc(o.modello)} ${esc(o.versione)}</p>
       <p><b>Data ingresso:</b> ${esc(o.data_apertura)} &nbsp; <b>Km:</b> ${o.km_ingresso||0}</p>
-      <p><b>Lavoro richiesto:</b><br>${esc(o.descrizione_lavoro)}</p>
-      <p><b>Diagnosi:</b><br>${esc(o.diagnosi)}</p>
+      <form method="post" action="/ordini/${o.id}/dettagli" style="margin:14px 0">
+        <label>Lavoro richiesto / descrizione intervento</label>
+        <textarea name="descrizione_lavoro" rows="4">${esc(o.descrizione_lavoro||'')}</textarea>
+        <label>Diagnosi / note tecniche officina</label>
+        <textarea name="diagnosi" rows="4">${esc(o.diagnosi||'')}</textarea>
+        <button class="btn">💾 Salva descrizione e diagnosi</button>
+      </form>
       <form method="post" action="/ordini/${o.id}/stato" style="margin:14px 0">
         <label>Stato lavorazione</label>
         <div class="filters">
@@ -865,7 +918,7 @@ router.get('/ordini/:id', async (req,res)=>{
       </form>
       <div class="actions" style="margin-top:12px">
         ${phone?`<a class="btn green" target="_blank" href="https://wa.me/${phone}?text=${text}">📲 AUTO PRONTA - WhatsApp</a>`:''}
-        ${preventivo?`<a class="btn dark" href="/preventivi/${preventivo.id}">📄 Apri preventivo</a>`:`<form method="post" action="/ordini/${o.id}/preventivo"><button class="btn dark">📄 CREA PREVENTIVO</button></form>`}
+        ${preventivo?`<a class="btn dark" href="/preventivi/${preventivo.id}">📄 Apri preventivo</a><form method="post" action="/ordini/${o.id}/preventivo/aggiorna"><button class="btn dark">🔄 Aggiorna preventivo dalle righe</button></form>`:`<form method="post" action="/ordini/${o.id}/preventivo"><button class="btn dark">📄 CREA PREVENTIVO DAL LAVORO</button></form>`}
         ${fattura?`<a class="btn" href="/fatture/${fattura.id}">💶 Apri fattura ${fattura.numero}/S</a>`:`<form method="post" action="/ordini/${o.id}/fattura"><button class="btn">💶 CREA FATTURA SERIE S</button></form>`}
       </div>
     </div>
@@ -930,6 +983,13 @@ router.get('/ordini/:id', async (req,res)=>{
     </div>`));
 });
 
+
+router.post('/ordini/:id/dettagli', async (req,res)=>{
+  await run(`UPDATE ordini_lavoro SET descrizione_lavoro=?,diagnosi=?,note=COALESCE(?,note) WHERE id=?`,
+    [String(req.body.descrizione_lavoro||''),String(req.body.diagnosi||''),req.body.note||null,req.params.id]);
+  res.redirect('/ordini/'+req.params.id);
+});
+
 router.post('/ordini/:id/righe', async (req,res)=>{
   const tipo=req.body.tipo||'RICAMBIO';
   let prezzo=Number(req.body.prezzo_unitario)||0;
@@ -976,6 +1036,7 @@ router.post('/ordini/:id/stato', async (req,res)=>{
 router.post('/ordini/:id/preventivo', async (req,res)=>{
   const d=await dpServiceDocData(req.params.id);
   if(!d) return res.status(404).send('Ordine non trovato');
+  if(!d.righe.length) return res.status(400).send(page('Preventivo',`<div class="box"><h1>⚠️ Preventivo vuoto</h1><p>Prima aggiungi almeno una lavorazione, ricambio o manodopera nell'ordine di lavoro.</p><a class="btn" href="/ordini/${req.params.id}">Torna all'ordine</a></div>`));
   let p=await get('SELECT * FROM preventivi_service WHERE ordine_id=?',[req.params.id]);
   if(!p){
     const anno=new Date().getFullYear();
@@ -984,6 +1045,7 @@ router.post('/ordini/:id/preventivo', async (req,res)=>{
     const r=await run(`INSERT INTO preventivi_service(numero,anno,ordine_id,data,imponibile,iva,totale,righe_json,note) VALUES(?,?,?,?,?,?,?,?,?)`,[
       nx.n,anno,req.params.id,data,d.calc.imponibile,d.calc.iva,d.calc.totale,JSON.stringify(d.righe),d.o.note||''
     ]);
+    await run('UPDATE preventivi_service SET token_cliente=? WHERE id=?',[dpServiceToken(),r.lastID]);
     p=await get('SELECT * FROM preventivi_service WHERE id=?',[r.lastID]);
   }
   res.redirect('/preventivi/'+p.id);
@@ -992,6 +1054,7 @@ router.post('/ordini/:id/preventivo', async (req,res)=>{
 router.post('/ordini/:id/fattura', async (req,res)=>{
   const d=await dpServiceDocData(req.params.id);
   if(!d) return res.status(404).send('Ordine non trovato');
+  if(!d.righe.length) return res.status(400).send(page('Fattura',`<div class="box"><h1>⚠️ Fattura vuota</h1><p>Prima aggiungi le lavorazioni/ricambi nell'ordine.</p><a class="btn" href="/ordini/${req.params.id}">Torna all'ordine</a></div>`));
   let f=await get('SELECT * FROM fatture_service WHERE ordine_id=?',[req.params.id]);
   if(!f){
     const anno=new Date().getFullYear();
@@ -1010,15 +1073,70 @@ router.get('/preventivi', async (req,res)=>{
   const rows=await all(`SELECT p.*,o.numero odl,v.targa,c.ragione_sociale FROM preventivi_service p
     LEFT JOIN ordini_lavoro o ON o.id=p.ordine_id LEFT JOIN veicoli v ON v.id=o.veicolo_id LEFT JOIN clienti c ON c.id=o.cliente_id
     ORDER BY p.id DESC LIMIT 500`);
-  res.send(page('Preventivi',`<div class="box"><h1>📄 Preventivi DP SERVICE</h1><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th></th></tr>${rows.map(x=>`<tr><td><b>${x.numero}/P</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><a class="btn dark" href="/preventivi/${x.id}">Apri</a></td></tr>`).join('')}</table></div>`));
+  res.send(page('Preventivi',`<div class="box"><h1>📄 Preventivi DP SERVICE</h1><p><a class="btn" href="/ordini">+ Crea preventivo da un ordine di lavoro</a></p><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th></th></tr>${rows.map(x=>`<tr><td><b>${x.numero}/P</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><a class="btn dark" href="/preventivi/${x.id}">Apri</a></td></tr>`).join('')}</table></div>`));
 });
 
 router.get('/preventivi/:id([0-9]+)', async (req,res)=>{
   const p=await get('SELECT * FROM preventivi_service WHERE id=?',[req.params.id]); if(!p) return res.status(404).send('Preventivo non trovato');
   const d=await dpServiceDocData(p.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
-  const ph=dpPhone(d.o.telefono); const pdfUrl=`${dpBaseUrl(req)}/preventivi/${p.id}.pdf`;
-  const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo il preventivo DP SERVICE n. ${p.numero}/P per la vettura ${d.o.targa||''}. Totale ${dpEuro(p.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Preventivo ${p.numero}/P`,`<div class="box"><h1>📄 PREVENTIVO ${p.numero}/P</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><h2>Totale ${dpEuro(p.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/preventivi/${p.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}<a class="btn dark" href="/ordini/${p.ordine_id}">Torna all'ordine</a></div></div>`));
+  if(!p.token_cliente){ await run('UPDATE preventivi_service SET token_cliente=? WHERE id=?',[dpServiceToken(),p.id]); p.token_cliente=(await get('SELECT token_cliente FROM preventivi_service WHERE id=?',[p.id])).token_cliente; }
+  const ph=dpPhone(d.o.telefono);
+  const pdfUrl=dpServiceUrl(req,`/preventivi/${p.id}.pdf`);
+  const approveUrl=dpServiceUrl(req,`/preventivi/${p.id}/cliente/${p.token_cliente}`);
+  const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, ecco il preventivo DP SERVICE n. ${p.numero}/P per ${d.o.targa||''}. Totale ${dpEuro(p.totale)}.\n\nPDF: ${pdfUrl}\n\n✅ Approva o rifiuta qui: ${approveUrl}`);
+  res.send(page(`Preventivo ${p.numero}/P`,`<div class="box"><h1>📄 PREVENTIVO ${p.numero}/P</h1>
+    <p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p>
+    <p>Stato: <b>${esc(p.stato||'EMESSO')}</b></p><h2>Totale ${dpEuro(p.totale)}</h2>
+    <div class="actions">
+      <a class="btn" target="_blank" href="/preventivi/${p.id}.pdf">📄 PDF</a>
+      ${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}
+      ${d.o.email?`<form method="post" action="/preventivi/${p.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}
+      <a class="btn dark" target="_blank" href="/preventivi/${p.id}/cliente/${p.token_cliente}">👤 Anteprima cliente / approvazione</a>
+      <a class="btn dark" href="/ordini/${p.ordine_id}">Torna all'ordine</a>
+    </div></div>`));
+});
+
+router.post('/preventivi/:id/email', async (req,res)=>{
+  try{
+    const p=await get('SELECT * FROM preventivi_service WHERE id=?',[req.params.id]); if(!p) throw new Error('Preventivo non trovato');
+    const d=await dpServiceDocData(p.ordine_id); if(!d || !d.o.email) throw new Error('Email cliente mancante');
+    if(!p.token_cliente){ await run('UPDATE preventivi_service SET token_cliente=? WHERE id=?',[dpServiceToken(),p.id]); p.token_cliente=(await get('SELECT token_cliente FROM preventivi_service WHERE id=?',[p.id])).token_cliente; }
+    try{ const snap=JSON.parse(p.righe_json||'[]'); if(snap.length){d.righe=snap;d.calc=dpCalcRighe(snap);} }catch(_){}
+    const buf=await dpServicePdfBuffer('PREVENTIVO',`N. ${p.numero}/P`,dpItDate(p.data),d);
+    const approveUrl=dpServiceUrl(req,`/preventivi/${p.id}/cliente/${p.token_cliente}`);
+    await dpServiceSendEmail(d.o.email,`Preventivo DP SERVICE ${p.numero}/P`,
+      `Buongiorno ${d.o.ragione_sociale||''},\nin allegato trova il preventivo DP SERVICE per ${d.o.targa||''}.\nTotale ${dpEuro(p.totale)}.\n\nPuò approvare o rifiutare qui: ${approveUrl}`,
+      [{filename:`Preventivo_DP_SERVICE_${p.numero}_P.pdf`,content:buf,contentType:'application/pdf'}]);
+    await run(`UPDATE preventivi_service SET inviato_email_at=CURRENT_TIMESTAMP WHERE id=?`,[p.id]);
+    res.redirect('/preventivi/'+p.id);
+  }catch(e){ res.status(500).send(page('Invio email',`<div class="box"><h1>Invio non riuscito</h1><p>${esc(e.message)}</p><a class="btn" href="/preventivi/${req.params.id}">Indietro</a></div>`)); }
+});
+
+router.get('/preventivi/:id/cliente/:token', async (req,res)=>{
+  const p=await get('SELECT * FROM preventivi_service WHERE id=? AND token_cliente=?',[req.params.id,req.params.token]); if(!p) return res.status(404).send('Link non valido');
+  const d=await dpServiceDocData(p.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
+  let righe=[]; try{righe=JSON.parse(p.righe_json||'[]')}catch(_){}
+  res.send(page('Conferma preventivo',`<div class="public-wrap"><div class="hero"><h1>DP SERVICE</h1><p>Preventivo ${p.numero}/P — ${esc(d.o.targa)}</p></div><div class="box">
+    <h2>${esc(d.o.ragione_sociale)}</h2>
+    <p><b>Lavoro richiesto:</b> ${esc(d.o.descrizione_lavoro||'')}</p>
+    <table><tr><th>Descrizione</th><th>Q.tà</th><th>Totale</th></tr>${righe.map(r=>`<tr><td>${esc(r.descrizione)}</td><td>${r.quantita}</td><td>${dpEuro((Number(r.quantita)||0)*(Number(r.prezzo_unitario)||0))}</td></tr>`).join('')}</table>
+    <h1>Totale ${dpEuro(p.totale)}</h1><p>Stato: <b>${esc(p.stato||'EMESSO')}</b></p>
+    ${(p.stato==='APPROVATO'||p.stato==='RIFIUTATO')?'':`<div class="actions"><form method="post" action="/preventivi/${p.id}/cliente/${p.token_cliente}/approva"><button class="btn green">✅ APPROVO IL PREVENTIVO</button></form><form method="post" action="/preventivi/${p.id}/cliente/${p.token_cliente}/rifiuta"><button class="btn dark">❌ NON APPROVO</button></form></div>`}
+  </div></div>`));
+});
+router.post('/preventivi/:id/cliente/:token/approva', async (req,res)=>{
+  const p=await get('SELECT * FROM preventivi_service WHERE id=? AND token_cliente=?',[req.params.id,req.params.token]); if(!p) return res.status(404).send('Link non valido');
+  await run(`UPDATE preventivi_service SET stato='APPROVATO',approvato_at=CURRENT_TIMESTAMP,rifiutato_at=NULL WHERE id=?`,[p.id]);
+  await run(`INSERT INTO service_alerts(tipo,titolo,messaggio,ordine_id) VALUES('PREVENTIVO_APPROVATO',?,?,?)`,[`Preventivo ${p.numero}/P APPROVATO`,`Il cliente ha approvato online il preventivo ${p.numero}/P.`,p.ordine_id]);
+  await dpServiceNotifyStaff(`✅ DP SERVICE - Preventivo ${p.numero}/P APPROVATO dal cliente.`);
+  res.redirect(`/preventivi/${p.id}/cliente/${p.token_cliente}`);
+});
+router.post('/preventivi/:id/cliente/:token/rifiuta', async (req,res)=>{
+  const p=await get('SELECT * FROM preventivi_service WHERE id=? AND token_cliente=?',[req.params.id,req.params.token]); if(!p) return res.status(404).send('Link non valido');
+  await run(`UPDATE preventivi_service SET stato='RIFIUTATO',rifiutato_at=CURRENT_TIMESTAMP,approvato_at=NULL WHERE id=?`,[p.id]);
+  await run(`INSERT INTO service_alerts(tipo,titolo,messaggio,ordine_id) VALUES('PREVENTIVO_RIFIUTATO',?,?,?)`,[`Preventivo ${p.numero}/P RIFIUTATO`,`Il cliente non ha approvato il preventivo ${p.numero}/P.`,p.ordine_id]);
+  await dpServiceNotifyStaff(`❌ DP SERVICE - Preventivo ${p.numero}/P NON APPROVATO dal cliente.`);
+  res.redirect(`/preventivi/${p.id}/cliente/${p.token_cliente}`);
 });
 
 router.get('/preventivi/:id.pdf', async (req,res)=>{
@@ -1039,9 +1157,23 @@ router.get('/fatture', async (req,res)=>{
 router.get('/fatture/:id([0-9]+)', async (req,res)=>{
   const f=await get('SELECT * FROM fatture_service WHERE id=?',[req.params.id]); if(!f) return res.status(404).send('Fattura non trovata');
   const d=await dpServiceDocData(f.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
-  const ph=dpPhone(d.o.telefono); const pdfUrl=`${dpBaseUrl(req)}/fatture/${f.id}.pdf`;
+  const ph=dpPhone(d.o.telefono); const pdfUrl=dpServiceUrl(req,`/fatture/${f.id}.pdf`);
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo la fattura DP SERVICE n. ${f.numero}/S per la vettura ${d.o.targa||''}. Totale ${dpEuro(f.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.pagamento)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}<a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.pagamento)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}<a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+});
+
+
+router.post('/fatture/:id/email', async (req,res)=>{
+  try{
+    const f=await get('SELECT * FROM fatture_service WHERE id=?',[req.params.id]); if(!f) throw new Error('Fattura non trovata');
+    const d=await dpServiceDocData(f.ordine_id); if(!d || !d.o.email) throw new Error('Email cliente mancante');
+    try{ const snap=JSON.parse(f.righe_json||'[]'); if(snap.length){d.righe=snap;d.calc=dpCalcRighe(snap);} }catch(_){}
+    const buf=await dpServicePdfBuffer('FATTURA',`N. ${f.numero}/S`,dpItDate(f.data),d,{pagamento:f.pagamento});
+    await dpServiceSendEmail(d.o.email,`Fattura DP SERVICE ${f.numero}/S`,
+      `Buongiorno ${d.o.ragione_sociale||''},\nin allegato trova la fattura DP SERVICE ${f.numero}/S per ${d.o.targa||''}.\nTotale ${dpEuro(f.totale)}.`,
+      [{filename:`Fattura_DP_SERVICE_${f.numero}_S.pdf`,content:buf,contentType:'application/pdf'}]);
+    res.redirect('/fatture/'+f.id);
+  }catch(e){ res.status(500).send(page('Invio email',`<div class="box"><h1>Invio non riuscito</h1><p>${esc(e.message)}</p><a class="btn" href="/fatture/${req.params.id}">Indietro</a></div>`)); }
 });
 
 router.get('/fatture/:id.pdf', async (req,res)=>{
@@ -1194,7 +1326,7 @@ router.post('/richiesta', async (req,res)=>{
   const msg=`${nome} • ${telefono}\n${targa} ${b.marca||''} ${b.modello||''}\n${richiesta}`;
   await run(`INSERT INTO service_alerts(tipo,titolo,messaggio,ordine_id) VALUES('RICHIESTA_CLIENTE',?,?,?)`,[titolo,msg,od.lastID]);
 
-  const link=dpBaseUrl(req) + '/service/ordini/' + od.lastID;
+  const link=dpServiceUrl(req,'/ordini/' + od.lastID);
   const waText=`🔧 NUOVA RICHIESTA DP SERVICE\n\nCliente: ${nome}\nTel: ${telefono}\nTarga: ${targa}\nVeicolo: ${b.marca||''} ${b.modello||''}\nKm: ${Number(b.km)||0}\n\nRichiesta:\n${richiesta}\n\nApri ordine: ${link}`;
   const waResult=await dpServiceNotifyStaff(waText);
 
