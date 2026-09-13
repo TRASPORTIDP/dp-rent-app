@@ -2225,7 +2225,7 @@ window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll(
 </script>
 </head>
 <body>
-<header>${logoHtml}<h1>DP GESTIONALE <small style="font-size:13px;color:#ddd">Noleggio • Trasporti • Fatturazione</small></h1></header>
+<header>${logoHtml}<h1>DP GESTIONALE <small style="font-size:13px;color:#ddd">Noleggio • Officina • Trasporti • Fatturazione</small></h1></header>
 <main>${(title === 'Dashboard' || String(title||'').includes('Vista 360')) ? '' : `<div class="top-actions"><button type="button" class="back-btn" onclick="history.length>1?history.back():location.href='/'">Indietro</button>${String(title||'').includes('Firma')?'':`<a class="back-btn home-btn" href="/" style="text-align:center;text-decoration:none">Dashboard</a>`}</div>`}${content}</main>
 <script id="DP-V274-BUTTON">
 document.addEventListener('DOMContentLoaded',function(){
@@ -4298,13 +4298,14 @@ app.get('/', async (req, res) => {
     const trDaFatt = await get(`SELECT COUNT(*) as tot FROM trasporti_ordini WHERE COALESCE(stato,'') IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0}));
     res.send(page('DP Gestionale', `
       <div class="dp-one-page">
-        <section class="dp-home-hero"><h2>DP GESTIONALE</h2><p>Noleggio • Trasporti • Fatturazione</p></section>
+        <section class="dp-home-hero"><h2>DP GESTIONALE</h2><p>Noleggio • Officina • Trasporti • Fatturazione</p></section>
         <section class="dp-home-alerts">
           <a class="dp-alert-card" href="/fatturazione" style="text-decoration:none;color:#111"><span>🧾</span> <b>${(rentFatt?.tot||0)+(trDaFatt?.tot||0)}</b> Totale da fatturare</a>
           <a class="dp-alert-card warn" href="/trasporti/ordini" style="text-decoration:none;color:#111"><span>🚗</span> <b>${trOrd?.tot||0}</b> Ordini trasporto</a>
         </section>
         <section class="dp-home-grid">
           <a class="dp-home-card primary" href="/noleggio"><span class="ico">🚙</span>DP RENT<small>Noleggio, contratti, planning</small></a>
+          <a class="dp-home-card" href="/service/"><span class="ico">🔧</span>DP SERVICE<small>Officina, ordini di lavoro, ricambi, preventivi e fatture</small></a>
           <a class="dp-home-card" href="/trasporti"><span class="ico">🚛</span>DP TRASPORTI<small>Ordini, viaggi, borderò, autisti</small></a>
           <a class="dp-home-card" href="/fatturazione"><span class="ico">🧾</span>FATTURAZIONE<small>Noleggio + trasporti da fatturare</small></a>
         </section>
@@ -10619,11 +10620,8 @@ async function dpHandleWhatsApp(req,res){
     // Prima il numero "2" veniva letto da dpNaturalRentalRequest come Pulmino 8/9 posti.
     // Ora "2" apre sempre il sotto-menu noleggio e resetta eventuali dati vecchi.
     if(body === '1'){
-      session.state = 'menu'; session.data = {}; session.ts = Date.now();
-      const baseUrl = String(process.env.RENDER_EXTERNAL_URL || 'https://dp-rent-app.onrender.com').replace(/\/$/, '');
-      const phone = String(from || '').replace(/^whatsapp:/, '');
-      const serviceLink = baseUrl + '/service/richiesta?telefono=' + encodeURIComponent(phone) + '&nome=' + encodeURIComponent(profileName || '');
-      return dpTwimlResponse(res, `${EMJ.wrench} *DP SERVICE*\n\nPer richiedere un intervento o un appuntamento, apri la pagina qui sotto 👇\n\n${serviceLink}\n\nCompila targa, veicolo e lavoro richiesto. La richiesta arriva direttamente in officina e riceverai conferma su WhatsApp.`);
+      session.state = 'officina_descrizione'; session.data = {}; session.ts = Date.now();
+      return dpTwimlResponse(res, `${EMJ.wrench} *Officina DP*\n\nScrivi targa, mezzo e problema/intervento.\n\nEsempio:\nAB123CD Fiat Panda tagliando completo`);
     }
     if(body === '2'){
       session.state = 'noleggio_model'; session.data = {}; session.ts = Date.now();
@@ -13567,6 +13565,10 @@ console.log('DP GESTIONALE V279: anagrafiche autisti complete + mezzi modificabi
 
 
 // DP GESTIONALE V304 - Fatture DP RENT serie N + pulizia test + pagamento PDF pulito
+// DP SERVICE - officina integrata nello stesso DP Gestionale
+const dpServiceRouter = require('./dp_service_module');
+app.use('/service', dpServiceRouter);
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP V237 stabile ENOENT porta ' + PORT);
   console.log('Staff WhatsApp:', DP_STAFF_NUMBERS.join(', '));
