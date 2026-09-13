@@ -1,4 +1,3 @@
-// DP SERVICE integrato nel gestionale unico
 
 const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
@@ -7,20 +6,34 @@ const fs = require('fs');
 const PDFDocument = require('pdfkit');
 
 const router = express.Router();
-const PORT = process.env.PORT || 10001;
 
-let dataDir = process.env.DP_SERVICE_DATA_DIR || '/var/data/dp_service';
-try { fs.mkdirSync(dataDir,{recursive:true}); }
-catch(e){ dataDir=path.join(__dirname,'data','dp_service'); fs.mkdirSync(dataDir,{recursive:true}); }
-const dpServiceDbPath=path.join(dataDir,'dp_service.sqlite');
-const dpServiceSeed=path.join(__dirname,'data','dp_service_seed.sqlite');
-try { if(!fs.existsSync(dpServiceDbPath) && fs.existsSync(dpServiceSeed)) fs.copyFileSync(dpServiceSeed,dpServiceDbPath); }
-catch(e){ console.log('DP SERVICE seed warning:',e.message); }
-const db = new sqlite3.Database(dpServiceDbPath);
+let dataDir = process.env.DATA_DIR || '/var/data';
+try { fs.mkdirSync(dataDir,{recursive:true}); } catch(e) { dataDir=path.join(__dirname,'data'); fs.mkdirSync(dataDir,{recursive:true}); }
+const db = new sqlite3.Database(path.join(dataDir, 'dp_service.sqlite'));
 
 router.use(express.urlencoded({ extended: true }));
 router.use(express.json());
 router.use('/public', express.static(path.join(__dirname, 'public')));
+
+// Quando il modulo e montato sotto /service, mantiene tutti i link/form interni nel modulo.
+router.use((req,res,next)=>{
+  const originalSend=res.send.bind(res);
+  res.send=(body)=>{
+    if(typeof body==='string'){
+      body=body.replace(/\b(href|action|src)=([\"'])\/(?!service\/)/g,'$1=$2/service/');
+    }
+    return originalSend(body);
+  };
+  const originalRedirect=res.redirect.bind(res);
+  res.redirect=(...args)=>{
+    if(args.length){
+      const i=args.length-1;
+      if(typeof args[i]==='string' && args[i].startsWith('/') && !args[i].startsWith('/service/')) args[i]='/service'+args[i];
+    }
+    return originalRedirect(...args);
+  };
+  next();
+});
 
 const run = (sql, params=[]) => new Promise((resolve,reject)=>db.run(sql, params, function(err){ if(err) reject(err); else resolve(this); }));
 const all = (sql, params=[]) => new Promise((resolve,reject)=>db.all(sql, params, (err,rows)=>err?reject(err):resolve(rows)));
@@ -176,7 +189,7 @@ th{background:#1d1d1f;color:white;padding:10px;text-align:left} td{padding:10px;
 .filters{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;align-items:end}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
 @media(max-width:780px){.grid,.filters{grid-template-columns:1fr}header span{display:block;margin:6px 0 0}.card{font-size:22px}}
-</style></head><body><header><img src="/service/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/service/">🏠 Dashboard</a></div>${body}</main></body></html>`;
+</style></head><body><header><img src="/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/">🏠 Dashboard</a></div>${body}</main></body></html>`;
 }
 
 
@@ -350,13 +363,13 @@ router.get('/', async (req,res)=>{
   res.send(page('Dashboard',`
     <div class="hero"><h1 style="margin:0;font-size:44px">DP SERVICE</h1><div style="font-size:20px;font-weight:700">Gestionale Officina</div></div>
     <div class="grid">
-      <a class="card red" href="/service/clienti">👥 Clienti<br><small>${c.n} anagrafiche</small></a>
-      <a class="card blue" href="/service/veicoli">🚗 Veicoli clienti<br><small>${v.n} veicoli</small></a>
-      <a class="card" href="/service/ricerca">🔎 Ricerca globale<br><small>Targa • Cliente • Modello</small></a>
-      <a class="card" href="/service/ordini">🧾 Ordini di lavoro<br><small>${o.n} aperti</small></a>
-      <a class="card" href="/service/ricambi">📦 Ricambi / Listino<br><small>${r.n} voci</small></a>
-      <a class="card" href="/service/preventivi">📄 Preventivi<br><small>${pv.n} emessi</small></a>
-      <a class="card" href="/service/fatture">💶 Fatture serie S<br><small>${fsrv.n} emesse</small></a>
+      <a class="card red" href="/clienti">👥 Clienti<br><small>${c.n} anagrafiche</small></a>
+      <a class="card blue" href="/veicoli">🚗 Veicoli clienti<br><small>${v.n} veicoli</small></a>
+      <a class="card" href="/ricerca">🔎 Ricerca globale<br><small>Targa • Cliente • Modello</small></a>
+      <a class="card" href="/ordini">🧾 Ordini di lavoro<br><small>${o.n} aperti</small></a>
+      <a class="card" href="/ricambi">📦 Ricambi / Listino<br><small>${r.n} voci</small></a>
+      <a class="card" href="/preventivi">📄 Preventivi<br><small>${pv.n} emessi</small></a>
+      <a class="card" href="/fatture">💶 Fatture serie S<br><small>${fsrv.n} emesse</small></a>
     </div>`));
 });
 
@@ -367,19 +380,19 @@ router.get('/clienti', async (req,res)=>{
       Array(5).fill(`%${q}%`))
     : await all(`SELECT * FROM clienti ORDER BY ragione_sociale LIMIT 500`);
   res.send(page('Clienti',`
-    <div class="actions"><a class="btn dark" href="/service/">Dashboard</a><a class="btn" href="/service/clienti/nuovo">+ Nuovo cliente</a></div>
+    <div class="actions"><a class="btn dark" href="/">Dashboard</a><a class="btn" href="/clienti/nuovo">+ Nuovo cliente</a></div>
     <div class="box"><h1>👥 Clienti (${rows.length})</h1>
       <form class="filters"><input name="q" placeholder="Cliente, P.IVA, C.F., telefono, città" value="${esc(q)}"><span></span><span></span><button class="btn">Cerca</button></form>
       <table><tr><th>Cliente</th><th>P.IVA / C.F.</th><th>Località</th><th>Telefono</th><th></th></tr>
-      ${rows.map(x=>`<tr><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.piva)}<br>${esc(x.cf)}</td><td>${esc(x.indirizzo)}<br>${esc(x.citta)} ${esc(x.provincia)}</td><td>${esc(x.telefono)}</td><td><a class="btn dark" href="/service/clienti/${x.id}">Apri</a></td></tr>`).join('')}
+      ${rows.map(x=>`<tr><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.piva)}<br>${esc(x.cf)}</td><td>${esc(x.indirizzo)}<br>${esc(x.citta)} ${esc(x.provincia)}</td><td>${esc(x.telefono)}</td><td><a class="btn dark" href="/clienti/${x.id}">Apri</a></td></tr>`).join('')}
       </table>
     </div>`));
 });
 
 router.get('/clienti/nuovo',(req,res)=>res.send(page('Nuovo cliente',`
-  <div class="actions"><a class="btn dark" href="/service/clienti">Indietro</a></div>
+  <div class="actions"><a class="btn dark" href="/clienti">Indietro</a></div>
   <div class="box"><h1>+ Nuovo cliente</h1>
-  <form method="post" action="/service/clienti">
+  <form method="post" action="/clienti">
     <label>Ragione sociale / Nome</label><input name="ragione_sociale" required>
     <label>P.IVA</label><input name="piva">
     <label>Codice fiscale</label><input name="cf">
@@ -398,7 +411,7 @@ router.post('/clienti', async (req,res)=>{
   const b=req.body;
   const r=await run(`INSERT INTO clienti(ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
     [b.ragione_sociale,b.piva,b.cf,b.indirizzo,b.citta,b.provincia,b.telefono,b.email,b.pec,b.sdi,b.note]);
-  res.redirect('/service/clienti/'+r.lastID);
+  res.redirect('/clienti/'+r.lastID);
 });
 
 router.get('/clienti/:id', async (req,res)=>{
@@ -406,7 +419,7 @@ router.get('/clienti/:id', async (req,res)=>{
   if(!c) return res.status(404).send('Cliente non trovato');
   const vs=await all('SELECT * FROM veicoli WHERE cliente_id=? ORDER BY targa',[c.id]);
   res.send(page(c.ragione_sociale,`
-    <div class="actions"><a class="btn dark" href="/service/clienti">Indietro</a><a class="btn" href="/service/clienti/${c.id}/modifica">Modifica cliente</a><a class="btn green" href="/service/veicoli/nuovo?cliente_id=${c.id}">+ Aggiungi veicolo</a></div>
+    <div class="actions"><a class="btn dark" href="/clienti">Indietro</a><a class="btn" href="/clienti/${c.id}/modifica">Modifica cliente</a><a class="btn green" href="/veicoli/nuovo?cliente_id=${c.id}">+ Aggiungi veicolo</a></div>
     <div class="box"><h1>${esc(c.ragione_sociale)}</h1>
       <p><b>P.IVA:</b> ${esc(c.piva)} &nbsp; <b>C.F.:</b> ${esc(c.cf)}</p>
       <p><b>Indirizzo:</b> ${esc(c.indirizzo)} ${esc(c.citta)} ${esc(c.provincia)}</p>
@@ -416,7 +429,7 @@ router.get('/clienti/:id', async (req,res)=>{
     </div>
     <div class="box"><h2>🚗 Veicoli del cliente (${vs.length})</h2>
       <table><tr><th>Targa</th><th>Marca / Modello</th><th>Telaio</th><th>Km</th><th></th></tr>
-      ${vs.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/service/veicoli/${v.id}">Apri</a></td></tr>`).join('')}
+      ${vs.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a></td></tr>`).join('')}
       </table>
     </div>`));
 });
@@ -424,8 +437,8 @@ router.get('/clienti/:id', async (req,res)=>{
 router.get('/clienti/:id/modifica', async (req,res)=>{
   const c=await get('SELECT * FROM clienti WHERE id=?',[req.params.id]); if(!c) return res.status(404).send('Cliente non trovato');
   res.send(page('Modifica cliente',`
-  <div class="actions"><a class="btn dark" href="/service/clienti/${c.id}">Indietro</a></div>
-  <div class="box"><h1>Modifica cliente</h1><form method="post" action="/service/clienti/${c.id}/modifica">
+  <div class="actions"><a class="btn dark" href="/clienti/${c.id}">Indietro</a></div>
+  <div class="box"><h1>Modifica cliente</h1><form method="post" action="/clienti/${c.id}/modifica">
   <label>Ragione sociale / Nome</label><input name="ragione_sociale" value="${esc(c.ragione_sociale)}" required>
   <label>P.IVA</label><input name="piva" value="${esc(c.piva)}"><label>Codice fiscale</label><input name="cf" value="${esc(c.cf)}">
   <label>Indirizzo</label><input name="indirizzo" value="${esc(c.indirizzo)}"><label>Città</label><input name="citta" value="${esc(c.citta)}"><label>Provincia</label><input name="provincia" value="${esc(c.provincia)}">
@@ -437,7 +450,7 @@ router.post('/clienti/:id/modifica', async (req,res)=>{
   const b=req.body;
   await run(`UPDATE clienti SET ragione_sociale=?,piva=?,cf=?,indirizzo=?,citta=?,provincia=?,telefono=?,email=?,pec=?,sdi=?,note=? WHERE id=?`,
     [b.ragione_sociale,b.piva,b.cf,b.indirizzo,b.citta,b.provincia,b.telefono,b.email,b.pec,b.sdi,b.note,req.params.id]);
-  res.redirect('/service/clienti/'+req.params.id);
+  res.redirect('/clienti/'+req.params.id);
 });
 
 router.get('/veicoli', async (req,res)=>{
@@ -446,11 +459,11 @@ router.get('/veicoli', async (req,res)=>{
   if(q){ where='WHERE v.targa LIKE ? OR v.marca LIKE ? OR v.modello LIKE ? OR v.versione LIKE ? OR v.telaio LIKE ? OR c.ragione_sociale LIKE ?'; params.push(...Array(6).fill(`%${q}%`)); }
   const rows=await all(`SELECT v.*,c.ragione_sociale FROM veicoli v LEFT JOIN clienti c ON c.id=v.cliente_id ${where} ORDER BY v.targa LIMIT 500`,params);
   res.send(page('Veicoli',`
-  <div class="actions"><a class="btn dark" href="/service/">Dashboard</a><a class="btn" href="/service/veicoli/nuovo">+ Nuovo veicolo</a></div>
+  <div class="actions"><a class="btn dark" href="/">Dashboard</a><a class="btn" href="/veicoli/nuovo">+ Nuovo veicolo</a></div>
   <div class="box"><h1>🚗 Veicoli clienti (${rows.length})</h1>
   <form class="filters"><input name="q" placeholder="Targa, cliente, marca, modello, telaio" value="${esc(q)}"><span></span><span></span><button class="btn">Filtra</button></form>
   <table><tr><th>Targa</th><th>Cliente</th><th>Veicolo</th><th>Telaio</th><th>Km</th><th></th></tr>
-  ${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/service/veicoli/${v.id}">Apri</a></td></tr>`).join('')}
+  ${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a></td></tr>`).join('')}
   </table></div>`));
 });
 
@@ -458,8 +471,8 @@ router.get('/veicoli/nuovo', async (req,res)=>{
   const cs=await all('SELECT id,ragione_sociale FROM clienti ORDER BY ragione_sociale LIMIT 5000');
   const selected=Number(req.query.cliente_id)||0;
   res.send(page('Nuovo veicolo',`
-  <div class="actions"><a class="btn dark" href="/service/veicoli">Indietro</a></div>
-  <div class="box"><h1>+ Nuovo veicolo cliente</h1><form method="post" action="/service/veicoli">
+  <div class="actions"><a class="btn dark" href="/veicoli">Indietro</a></div>
+  <div class="box"><h1>+ Nuovo veicolo cliente</h1><form method="post" action="/veicoli">
   <label>Cliente</label><select name="cliente_id"><option value="">Scegli...</option>${cs.map(c=>`<option value="${c.id}" ${c.id===selected?'selected':''}>${esc(c.ragione_sociale)}</option>`).join('')}</select>
   <label>Targa</label><input name="targa" required style="text-transform:uppercase">
   <label>Marca</label><input name="marca"><label>Modello</label><input name="modello"><label>Versione / Motore</label><input name="versione">
@@ -472,24 +485,24 @@ router.post('/veicoli', async (req,res)=>{
   try{
     const r=await run(`INSERT INTO veicoli(cliente_id,targa,marca,modello,versione,telaio,anno,km,alimentazione,note) VALUES(?,?,?,?,?,?,?,?,?,?)`,
       [b.cliente_id||null,targa,b.marca,b.modello,b.versione,b.telaio,b.anno,Number(b.km)||0,b.alimentazione,b.note]);
-    res.redirect('/service/veicoli/'+r.lastID);
-  }catch(e){ res.status(400).send(page('Errore',`<div class="box"><h2>Errore</h2><p>${esc(e.message)}</p><a class="btn" href="/service/veicoli">Torna</a></div>`)); }
+    res.redirect('/veicoli/'+r.lastID);
+  }catch(e){ res.status(400).send(page('Errore',`<div class="box"><h2>Errore</h2><p>${esc(e.message)}</p><a class="btn" href="/veicoli">Torna</a></div>`)); }
 });
 
 router.get('/veicoli/:id', async (req,res)=>{
   const v=await get(`SELECT v.*,c.ragione_sociale FROM veicoli v LEFT JOIN clienti c ON c.id=v.cliente_id WHERE v.id=?`,[req.params.id]);
   if(!v) return res.status(404).send('Veicolo non trovato');
   res.send(page(v.targa,`
-    <div class="actions"><a class="btn dark" href="/service/veicoli">Indietro</a><a class="btn" href="/service/veicoli/${v.id}/modifica">Modifica veicolo</a>${v.cliente_id?`<a class="btn green" href="/service/clienti/${v.cliente_id}">Apri cliente</a>`:''}</div>
+    <div class="actions"><a class="btn dark" href="/veicoli">Indietro</a><a class="btn" href="/veicoli/${v.id}/modifica">Modifica veicolo</a>${v.cliente_id?`<a class="btn green" href="/clienti/${v.cliente_id}">Apri cliente</a>`:''}</div>
     <div class="box"><h1>🚗 ${esc(v.targa)} — ${esc(v.marca)} ${esc(v.modello)}</h1>
       <p><b>Cliente:</b> ${esc(v.ragione_sociale)}</p><p><b>Versione/Motore:</b> ${esc(v.versione)}</p><p><b>Telaio:</b> ${esc(v.telaio)}</p>
       <p><b>Anno:</b> ${esc(v.anno)} &nbsp; <b>Km:</b> ${v.km||0} &nbsp; <b>Alimentazione:</b> ${esc(v.alimentazione)}</p>
       <p><b>Note:</b> ${esc(v.note)}</p>
-      <p><a class="btn" href="/service/ordini/nuovo?veicolo_id=${v.id}">+ Nuovo ordine di lavoro</a></p>
+      <p><a class="btn" href="/ordini/nuovo?veicolo_id=${v.id}">+ Nuovo ordine di lavoro</a></p>
     </div>
     <div class="box"><h2>🧾 Storico interventi</h2>
       <table><tr><th>N.</th><th>Data</th><th>Km</th><th>Lavoro</th><th>Stato</th><th>Totale</th><th></th></tr>
-      ${(await all('SELECT * FROM ordini_lavoro WHERE veicolo_id=? ORDER BY id DESC',[v.id])).map(o=>`<tr><td>${o.numero||o.id}/S</td><td>${esc(o.data_apertura)}</td><td>${o.km_ingresso||0}</td><td>${esc(o.descrizione_lavoro)}</td><td>${esc(o.stato)}</td><td>€ ${(Number(o.totale_ivato)||0).toFixed(2)}</td><td><a class="btn dark" href="/service/ordini/${o.id}">Apri</a></td></tr>`).join('')}
+      ${(await all('SELECT * FROM ordini_lavoro WHERE veicolo_id=? ORDER BY id DESC',[v.id])).map(o=>`<tr><td>${o.numero||o.id}/S</td><td>${esc(o.data_apertura)}</td><td>${o.km_ingresso||0}</td><td>${esc(o.descrizione_lavoro)}</td><td>${esc(o.stato)}</td><td>€ ${(Number(o.totale_ivato)||0).toFixed(2)}</td><td><a class="btn dark" href="/ordini/${o.id}">Apri</a></td></tr>`).join('')}
       </table>
     </div>`));
 });
@@ -498,8 +511,8 @@ router.get('/veicoli/:id/modifica', async (req,res)=>{
   const v=await get('SELECT * FROM veicoli WHERE id=?',[req.params.id]); if(!v) return res.status(404).send('Veicolo non trovato');
   const cs=await all('SELECT id,ragione_sociale FROM clienti ORDER BY ragione_sociale LIMIT 5000');
   res.send(page('Modifica veicolo',`
-  <div class="actions"><a class="btn dark" href="/service/veicoli/${v.id}">Indietro</a></div>
-  <div class="box"><h1>Modifica veicolo</h1><form method="post" action="/service/veicoli/${v.id}/modifica">
+  <div class="actions"><a class="btn dark" href="/veicoli/${v.id}">Indietro</a></div>
+  <div class="box"><h1>Modifica veicolo</h1><form method="post" action="/veicoli/${v.id}/modifica">
   <label>Cliente</label><select name="cliente_id"><option value="">Scegli...</option>${cs.map(c=>`<option value="${c.id}" ${c.id===v.cliente_id?'selected':''}>${esc(c.ragione_sociale)}</option>`).join('')}</select>
   <label>Targa</label><input name="targa" value="${esc(v.targa)}" required><label>Marca</label><input name="marca" value="${esc(v.marca)}"><label>Modello</label><input name="modello" value="${esc(v.modello)}">
   <label>Versione / Motore</label><input name="versione" value="${esc(v.versione)}"><label>Telaio</label><input name="telaio" value="${esc(v.telaio)}"><label>Anno</label><input name="anno" value="${esc(v.anno)}">
@@ -511,7 +524,7 @@ router.post('/veicoli/:id/modifica', async (req,res)=>{
   const b=req.body; const targa=String(b.targa||'').toUpperCase().replace(/\s/g,'');
   await run(`UPDATE veicoli SET cliente_id=?,targa=?,marca=?,modello=?,versione=?,telaio=?,anno=?,km=?,alimentazione=?,note=? WHERE id=?`,
     [b.cliente_id||null,targa,b.marca,b.modello,b.versione,b.telaio,b.anno,Number(b.km)||0,b.alimentazione,b.note,req.params.id]);
-  res.redirect('/service/veicoli/'+req.params.id);
+  res.redirect('/veicoli/'+req.params.id);
 });
 
 
@@ -538,11 +551,11 @@ router.get('/ordini', async (req,res)=>{
 
   const tabella=(arr)=>`
     <table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Veicolo</th><th>Km</th><th>Stato</th><th>Totale</th><th></th></tr>
-    ${arr.length ? arr.map(o=>`<tr><td><b>ODL ${o.numero||o.id}</b></td><td>${esc(o.data_apertura)}</td><td>${esc(o.ragione_sociale)}</td><td><b>${esc(o.targa)}</b><br>${esc(o.marca)} ${esc(o.modello)}</td><td>${o.km_ingresso||0}</td><td><b>${esc(o.stato)}</b></td><td>€ ${(Number(o.totale)||0).toFixed(2)}</td><td><a class="btn dark" href="/service/ordini/${o.id}">Apri</a></td></tr>`).join('') : `<tr><td colspan="8">Nessun ordine</td></tr>`}
+    ${arr.length ? arr.map(o=>`<tr><td><b>ODL ${o.numero||o.id}</b></td><td>${esc(o.data_apertura)}</td><td>${esc(o.ragione_sociale)}</td><td><b>${esc(o.targa)}</b><br>${esc(o.marca)} ${esc(o.modello)}</td><td>${o.km_ingresso||0}</td><td><b>${esc(o.stato)}</b></td><td>€ ${(Number(o.totale)||0).toFixed(2)}</td><td><a class="btn dark" href="/ordini/${o.id}">Apri</a></td></tr>`).join('') : `<tr><td colspan="8">Nessun ordine</td></tr>`}
     </table>`;
 
   res.send(page('Ordini di lavoro',`
-    <div class="actions"><a class="btn" href="/service/ordini/nuovo">+ Nuovo ordine di lavoro</a></div>
+    <div class="actions"><a class="btn" href="/ordini/nuovo">+ Nuovo ordine di lavoro</a></div>
     <div class="box"><h1>🧾 Ordini di lavoro</h1>
       <form class="filters">
         <input name="q" placeholder="Targa, cliente, modello, lavorazione" value="${esc(q)}">
@@ -562,9 +575,9 @@ router.get('/ordini/nuovo', async (req,res)=>{
   const clienti=await all(`SELECT id,ragione_sociale,piva,telefono FROM clienti ORDER BY ragione_sociale LIMIT 6000`);
   const selectedCliente=Number(req.query.cliente_id)||0;
   res.send(page('Nuovo ordine di lavoro',`
-    <div class="actions"><a class="btn dark" href="/service/ordini">Indietro</a></div>
+    <div class="actions"><a class="btn dark" href="/ordini">Indietro</a></div>
     <div class="box"><h1>+ Accettazione officina</h1>
-      <form method="post" action="/service/ordini">
+      <form method="post" action="/ordini">
         <label>Cliente</label>
         <select name="cliente_id" required>
           <option value="">Scegli cliente...</option>
@@ -642,7 +655,7 @@ router.post('/ordini', async (req,res)=>{
       b.descrizione_lavoro,b.diagnosi,b.note
     ]);
 
-  res.redirect('/service/ordini/'+r.lastID);
+  res.redirect('/ordini/'+r.lastID);
 });
 
 router.get('/ordini/:id', async (req,res)=>{
@@ -661,14 +674,14 @@ router.get('/ordini/:id', async (req,res)=>{
   const phone = wa.startsWith('39') ? wa : (wa ? '39'+wa : '');
   const text=encodeURIComponent(`Buongiorno ${o.ragione_sociale||''}, la sua vettura ${o.marca||''} ${o.modello||''} targa ${o.targa||''} è pronta per il ritiro presso DP SERVICE. Grazie.`);
   res.send(page(`ODL ${o.numero}/${o.anno}`,`
-    <div class="actions"><a class="btn dark" href="/service/ordini">Indietro</a><a class="btn" href="/service/veicoli/${o.veicolo_id}">Apri veicolo</a></div>
+    <div class="actions"><a class="btn dark" href="/ordini">Indietro</a><a class="btn" href="/veicoli/${o.veicolo_id}">Apri veicolo</a></div>
     <div class="box">
       <h1>🧾 Ordine di lavoro ${o.numero}/${o.anno}</h1>
       <p><b>${esc(o.ragione_sociale)}</b><br>🚗 <b>${esc(o.targa)}</b> — ${esc(o.marca)} ${esc(o.modello)} ${esc(o.versione)}</p>
       <p><b>Data ingresso:</b> ${esc(o.data_apertura)} &nbsp; <b>Km:</b> ${o.km_ingresso||0}</p>
       <p><b>Lavoro richiesto:</b><br>${esc(o.descrizione_lavoro)}</p>
       <p><b>Diagnosi:</b><br>${esc(o.diagnosi)}</p>
-      <form method="post" action="/service/ordini/${o.id}/stato" style="margin:14px 0">
+      <form method="post" action="/ordini/${o.id}/stato" style="margin:14px 0">
         <label>Stato lavorazione</label>
         <div class="filters">
           <select name="stato">${['APERTO','IN_LAVORAZIONE','ATTESA_RICAMBI','PRONTO','CHIUSO'].map(s=>`<option ${o.stato===s?'selected':''}>${s}</option>`).join('')}</select>
@@ -678,12 +691,12 @@ router.get('/ordini/:id', async (req,res)=>{
       </form>
       <div class="actions" style="margin-top:12px">
         ${phone?`<a class="btn green" target="_blank" href="https://wa.me/${phone}?text=${text}">📲 AUTO PRONTA - WhatsApp</a>`:''}
-        ${preventivo?`<a class="btn dark" href="/service/preventivi/${preventivo.id}">📄 Apri preventivo</a>`:`<form method="post" action="/service/ordini/${o.id}/preventivo"><button class="btn dark">📄 CREA PREVENTIVO</button></form>`}
-        ${fattura?`<a class="btn" href="/service/fatture/${fattura.id}">💶 Apri fattura ${fattura.numero}/S</a>`:`<form method="post" action="/service/ordini/${o.id}/fattura"><button class="btn">💶 CREA FATTURA SERIE S</button></form>`}
+        ${preventivo?`<a class="btn dark" href="/preventivi/${preventivo.id}">📄 Apri preventivo</a>`:`<form method="post" action="/ordini/${o.id}/preventivo"><button class="btn dark">📄 CREA PREVENTIVO</button></form>`}
+        ${fattura?`<a class="btn" href="/fatture/${fattura.id}">💶 Apri fattura ${fattura.numero}/S</a>`:`<form method="post" action="/ordini/${o.id}/fattura"><button class="btn">💶 CREA FATTURA SERIE S</button></form>`}
       </div>
     </div>
     <div class="box"><h2>Ricambi / lavorazioni</h2>
-      <form method="post" action="/service/ordini/${o.id}/righe" id="rigaForm">
+      <form method="post" action="/ordini/${o.id}/righe" id="rigaForm">
         <div style="display:grid;grid-template-columns:180px 1fr 120px 150px;gap:10px;align-items:end">
           <div>
             <label>Tipo</label>
@@ -716,7 +729,7 @@ router.get('/ordini/:id', async (req,res)=>{
         <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
           <button class="btn">+ Aggiungi riga</button>
           <button type="button" class="btn green" onclick="document.getElementById('tipoRiga').value='MANODOPERA';document.getElementById('cercaRicambio').value='MANODOPERA';this.form.descrizione.value='MANODOPERA';this.form.prezzo_unitario.value='30.00';this.form.quantita.focus();">⏱ Manodopera 30 €/h</button>
-          <a class="btn dark" href="/service/ricambi/nuovo" target="_blank">+ Nuova voce listino</a>
+          <a class="btn dark" href="/ricambi/nuovo" target="_blank">+ Nuova voce listino</a>
         </div>
       </form>
       <script>
@@ -737,7 +750,7 @@ router.get('/ordini/:id', async (req,res)=>{
         }
       </script>
       <table><tr><th>Tipo</th><th>Descrizione</th><th>Q.tà / Ore</th><th>Prezzo</th><th>Totale</th><th></th></tr>
-      ${righe.map(r=>`<tr><td>${esc(r.tipo)}</td><td>${esc(r.descrizione)}</td><td>${r.quantita}</td><td>€ ${(Number(r.prezzo_unitario)||0).toFixed(2)}</td><td>€ ${((Number(r.quantita)||0)*(Number(r.prezzo_unitario)||0)).toFixed(2)}</td><td><form method="post" action="/service/ordini/${o.id}/righe/${r.id}/elimina"><button class="btn dark">Elimina</button></form></td></tr>`).join('')}
+      ${righe.map(r=>`<tr><td>${esc(r.tipo)}</td><td>${esc(r.descrizione)}</td><td>${r.quantita}</td><td>€ ${(Number(r.prezzo_unitario)||0).toFixed(2)}</td><td>€ ${((Number(r.quantita)||0)*(Number(r.prezzo_unitario)||0)).toFixed(2)}</td><td><form method="post" action="/ordini/${o.id}/righe/${r.id}/elimina"><button class="btn dark">Elimina</button></form></td></tr>`).join('')}
       </table>
       <div style="max-width:430px;margin-left:auto;margin-top:18px;background:#f4f4f4;border-radius:14px;padding:16px"><div><b>Imponibile:</b> ${dpEuro(calc.imponibile)}</div><div><b>IVA:</b> ${dpEuro(calc.iva)}</div><div style="font-size:26px;color:#d40000;margin-top:8px"><b>TOTALE: ${dpEuro(calc.totale)}</b></div></div>
     </div>`));
@@ -762,14 +775,14 @@ router.post('/ordini/:id/righe', async (req,res)=>{
     [req.params.id,tipo,descrizione,Number(req.body.quantita)||1,prezzo,iva]);
   const t=await get('SELECT COALESCE(SUM(quantita*prezzo_unitario),0) t FROM righe_lavoro WHERE ordine_id=?',[req.params.id]);
   await run('UPDATE ordini_lavoro SET totale=? WHERE id=?',[t.t,req.params.id]);
-  res.redirect('/service/ordini/'+req.params.id);
+  res.redirect('/ordini/'+req.params.id);
 });
 
 router.post('/ordini/:id/righe/:rid/elimina', async (req,res)=>{
   await run('DELETE FROM righe_lavoro WHERE id=? AND ordine_id=?',[req.params.rid,req.params.id]);
   const t=await get('SELECT COALESCE(SUM(quantita*prezzo_unitario),0) t FROM righe_lavoro WHERE ordine_id=?',[req.params.id]);
   await run('UPDATE ordini_lavoro SET totale=? WHERE id=?',[t.t,req.params.id]);
-  res.redirect('/service/ordini/'+req.params.id);
+  res.redirect('/ordini/'+req.params.id);
 });
 
 router.post('/ordini/:id/stato', async (req,res)=>{
@@ -780,8 +793,8 @@ router.post('/ordini/:id/stato', async (req,res)=>{
   ]);
   const o=await get('SELECT veicolo_id FROM ordini_lavoro WHERE id=?',[req.params.id]);
   if(o && km>0) await run('UPDATE veicoli SET km=? WHERE id=?',[km,o.veicolo_id]);
-  if(stato==='PRONTO' || stato==='CHIUSO') return res.redirect('/service/ordini#chiusi');
-  res.redirect('/service/ordini/'+req.params.id);
+  if(stato==='PRONTO' || stato==='CHIUSO') return res.redirect('/ordini#chiusi');
+  res.redirect('/ordini/'+req.params.id);
 });
 
 
@@ -799,7 +812,7 @@ router.post('/ordini/:id/preventivo', async (req,res)=>{
     ]);
     p=await get('SELECT * FROM preventivi_service WHERE id=?',[r.lastID]);
   }
-  res.redirect('/service/preventivi/'+p.id);
+  res.redirect('/preventivi/'+p.id);
 });
 
 router.post('/ordini/:id/fattura', async (req,res)=>{
@@ -816,14 +829,14 @@ router.post('/ordini/:id/fattura', async (req,res)=>{
     await run('UPDATE ordini_lavoro SET fatturato=1 WHERE id=?',[req.params.id]);
     f=await get('SELECT * FROM fatture_service WHERE id=?',[r.lastID]);
   }
-  res.redirect('/service/fatture/'+f.id);
+  res.redirect('/fatture/'+f.id);
 });
 
 router.get('/preventivi', async (req,res)=>{
   const rows=await all(`SELECT p.*,o.numero odl,v.targa,c.ragione_sociale FROM preventivi_service p
     LEFT JOIN ordini_lavoro o ON o.id=p.ordine_id LEFT JOIN veicoli v ON v.id=o.veicolo_id LEFT JOIN clienti c ON c.id=o.cliente_id
     ORDER BY p.id DESC LIMIT 500`);
-  res.send(page('Preventivi',`<div class="box"><h1>📄 Preventivi DP SERVICE</h1><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th></th></tr>${rows.map(x=>`<tr><td><b>${x.numero}/P</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><a class="btn dark" href="/service/preventivi/${x.id}">Apri</a></td></tr>`).join('')}</table></div>`));
+  res.send(page('Preventivi',`<div class="box"><h1>📄 Preventivi DP SERVICE</h1><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th></th></tr>${rows.map(x=>`<tr><td><b>${x.numero}/P</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><a class="btn dark" href="/preventivi/${x.id}">Apri</a></td></tr>`).join('')}</table></div>`));
 });
 
 router.get('/preventivi/:id([0-9]+)', async (req,res)=>{
@@ -831,7 +844,7 @@ router.get('/preventivi/:id([0-9]+)', async (req,res)=>{
   const d=await dpServiceDocData(p.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
   const ph=dpPhone(d.o.telefono); const pdfUrl=`${dpBaseUrl(req)}/preventivi/${p.id}.pdf`;
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo il preventivo DP SERVICE n. ${p.numero}/P per la vettura ${d.o.targa||''}. Totale ${dpEuro(p.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Preventivo ${p.numero}/P`,`<div class="box"><h1>📄 PREVENTIVO ${p.numero}/P</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><h2>Totale ${dpEuro(p.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/service/preventivi/${p.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}<a class="btn dark" href="/service/ordini/${p.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Preventivo ${p.numero}/P`,`<div class="box"><h1>📄 PREVENTIVO ${p.numero}/P</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><h2>Totale ${dpEuro(p.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/preventivi/${p.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}<a class="btn dark" href="/ordini/${p.ordine_id}">Torna all'ordine</a></div></div>`));
 });
 
 router.get('/preventivi/:id.pdf', async (req,res)=>{
@@ -846,7 +859,7 @@ router.get('/fatture', async (req,res)=>{
   const rows=await all(`SELECT f.*,o.numero odl,v.targa,c.ragione_sociale FROM fatture_service f
     LEFT JOIN ordini_lavoro o ON o.id=f.ordine_id LEFT JOIN veicoli v ON v.id=o.veicolo_id LEFT JOIN clienti c ON c.id=o.cliente_id
     ORDER BY f.id DESC LIMIT 500`);
-  res.send(page('Fatture serie S',`<div class="box"><h1>💶 Fatture DP SERVICE - Serie S</h1><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th></th></tr>${rows.map(x=>`<tr><td><b>${x.numero}/S</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><a class="btn dark" href="/service/fatture/${x.id}">Apri</a></td></tr>`).join('')}</table></div>`));
+  res.send(page('Fatture serie S',`<div class="box"><h1>💶 Fatture DP SERVICE - Serie S</h1><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th></th></tr>${rows.map(x=>`<tr><td><b>${x.numero}/S</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><a class="btn dark" href="/fatture/${x.id}">Apri</a></td></tr>`).join('')}</table></div>`));
 });
 
 router.get('/fatture/:id([0-9]+)', async (req,res)=>{
@@ -854,7 +867,7 @@ router.get('/fatture/:id([0-9]+)', async (req,res)=>{
   const d=await dpServiceDocData(f.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
   const ph=dpPhone(d.o.telefono); const pdfUrl=`${dpBaseUrl(req)}/fatture/${f.id}.pdf`;
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo la fattura DP SERVICE n. ${f.numero}/S per la vettura ${d.o.targa||''}. Totale ${dpEuro(f.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.pagamento)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/service/fatture/${f.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}<a class="btn dark" href="/service/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.pagamento)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}<a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
 });
 
 router.get('/fatture/:id.pdf', async (req,res)=>{
@@ -874,19 +887,19 @@ router.get('/ricambi', async (req,res)=>{
   }
   const rows=await all(`SELECT * FROM ricambi ${where} ORDER BY descrizione LIMIT 1000`,params);
   res.send(page('Ricambi / Listino',`
-    <div class="actions"><a class="btn dark" href="/service/">Dashboard</a><a class="btn" href="/service/ricambi/nuovo">+ Nuova voce</a></div>
+    <div class="actions"><a class="btn dark" href="/">Dashboard</a><a class="btn" href="/ricambi/nuovo">+ Nuova voce</a></div>
     <div class="box"><h1>📦 Listino ricambi / lavorazioni</h1>
       <form class="filters"><input name="q" placeholder="Codice, descrizione, categoria, marca" value="${esc(q)}"><span></span><span></span><button class="btn">Cerca</button></form>
       <table><tr><th>Codice</th><th>Descrizione</th><th>Categoria</th><th>Marca</th><th>Acquisto</th><th>Vendita</th><th>IVA</th><th></th></tr>
-      ${rows.map(x=>`<tr><td>${esc(x.codice)}</td><td><b>${esc(x.descrizione)}</b></td><td>${esc(x.categoria)}</td><td>${esc(x.marca)}</td><td>€ ${(Number(x.prezzo_acquisto)||0).toFixed(2)}</td><td>€ ${(Number(x.prezzo_vendita)||0).toFixed(2)}</td><td>${Number(x.iva)||22}%</td><td><a class="btn dark" href="/service/ricambi/${x.id}/modifica">Modifica</a></td></tr>`).join('')}
+      ${rows.map(x=>`<tr><td>${esc(x.codice)}</td><td><b>${esc(x.descrizione)}</b></td><td>${esc(x.categoria)}</td><td>${esc(x.marca)}</td><td>€ ${(Number(x.prezzo_acquisto)||0).toFixed(2)}</td><td>€ ${(Number(x.prezzo_vendita)||0).toFixed(2)}</td><td>${Number(x.iva)||22}%</td><td><a class="btn dark" href="/ricambi/${x.id}/modifica">Modifica</a></td></tr>`).join('')}
       </table>
     </div>`));
 });
 
 router.get('/ricambi/nuovo',(req,res)=>res.send(page('Nuova voce listino',`
-  <div class="actions"><a class="btn dark" href="/service/ricambi">Indietro</a></div>
+  <div class="actions"><a class="btn dark" href="/ricambi">Indietro</a></div>
   <div class="box"><h1>+ Nuova voce listino</h1>
-    <form method="post" action="/service/ricambi">
+    <form method="post" action="/ricambi">
       <label>Codice</label><input name="codice">
       <label>Descrizione</label><input name="descrizione" required>
       <label>Categoria</label><input name="categoria" placeholder="Es. Freni, Filtri, Oli, Elettrico...">
@@ -907,16 +920,16 @@ router.post('/ricambi', async (req,res)=>{
       b.codice,b.descrizione,b.categoria,b.marca,Number(b.prezzo_acquisto)||0,Number(b.prezzo_vendita)||0,
       Number(b.iva)||22,Number(b.giacenza)||0,b.note
     ]);
-  res.redirect('/service/ricambi');
+  res.redirect('/ricambi');
 });
 
 router.get('/ricambi/:id/modifica', async (req,res)=>{
   const x=await get('SELECT * FROM ricambi WHERE id=?',[req.params.id]);
   if(!x) return res.status(404).send('Voce non trovata');
   res.send(page('Modifica voce listino',`
-  <div class="actions"><a class="btn dark" href="/service/ricambi">Indietro</a></div>
+  <div class="actions"><a class="btn dark" href="/ricambi">Indietro</a></div>
   <div class="box"><h1>Modifica voce listino</h1>
-    <form method="post" action="/service/ricambi/${x.id}/modifica">
+    <form method="post" action="/ricambi/${x.id}/modifica">
       <label>Codice</label><input name="codice" value="${esc(x.codice)}">
       <label>Descrizione</label><input name="descrizione" value="${esc(x.descrizione)}" required>
       <label>Categoria</label><input name="categoria" value="${esc(x.categoria)}">
@@ -928,7 +941,7 @@ router.get('/ricambi/:id/modifica', async (req,res)=>{
       <label>Note</label><textarea name="note">${esc(x.note)}</textarea>
       <p><button class="btn">Salva modifiche</button></p>
     </form>
-    <form method="post" action="/service/ricambi/${x.id}/elimina" onsubmit="return confirm('Disattivare questa voce dal listino?')">
+    <form method="post" action="/ricambi/${x.id}/elimina" onsubmit="return confirm('Disattivare questa voce dal listino?')">
       <button class="btn dark">Disattiva voce</button>
     </form>
   </div>`));
@@ -940,12 +953,12 @@ router.post('/ricambi/:id/modifica', async (req,res)=>{
     b.codice,b.descrizione,b.categoria,b.marca,Number(b.prezzo_acquisto)||0,Number(b.prezzo_vendita)||0,
     Number(b.iva)||22,Number(b.giacenza)||0,b.note,req.params.id
   ]);
-  res.redirect('/service/ricambi');
+  res.redirect('/ricambi');
 });
 
 router.post('/ricambi/:id/elimina', async (req,res)=>{
   await run('UPDATE ricambi SET attivo=0 WHERE id=?',[req.params.id]);
-  res.redirect('/service/ricambi');
+  res.redirect('/ricambi');
 });
 
 router.get('/ricerca', async (req,res)=>{
@@ -954,13 +967,13 @@ router.get('/ricerca', async (req,res)=>{
     WHERE v.targa LIKE ? OR v.marca LIKE ? OR v.modello LIKE ? OR v.versione LIKE ? OR v.telaio LIKE ? OR c.ragione_sociale LIKE ?
     ORDER BY v.targa LIMIT 300`,Array(6).fill(`%${q}%`));
   res.send(page('Ricerca',`
-  <div class="actions"><a class="btn dark" href="/service/">Dashboard</a></div>
+  <div class="actions"><a class="btn dark" href="/">Dashboard</a></div>
   <div class="box"><h1>🔎 Ricerca globale</h1>
   <form class="filters"><input name="q" placeholder="Targa, cliente, marca, modello, telaio" value="${esc(q)}"><span></span><span></span><button class="btn">Cerca</button></form>
-  ${q?`<table><tr><th>Targa</th><th>Cliente</th><th>Veicolo</th><th></th></tr>${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)} ${esc(v.versione)}</td><td><a class="btn dark" href="/service/veicoli/${v.id}">Apri</a></td></tr>`).join('')}</table>`:''}
+  ${q?`<table><tr><th>Targa</th><th>Cliente</th><th>Veicolo</th><th></th></tr>${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)} ${esc(v.versione)}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a></td></tr>`).join('')}</table>`:''}
   </div>`));
 });
 
-initDb().then(()=>
-
+const dpServiceReady = initDb();
+router.use(async (req,res,next)=>{ try{ await dpServiceReady; next(); }catch(e){ next(e); } });
 module.exports = router;
