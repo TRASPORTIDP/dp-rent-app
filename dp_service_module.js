@@ -56,7 +56,7 @@ async function initDb(){
   const have = new Set(ccols.map(x => x.name));
   for (const [name, type] of [
     ['cf','TEXT'],['indirizzo','TEXT'],['citta','TEXT'],['provincia','TEXT'],
-    ['pec','TEXT'],['sdi','TEXT'],['note','TEXT'],['created_at','TEXT'],['codice','TEXT'],['source_main_id','INTEGER']
+    ['pec','TEXT'],['sdi','TEXT'],['note','TEXT'],['created_at','TEXT'],['codice','TEXT'],['source_main_id','INTEGER'],['source_key','TEXT']
   ]) {
     if (!have.has(name)) await run(`ALTER TABLE clienti ADD COLUMN ${name} ${type}`);
   }
@@ -208,6 +208,76 @@ async function initDb(){
           COALESCE(m.telefono,''),COALESCE(m.email,''),COALESCE(m.pec,''),COALESCE(m.sdi,''),COALESCE(m.created_at,CURRENT_TIMESTAMP),m.id
         FROM dp_main.clienti m
         WHERE NOT EXISTS (SELECT 1 FROM clienti s WHERE s.source_main_id=m.id)`);
+      // V12.1 - importa TUTTE le anagrafiche Trasporti.
+      try{
+        const tt = await all(`SELECT name FROM dp_main.sqlite_master WHERE type='table' AND name='trasporti_clienti'`);
+        if(tt.length){
+          const trows = await all(`SELECT
+              id,
+              COALESCE(codice,'') codice,
+              COALESCE(ragione_sociale,'') ragione_sociale,
+              COALESCE(piva,'') piva,
+              COALESCE(codice_fiscale,'') cf,
+              COALESCE(indirizzo,'') indirizzo,
+              COALESCE(citta,'') citta,
+              COALESCE(provincia,'') provincia,
+              COALESCE(telefono,'') telefono,
+              COALESCE(email,'') email,
+              COALESCE(pec,'') pec,
+              COALESCE(sdi,'') sdi,
+              COALESCE(note,'') note,
+              COALESCE(created_at,CURRENT_TIMESTAMP) created_at
+            FROM dp_main.trasporti_clienti
+            WHERE TRIM(COALESCE(ragione_sociale,''))<>''`);
+
+          for(const m of trows){
+            const key='T:'+m.id;
+            let ex = await get(`SELECT id FROM clienti WHERE source_key=? LIMIT 1`,[key]);
+
+            if(!ex && String(m.piva||'').trim()){
+              ex = await get(`SELECT id FROM clienti WHERE TRIM(COALESCE(piva,''))<>'' AND UPPER(TRIM(piva))=UPPER(TRIM(?)) LIMIT 1`,[m.piva]);
+            }
+            if(!ex && String(m.cf||'').trim()){
+              ex = await get(`SELECT id FROM clienti WHERE TRIM(COALESCE(cf,''))<>'' AND UPPER(TRIM(cf))=UPPER(TRIM(?)) LIMIT 1`,[m.cf]);
+            }
+            if(!ex && String(m.ragione_sociale||'').trim() && String(m.telefono||'').trim()){
+              ex = await get(`SELECT id FROM clienti
+                WHERE UPPER(TRIM(COALESCE(ragione_sociale,'')))=UPPER(TRIM(?))
+                  AND REPLACE(REPLACE(REPLACE(COALESCE(telefono,''),' ',''),'-',''),'.','')
+                    =REPLACE(REPLACE(REPLACE(?,' ',''),'-',''),'.','')
+                LIMIT 1`,[m.ragione_sociale,m.telefono]);
+            }
+
+            if(ex){
+              await run(`UPDATE clienti SET
+                source_key=COALESCE(NULLIF(source_key,''),?),
+                codice=COALESCE(NULLIF(codice,''),?),
+                ragione_sociale=COALESCE(NULLIF(ragione_sociale,''),?),
+                piva=COALESCE(NULLIF(piva,''),?),
+                cf=COALESCE(NULLIF(cf,''),?),
+                indirizzo=COALESCE(NULLIF(indirizzo,''),?),
+                citta=COALESCE(NULLIF(citta,''),?),
+                provincia=COALESCE(NULLIF(provincia,''),?),
+                telefono=COALESCE(NULLIF(telefono,''),?),
+                email=COALESCE(NULLIF(email,''),?),
+                pec=COALESCE(NULLIF(pec,''),?),
+                sdi=COALESCE(NULLIF(sdi,''),?),
+                note=COALESCE(NULLIF(note,''),?)
+                WHERE id=?`,
+                [key,m.codice,m.ragione_sociale,m.piva,m.cf,m.indirizzo,m.citta,m.provincia,m.telefono,m.email,m.pec,m.sdi,m.note,ex.id]);
+            }else{
+              await run(`INSERT INTO clienti
+                (codice,ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,note,created_at,source_key)
+                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+                [m.codice,m.ragione_sociale,m.piva,m.cf,m.indirizzo,m.citta,m.provincia,m.telefono,m.email,m.pec,m.sdi,m.note,m.created_at,key]);
+            }
+          }
+          console.log('DP SERVICE sync Trasporti completato:',trows.length,'anagrafiche sorgente');
+        }
+      }catch(e){
+        console.log('DP SERVICE sync trasporti_clienti non eseguito:',e.message);
+      }
+
       await run(`DETACH DATABASE dp_main`);
     }
   }catch(e){
