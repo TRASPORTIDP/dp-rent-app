@@ -479,31 +479,46 @@ async function dpServiceDocData(ordineId){
 }
 
 function dpPdfHeader(doc, tipo, numeroLabel, dataLabel){
-  const W=doc.page.width, margin=42;
-  doc.rect(0,0,W,168).fill('#08090b');
-
-  // Tricolore compatto a destra: non passa più sopra alle scritte.
-  doc.rect(W-34,0,34,168).fill('#e31b23');
-  doc.rect(W-68,0,34,168).fill('#ffffff');
-  doc.rect(W-102,0,34,168).fill('#159447');
+  const W=doc.page.width;
+  const H=172;
+  doc.rect(0,0,W,H).fill('#0b0b0d');
 
   const logoPath=path.join(__dirname,'public','dp_service_logo.png');
   if(fs.existsSync(logoPath)){
-    try{ doc.image(logoPath,margin,24,{fit:[165,112],align:'center',valign:'center'}); }catch(e){}
+    try{
+      // Logo più piccolo e pulito, niente effetto poster enorme.
+      doc.image(logoPath,38,26,{fit:[145,105],align:'center',valign:'center'});
+    }catch(e){}
   }
 
-  // Colonna centrale riservata al marchio/testi, con larghezza fissa.
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(24).text('DP SERVICE',222,34,{width:185});
-  doc.fillColor('#ff2020').font('Helvetica-Bold').fontSize(10).text('OFFICINA MULTIMARCA',222,70,{width:185,characterSpacing:.8});
-  doc.fillColor('#ffffff').font('Helvetica').fontSize(8.2).text('MANUTENZIONE • RIPARAZIONI\nDIAGNOSI • PNEUMATICI',222,92,{width:185,lineGap:3});
+  // Titolo centrale.
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(25)
+    .text('DP SERVICE',205,34,{width:210});
+  doc.fillColor('#ff2525').font('Helvetica-Bold').fontSize(10.5)
+    .text('OFFICINA MULTIMARCA',205,73,{width:210,characterSpacing:.7});
+  doc.fillColor('#d9d9d9').font('Helvetica').fontSize(8.8)
+    .text('MANUTENZIONE • RIPARAZIONI • DIAGNOSI\nPNEUMATICI • ELETTRAUTO',205,96,{width:210,lineGap:3});
 
+  // Tricolore elegante, stretto sul bordo destro.
+  const stripeX=W-58;
+  doc.rect(stripeX,0,19,H).fill('#169b62');
+  doc.rect(stripeX+19,0,19,H).fill('#ffffff');
+  doc.rect(stripeX+38,0,20,H).fill('#d71920');
+
+  // Box documento separato dalle scritte.
   const isPrev=String(tipo||'').toUpperCase()==='PREVENTIVO';
-  const bx=W-196, by=28, bw=82, bh=62;
-  doc.roundedRect(bx,by,bw,bh,7).fill(isPrev?'#78ff00':'#f20d12');
-  doc.fillColor(isPrev?'#08090b':'#ffffff').font('Helvetica-Bold').fontSize(isPrev?12:14)
-    .text(isPrev?'PREVENTIVO':'FATTURA',bx+5,by+14,{width:bw-10,align:'center'});
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11).text(numeroLabel,bx-18,104,{width:bw+18,align:'right'});
-  doc.font('Helvetica').fontSize(8.5).text(dataLabel,bx-18,123,{width:bw+18,align:'right'});
+  const bx=W-188, by=32, bw=112, bh=58;
+  doc.roundedRect(bx,by,bw,bh,9).fill(isPrev?'#8DFF00':'#e20d17');
+  doc.fillColor(isPrev?'#111111':'#ffffff').font('Helvetica-Bold').fontSize(14)
+    .text(isPrev?'PREVENTIVO':'FATTURA',bx+7,by+17,{width:bw-14,align:'center'});
+
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11.5)
+    .text(numeroLabel,bx,106,{width:bw,align:'center'});
+  doc.fillColor('#d6d6d6').font('Helvetica').fontSize(8.5)
+    .text(dataLabel,bx,125,{width:bw,align:'center'});
+
+  // Linea rossa inferiore.
+  doc.rect(0,H-5,W,5).fill('#e20d17');
 }
 
 function dpPdfFooter(doc){
