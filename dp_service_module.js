@@ -1274,8 +1274,8 @@ router.get('/richiesta',(req,res)=>{
       <div class="hero"><h1 style="margin:0">🔧 Richiesta DP SERVICE</h1><p style="margin-bottom:0;font-size:18px">Descrivi il problema della tua auto. La richiesta arriva direttamente all'officina.</p></div>
       <div class="box">
         <form method="post" action="/richiesta">
-          <label>Nome e cognome / Azienda *</label><input name="nome" required>
-          <label>Telefono WhatsApp *</label><input name="telefono" required placeholder="Es. 3331234567">
+          <label>Nome e cognome / Azienda *</label><input name="nome" value="${esc(req.query.nome||'')}" required>
+          <label>Telefono WhatsApp *</label><input name="telefono" value="${esc(req.query.telefono||'')}" required placeholder="Es. 3331234567">
           <label>Targa *</label><input name="targa" required style="text-transform:uppercase">
           <div class="grid" style="margin-top:0">
             <div><label>Marca</label><input name="marca"></div>
