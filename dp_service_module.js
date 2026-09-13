@@ -4,6 +4,8 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 const PDFDocument = require('pdfkit');
+let twilio = null;
+try { twilio = require('twilio'); } catch(e) { console.log('Twilio non disponibile in DP SERVICE:', e.message); }
 
 const router = express.Router();
 
@@ -21,6 +23,8 @@ router.use((req,res,next)=>{
   res.send=(body)=>{
     if(typeof body==='string'){
       body=body.replace(/\b(href|action|src)=([\"'])\/(?!service\/)/g,'$1=$2/service/');
+      // Link speciale per tornare al menu principale DP GESTIONALE.
+      body=body.replace(/href=([\"'])\/service\/__DP_MAIN__\1/g,'href=$1/$1');
     }
     return originalSend(body);
   };
@@ -52,7 +56,7 @@ async function initDb(){
   const have = new Set(ccols.map(x => x.name));
   for (const [name, type] of [
     ['cf','TEXT'],['indirizzo','TEXT'],['citta','TEXT'],['provincia','TEXT'],
-    ['pec','TEXT'],['sdi','TEXT'],['note','TEXT'],['created_at','TEXT'],['codice','TEXT']
+    ['pec','TEXT'],['sdi','TEXT'],['note','TEXT'],['created_at','TEXT'],['codice','TEXT'],['source_main_id','INTEGER']
   ]) {
     if (!have.has(name)) await run(`ALTER TABLE clienti ADD COLUMN ${name} ${type}`);
   }
@@ -161,6 +165,70 @@ async function initDb(){
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(anno,numero,serie)
   )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS service_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tipo TEXT DEFAULT 'RICHIESTA_CLIENTE',
+    titolo TEXT,
+    messaggio TEXT,
+    ordine_id INTEGER,
+    letto INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  await run(`CREATE TABLE IF NOT EXISTS richieste_service (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ordine_id INTEGER,
+    nome TEXT,
+    telefono TEXT,
+    targa TEXT,
+    marca TEXT,
+    modello TEXT,
+    km INTEGER DEFAULT 0,
+    richiesta TEXT,
+    stato TEXT DEFAULT 'NUOVA',
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+
+  // Sincronizza automaticamente le anagrafiche dal database principale DP Gestionale.
+  // Non modifica DP RENT/Trasporti: copia solo nel database DP SERVICE.
+  try{
+    const mainDbPath = process.env.DB_PATH || path.join(process.env.DATA_DIR || '/var/data','database.sqlite');
+    if(fs.existsSync(mainDbPath)){
+      await run(`ATTACH DATABASE ? AS dp_main`,[mainDbPath]);
+      await run(`INSERT INTO clienti
+        (ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,created_at,source_main_id)
+        SELECT
+          CASE
+            WHEN TRIM(COALESCE(m.azienda,''))<>'' THEN TRIM(m.azienda)
+            WHEN TRIM(COALESCE(m.nome,'') || ' ' || COALESCE(m.cognome,''))<>'' THEN TRIM(COALESCE(m.nome,'') || ' ' || COALESCE(m.cognome,''))
+            ELSE 'Cliente #' || m.id
+          END,
+          COALESCE(m.piva,''),COALESCE(m.cf,''),COALESCE(m.indirizzo,''),COALESCE(m.citta,''),COALESCE(m.provincia,''),
+          COALESCE(m.telefono,''),COALESCE(m.email,''),COALESCE(m.pec,''),COALESCE(m.sdi,''),COALESCE(m.created_at,CURRENT_TIMESTAMP),m.id
+        FROM dp_main.clienti m
+        WHERE NOT EXISTS (SELECT 1 FROM clienti s WHERE s.source_main_id=m.id)`);
+      await run(`DETACH DATABASE dp_main`);
+    }
+  }catch(e){
+    console.log('DP SERVICE sync clienti non eseguito:', e.message);
+    try{ await run(`DETACH DATABASE dp_main`); }catch(_){}
+  }
+}
+
+
+const DP_SERVICE_LISTINO_SEED = [{"categoria": "Liquidi/Additivi", "descrizione": "AD BLUE", "prezzo": 0.6, "note": ""}, {"categoria": "Liquidi/Additivi", "descrizione": "ADDITIVO CONSUMO OLIO TOTAL STOP OIL 300 ML", "prezzo": 52.0, "note": ""}, {"categoria": "Ricambi", "descrizione": "AMMORTIZZATORI RIMORCHIO FE380HC E FV130SN (PAR9019388)", "prezzo": 0.0, "note": ""}, {"categoria": "Liquidi/Additivi", "descrizione": "ANTIGELO BLU", "prezzo": 7.0, "note": ""}, {"categoria": "Liquidi/Additivi", "descrizione": "ANTIGELO GIALLO", "prezzo": 7.0, "note": ""}, {"categoria": "Liquidi/Additivi", "descrizione": "ANTIGELO ROSSO", "prezzo": 7.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA ECM 60AH 242X175X190 L2 B13", "prezzo": 92.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA EXCELL 100AH 313X175X205 LH4 B", "prezzo": 117.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA EXCELL 74 AH 278X175X190 L03 B1", "prezzo": 95.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA EXIDE 62 AH", "prezzo": 80.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA EXIDE 70AH ECM (START&STOP) 278X175X190 L3 B13", "prezzo": 130.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA EXIDE PREMIUM 53 AH 207X175X190 L01 B", "prezzo": 73.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA MIDAC 55 AH (S555.060.050)(H55)", "prezzo": 70.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA MIDAC 60 AH (560.059.054)(C60)", "prezzo": 77.87, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA MIDAC 60 AH AGM (S560.901.068) T2AGM", "prezzo": 150.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA MIDAC 60 AH EFB (S560.501.057)(IT2 EFB)", "prezzo": 100.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA MIDAC 72 AH EFB (S572.501.072)(IT3 EFB)", "prezzo": 120.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA MIDAC 74 AH (S574.012.068)(H74)", "prezzo": 94.26, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA MIDAC 95AH AGM (S595.901.085)(IT5 AGM)", "prezzo": 200.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA SAF 80 AH 680EN", "prezzo": 78.0, "note": ""}, {"categoria": "Batterie", "descrizione": "BATTERIA SAF 80 AH EFB", "prezzo": 115.0, "note": ""}, {"categoria": "Materiali", "descrizione": "BIADESIVO WURTH (12mm) AL MT.", "prezzo": 5.15, "note": ""}, {"categoria": "Segnaletica", "descrizione": "CONTRASSEGNO ADESIVO LIMITE VELOCITA' 100 KM/H", "prezzo": 5.0, "note": ""}, {"categoria": "Segnaletica", "descrizione": "CONTRASSEGNO ADESIVO LIMITE VELOCITA' 80 KM/H", "prezzo": 5.0, "note": ""}, {"categoria": "Servizi", "descrizione": "CONVERGENZA AUTO", "prezzo": 40.0, "note": ""}, {"categoria": "Servizi", "descrizione": "CONVERGENZA AUTOCARRO", "prezzo": 50.0, "note": ""}, {"categoria": "Ricambi", "descrizione": "FASCETTA SEMIASSE", "prezzo": 1.6, "note": ""}, {"categoria": "Filtri", "descrizione": "FILTRO ABITACOLO", "prezzo": 0.0, "note": "Prezzo da valorizzare"}, {"categoria": "Filtri", "descrizione": "FILTRO ARIA", "prezzo": 0.0, "note": "Prezzo da valorizzare"}, {"categoria": "Filtri", "descrizione": "FILTRO ESSICCATORE", "prezzo": 0.0, "note": "Prezzo da valorizzare"}, {"categoria": "Filtri", "descrizione": "FILTRO GASOLIO", "prezzo": 0.0, "note": "Prezzo da valorizzare"}, {"categoria": "Filtri", "descrizione": "FILTRO OLIO", "prezzo": 0.0, "note": "Prezzo da valorizzare"}, {"categoria": "Servizi", "descrizione": "INTERVENTO CARROATTREZZI", "prezzo": 50.0, "note": ""}, {"categoria": "Segnaletica", "descrizione": "KIT ADESIVO TABELLA MOTRICE (2 pz) A83899207 EUROPARTS", "prezzo": 16.0, "note": ""}, {"categoria": "Segnaletica", "descrizione": "KIT ADESIVO TABELLA RIMORCHIO (2 pz) A83899217 EUROPARTS", "prezzo": 23.0, "note": ""}, {"categoria": "Segnaletica", "descrizione": "KIT METALLICO TABELLA MOTRICE (2 pz) A83890094 EUROPARTS", "prezzo": 18.0, "note": ""}, {"categoria": "Segnaletica", "descrizione": "KIT METALLICO TABELLA RIMORCHIO (2 pz) A83890093 EUROPARTS", "prezzo": 25.0, "note": ""}, {"categoria": "Segnaletica", "descrizione": "KIT PANNELLI RITRORIFLETEX 11131 (LOMA MOR11.001)", "prezzo": 30.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA H1 12V (LOMA+DNG)", "prezzo": 2.75, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA 12V 21W 1 FIL", "prezzo": 2.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA 12V W21/5W 2 FIL", "prezzo": 4.4, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA 5W 24V", "prezzo": 2.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA ATT. VETRO 12V 5W (0720162 1)", "prezzo": 2.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA H1 12V 55W (0720111 1)", "prezzo": 5.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA H4 12V", "prezzo": 5.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA H4 12V/60/55W ALOGENA (0720 110 1)", "prezzo": 5.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA H4 24V (WURTH 07201102)", "prezzo": 6.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA H7 12V 55W (0720 114 1)", "prezzo": 5.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA H7 24V", "prezzo": 6.3, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA INDIC. ATTACCO VETRO ARANCIO WY5W 12V (0720 162 10)", "prezzo": 3.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA LED ARANCIO 12V (PLED) (A800200819) EUROPARTS", "prezzo": 6.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA LED BIANCA TUTTOVETRO 12V (A800200838) EUROPARTS", "prezzo": 2.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA LED ORIGINAL H9 12V 65W (OSRAM 64213)", "prezzo": 19.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA LED R5WLED (A800200832) EUROPARTS", "prezzo": 4.35, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA LED ROSSA 12V (P21LED) (A800200815) EUROPARTS", "prezzo": 5.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA ORIGINAL C5W 12V (LOMA OSR6418)", "prezzo": 0.9, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA ORIGINAL P21W 12V (0720 1342) DIREZIONE", "prezzo": 2.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA ORIGINAL R5W 24V (LOMA OSR 5627)", "prezzo": 1.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA ORIGINAL W5W 12V", "prezzo": 1.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA OSRAM ORIGINAL R5W 12V (OSR 5007 LOMA)", "prezzo": 1.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA P21/5W 12V/21/5W (0720 134 1)", "prezzo": 1.2, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA P21W 12V/21W (0720 132 1)", "prezzo": 1.05, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA POSIZIONE 24V 4W (0720 1502)", "prezzo": 2.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA PY21W 12V 21W (0720 138 3)", "prezzo": 3.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA PY21W 21W 24V (072013223)", "prezzo": 4.7, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA R10W 12V (0720 141 1)", "prezzo": 2.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA R5W 12V/5W (0720 140 1)", "prezzo": 1.2, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA TUTTOVETRO (POSIZIONE) W5W 12V 5W (0720 150 11)", "prezzo": 5.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA W16W 12V 16W (07201601)", "prezzo": 3.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA W16W 12V 16W (072016211)", "prezzo": 3.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA W5W 12V/5W ATTACCO VETRO/NON COLORATO (0720162 1)", "prezzo": 0.9, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA XENON OSRAM XENARC ORIGINAL D1S 35W (66140) LOMA", "prezzo": 71.5, "note": ""}, {"categoria": "Lampade", "descrizione": "LAMPADA LED H7 FAN KIT DA 2 (Azzurra)", "prezzo": 55.0, "note": ""}, {"categoria": "Lampade", "descrizione": "LEDRIVING HL EASY H7/H18 COOL WHITE 67000 (LOMA OSR 64210DWESY-2HB)", "prezzo": 43.0, "note": ""}, {"categoria": "Liquidi/Additivi", "descrizione": "LIQUIDO RADIATORE", "prezzo": 7.0, "note": ""}, {"categoria": "Segnaletica", "descrizione": "LUCE INGOMBRO GIALLA PIANA", "prezzo": 11.2, "note": ""}, {"categoria": "Servizi", "descrizione": "MANODOPERA", "prezzo": 30.0, "note": ""}, {"categoria": "Materiali", "descrizione": "MATERIALE D'USO", "prezzo": 5.0, "note": ""}, {"categoria": "Materiali", "descrizione": "MATERIALE D'USO E SMALTIMENTO", "prezzo": 10.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO 0W30 SHELL", "prezzo": 15.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO CAMBIO E DIFFERENZIALE 75W/90", "prezzo": 12.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO FRENI DOT 4", "prezzo": 7.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO IDRAULICO G 46", "prezzo": 6.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO IDROGUIDA", "prezzo": 11.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO MOTORE 0W20", "prezzo": 15.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO MOTORE 5W40", "prezzo": 8.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO MOTORE SELENIA 5W40 (SHE 48158)", "prezzo": 14.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO MOTORE SHELL 5W30", "prezzo": 12.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO MOTORE VITALTECH 15W40", "prezzo": 10.0, "note": ""}, {"categoria": "Oli/Lubrificanti", "descrizione": "OLIO TRUCK 10W40 SHELL", "prezzo": 10.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "PASTIGLIA TURAFALLE (DNG ARX35731)", "prezzo": 18.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "PASTIGLIA TURAFALLE (ROLIN ALUX)(DNG MAL35731)", "prezzo": 18.0, "note": ""}, {"categoria": "Servizi", "descrizione": "PREVISIONE", "prezzo": 22.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "PROLUNGA PLASTICA 18MM (PNEUMATICI)", "prezzo": 8.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "PROLUNGA VALVOLA PIEGATA OTTONE", "prezzo": 5.0, "note": ""}, {"categoria": "Liquidi/Additivi", "descrizione": "RADIATOR REPAIR HP 300 ML", "prezzo": 24.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "RAPPEZZO PNEUMATICO AUTO", "prezzo": 30.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "RAPPEZZO PNEUMATICO AUTOCARRO", "prezzo": 60.0, "note": ""}, {"categoria": "Servizi", "descrizione": "REVISIONE", "prezzo": 54.95, "note": ""}, {"categoria": "Servizi", "descrizione": "REVISIONE SPESE ART.15", "prezzo": 11.96, "note": ""}, {"categoria": "Pneumatici", "descrizione": "RIPARAZIONE PNEUMATICO CON STRISCIA", "prezzo": 10.0, "note": ""}, {"categoria": "Servizi", "descrizione": "SMALTIMENTO", "prezzo": 5.0, "note": ""}, {"categoria": "Servizi", "descrizione": "SOCCORSO SU STRADA", "prezzo": 50.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "SPILLI X PNEUMATICI", "prezzo": 0.7, "note": ""}, {"categoria": "Segnaletica", "descrizione": "TABELLA POST. MOTRICE (N°2)", "prezzo": 30.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "VALVOLA CERCHI GOMMA", "prezzo": 1.5, "note": ""}, {"categoria": "Pneumatici", "descrizione": "VALVOLA FLESSIBILE PNEUMATICI", "prezzo": 5.5, "note": ""}, {"categoria": "Pneumatici", "descrizione": "VALVOLA GOMMA X CERCHI TPMS LAUNCH (SGL)", "prezzo": 40.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "VALVOLA GOMMA X EZ SENSOR WURTH 0879961001", "prezzo": 13.0, "note": ""}, {"categoria": "Pneumatici", "descrizione": "VALVOLA MET. X CERCHI ALLUMINIO (LAUNCH LTR-01)", "prezzo": 40.0, "note": ""}];
+
+async function dpServiceSeedListino(){
+  try{
+    const n=await get(`SELECT COUNT(*) n FROM ricambi`);
+    if(Number(n?.n||0)>0) return;
+    for(const x of DP_SERVICE_LISTINO_SEED){
+      await run(`INSERT INTO ricambi(descrizione,categoria,prezzo_vendita,iva,note,attivo) VALUES(?,?,?,?,?,1)`,
+        [x.descrizione,x.categoria,Number(x.prezzo)||0,22,x.note||'']);
+    }
+    console.log('DP SERVICE listino iniziale caricato:', DP_SERVICE_LISTINO_SEED.length);
+  }catch(e){ console.log('DP SERVICE seed listino errore:',e.message); }
 }
 
 function esc(v=''){ return String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
@@ -188,8 +256,12 @@ table{width:100%;border-collapse:collapse;margin-top:16px;background:#fff}
 th{background:#1d1d1f;color:white;padding:10px;text-align:left} td{padding:10px;border-bottom:1px solid #ddd;vertical-align:top}
 .filters{display:grid;grid-template-columns:2fr 1fr 1fr auto;gap:10px;align-items:end}
 .actions{display:flex;gap:8px;flex-wrap:wrap}
+.alert-service{background:#fff3cd;border:2px solid #ffb300;border-radius:16px;padding:14px 16px;margin:14px 0;font-weight:800}
+.badge-alert{display:inline-block;background:#e00000;color:#fff;border-radius:999px;padding:5px 10px;font-size:14px}
+.public-wrap{max-width:760px;margin:0 auto}
+.public-wrap .box{border-top:6px solid #e00000}
 @media(max-width:780px){.grid,.filters{grid-template-columns:1fr}header span{display:block;margin:6px 0 0}.card{font-size:22px}}
-</style></head><body><header><img src="/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/">🏠 Dashboard</a></div>${body}</main></body></html>`;
+</style></head><body><header><img src="/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/__DP_MAIN__">🏠 Menu DP Gestionale</a></div>${body}</main></body></html>`;
 }
 
 
@@ -226,6 +298,34 @@ function dpPhone(v){
   return p;
 }
 function dpBaseUrl(req){ return (process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/,''); }
+
+function dpServiceNormWa(v){
+  let p=String(v||'').trim().replace(/^whatsapp:/i,'').replace(/[^\d+]/g,'');
+  if(!p) return '';
+  if(p.startsWith('0039')) p='+'+p.slice(2);
+  else if(!p.startsWith('+')) p=p.startsWith('39')?('+'+p):('+39'+p);
+  return 'whatsapp:'+p;
+}
+function dpServiceStaffNumbers(){
+  const raw=process.env.INTERNAL_OFFICINA_NUMBERS || process.env.INTERNAL_GENERAL_NUMBERS || process.env.STAFF_WHATSAPP_NUMBERS || '';
+  const fallback=['+393287377675','+393472733226','+393494040073'];
+  return (raw?String(raw).split(/[;,\n]+/):fallback).map(dpServiceNormWa).filter(Boolean);
+}
+const dpServiceTwilioClient=(twilio && process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN)
+  ? twilio(process.env.TWILIO_ACCOUNT_SID,process.env.TWILIO_AUTH_TOKEN) : null;
+
+async function dpServiceNotifyStaff(body){
+  if(!dpServiceTwilioClient) return {ok:false,error:'Twilio non configurato'};
+  const from=dpServiceNormWa(process.env.TWILIO_WHATSAPP_NUMBER || '+390744817108');
+  let sent=0, errors=[];
+  for(const to of [...new Set(dpServiceStaffNumbers())]){
+    try{
+      await dpServiceTwilioClient.messages.create({from,to,body:String(body||'')});
+      sent++;
+    }catch(e){ errors.push(e.message||String(e)); }
+  }
+  return {ok:sent>0,sent,errors};
+}
 
 async function dpServiceDocData(ordineId){
   const o=await get(`SELECT o.*,v.targa,v.marca,v.modello,v.versione,v.telaio,
@@ -360,6 +460,8 @@ router.get('/', async (req,res)=>{
   const r=await get("SELECT COUNT(*) n FROM ricambi WHERE attivo=1");
   const pv=await get('SELECT COUNT(*) n FROM preventivi_service');
   const fsrv=await get('SELECT COUNT(*) n FROM fatture_service');
+  const al=await get('SELECT COUNT(*) n FROM service_alerts WHERE letto=0');
+  await dpServiceSeedListino();
   res.send(page('Dashboard',`
     <div class="hero"><h1 style="margin:0;font-size:44px">DP SERVICE</h1><div style="font-size:20px;font-weight:700">Gestionale Officina</div></div>
     <div class="grid">
@@ -370,6 +472,8 @@ router.get('/', async (req,res)=>{
       <a class="card" href="/ricambi">📦 Ricambi / Listino<br><small>${r.n} voci</small></a>
       <a class="card" href="/preventivi">📄 Preventivi<br><small>${pv.n} emessi</small></a>
       <a class="card" href="/fatture">💶 Fatture serie S<br><small>${fsrv.n} emesse</small></a>
+      <a class="card ${Number(al.n)>0?'red':''}" href="/alert">🔔 Avvisi officina<br><small>${al.n} da leggere</small></a>
+      <a class="card blue" href="/richiesta">📲 Pagina richiesta cliente<br><small>Link pubblico officina</small></a>
     </div>`));
 });
 
@@ -961,6 +1065,98 @@ router.post('/ricambi/:id/elimina', async (req,res)=>{
   res.redirect('/ricambi');
 });
 
+
+router.get('/richiesta',(req,res)=>{
+  res.send(page('Richiesta officina',`
+    <div class="public-wrap">
+      <div class="hero"><h1 style="margin:0">🔧 Richiesta DP SERVICE</h1><p style="margin-bottom:0;font-size:18px">Descrivi il problema della tua auto. La richiesta arriva direttamente all'officina.</p></div>
+      <div class="box">
+        <form method="post" action="/richiesta">
+          <label>Nome e cognome / Azienda *</label><input name="nome" required>
+          <label>Telefono WhatsApp *</label><input name="telefono" required placeholder="Es. 3331234567">
+          <label>Targa *</label><input name="targa" required style="text-transform:uppercase">
+          <div class="grid" style="margin-top:0">
+            <div><label>Marca</label><input name="marca"></div>
+            <div><label>Modello</label><input name="modello"></div>
+          </div>
+          <label>Km attuali</label><input type="number" name="km" min="0">
+          <label>Che problema ha l'auto / che lavoro vuoi fare? *</label>
+          <textarea name="richiesta" rows="6" required placeholder="Scrivi qui tutto: spie accese, rumori, tagliando, gomme, freni, diagnosi..."></textarea>
+          <p><button class="btn" type="submit">Invia richiesta all'officina</button></p>
+        </form>
+      </div>
+    </div>`));
+});
+
+router.post('/richiesta', async (req,res)=>{
+  const b=req.body||{};
+  const nome=String(b.nome||'').trim();
+  const telefono=String(b.telefono||'').trim();
+  const targa=String(b.targa||'').toUpperCase().replace(/\s/g,'');
+  const richiesta=String(b.richiesta||'').trim();
+  if(!nome || !telefono || !targa || !richiesta) return res.status(400).send('Compila i campi obbligatori.');
+
+  let c=await get(`SELECT * FROM clienti WHERE telefono=? OR telefono LIKE ? ORDER BY id LIMIT 1`,[telefono,`%${telefono.replace(/\D/g,'').slice(-8)}%`]);
+  if(!c){
+    const cr=await run(`INSERT INTO clienti(ragione_sociale,telefono) VALUES(?,?)`,[nome,telefono]);
+    c=await get('SELECT * FROM clienti WHERE id=?',[cr.lastID]);
+  }
+  let v=await get(`SELECT * FROM veicoli WHERE UPPER(targa)=UPPER(?)`,[targa]);
+  if(v){
+    await run(`UPDATE veicoli SET cliente_id=?,marca=COALESCE(NULLIF(?,''),marca),modello=COALESCE(NULLIF(?,''),modello),km=? WHERE id=?`,
+      [c.id,b.marca||'',b.modello||'',Number(b.km)||v.km||0,v.id]);
+  }else{
+    const vr=await run(`INSERT INTO veicoli(cliente_id,targa,marca,modello,km) VALUES(?,?,?,?,?)`,
+      [c.id,targa,b.marca||'',b.modello||'',Number(b.km)||0]);
+    v=await get('SELECT * FROM veicoli WHERE id=?',[vr.lastID]);
+  }
+  if(!v) v=await get(`SELECT * FROM veicoli WHERE UPPER(targa)=UPPER(?)`,[targa]);
+
+  const y=new Date().getFullYear();
+  const nx=await get('SELECT COALESCE(MAX(numero),0)+1 n FROM ordini_lavoro WHERE anno=?',[y]);
+  const od=await run(`INSERT INTO ordini_lavoro(numero,anno,cliente_id,veicolo_id,data_apertura,km_ingresso,descrizione_lavoro,stato,note)
+    VALUES(?,?,?,?,date('now','localtime'),?,?,?,?)`,
+    [nx.n,y,c.id,v.id,Number(b.km)||0,richiesta,'APERTO','Richiesta inviata dal cliente dalla pagina DP SERVICE']);
+  await run(`INSERT INTO richieste_service(ordine_id,nome,telefono,targa,marca,modello,km,richiesta) VALUES(?,?,?,?,?,?,?,?)`,
+    [od.lastID,nome,telefono,targa,b.marca||'',b.modello||'',Number(b.km)||0,richiesta]);
+
+  const titolo=`Nuova richiesta officina - ${targa}`;
+  const msg=`${nome} • ${telefono}\n${targa} ${b.marca||''} ${b.modello||''}\n${richiesta}`;
+  await run(`INSERT INTO service_alerts(tipo,titolo,messaggio,ordine_id) VALUES('RICHIESTA_CLIENTE',?,?,?)`,[titolo,msg,od.lastID]);
+
+  const link=dpBaseUrl(req) + '/service/ordini/' + od.lastID;
+  const waText=`🔧 NUOVA RICHIESTA DP SERVICE\n\nCliente: ${nome}\nTel: ${telefono}\nTarga: ${targa}\nVeicolo: ${b.marca||''} ${b.modello||''}\nKm: ${Number(b.km)||0}\n\nRichiesta:\n${richiesta}\n\nApri ordine: ${link}`;
+  const waResult=await dpServiceNotifyStaff(waText);
+
+  res.send(page('Richiesta inviata',`
+    <div class="public-wrap"><div class="box" style="text-align:center">
+      <h1>✅ Richiesta inviata</h1>
+      <p style="font-size:20px">La tua richiesta è arrivata a <b>DP SERVICE</b>.</p>
+      <p>Ordine di lavoro <b>${nx.n}/${y}</b> — Targa <b>${esc(targa)}</b></p>
+      <p>Ti risponderemo al numero WhatsApp indicato.</p>
+      ${waResult.ok?'':'<p class="muted">La richiesta è comunque registrata correttamente nel gestionale.</p>'}
+    </div></div>`));
+});
+
+router.get('/alert', async (req,res)=>{
+  const rows=await all(`SELECT * FROM service_alerts ORDER BY letto ASC,id DESC LIMIT 300`);
+  res.send(page('Avvisi officina',`
+    <div class="box"><h1>🔔 Avvisi officina</h1>
+      ${rows.length?rows.map(a=>`<div class="alert-service">
+        <div><span class="badge-alert">${a.letto?'LETTO':'NUOVO'}</span> ${esc(a.titolo||'Avviso')}</div>
+        <div style="white-space:pre-wrap;margin:8px 0">${esc(a.messaggio||'')}</div>
+        <div class="actions">${a.ordine_id?`<a class="btn" href="/ordini/${a.ordine_id}">Apri ordine di lavoro</a>`:''}
+          ${a.letto?'':`<form method="post" action="/alert/${a.id}/letto"><button class="btn dark">Segna come letto</button></form>`}
+        </div>
+      </div>`).join(''):'<p>Nessun avviso.</p>'}
+    </div>`));
+});
+
+router.post('/alert/:id/letto', async (req,res)=>{
+  await run('UPDATE service_alerts SET letto=1 WHERE id=?',[req.params.id]);
+  res.redirect('/alert');
+});
+
 router.get('/ricerca', async (req,res)=>{
   const q=(req.query.q||'').trim(); let rows=[];
   if(q) rows=await all(`SELECT v.*,c.ragione_sociale FROM veicoli v LEFT JOIN clienti c ON c.id=v.cliente_id
@@ -974,6 +1170,6 @@ router.get('/ricerca', async (req,res)=>{
   </div>`));
 });
 
-const dpServiceReady = initDb();
+const dpServiceReady = initDb().then(()=>dpServiceSeedListino());
 router.use(async (req,res,next)=>{ try{ await dpServiceReady; next(); }catch(e){ next(e); } });
 module.exports = router;
