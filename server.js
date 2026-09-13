@@ -722,6 +722,13 @@ function dpIsPublicRoute(req) {
   if (/^\/prenotazione\/\d+\/calendario\.ics$/.test(p)) return true;
 
   if (method === 'POST' && (p === '/whatsapp' || p === '/webhook')) return true;
+  // DP SERVICE: sola pagina pubblica cliente officina.
+  if ((method === 'GET' || method === 'POST') && p === '/service/richiesta') return true;
+  if (method === 'GET' && p === '/service/public/dp_service_logo.png') return true;
+
+  // Portale meccanici: attraversa il login generale, ma ha autenticazione separata nel modulo DP SERVICE.
+  if (/^\/service\/meccanici(?:\/|$)/.test(p)) return true;
+
 
   // V292: portale clienti Trasporti. Il token lungo e casuale isola ogni cliente.
   if (/^\/trasporti\/portale\/[A-Fa-f0-9]{48}$/.test(p)) return true;
@@ -806,6 +813,11 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'SAMEORIGIN');
   res.setHeader('Referrer-Policy', 'same-origin');
+  if (req.path === '/service/richiesta' || /^\/service\/meccanici(?:\/|$)/.test(req.path)) {
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Referrer-Policy', 'no-referrer');
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  }
 
   if (dpIsPublicRoute(req)) return next();
   if (dpIsAdminAuthenticated(req)) {
@@ -10587,9 +10599,8 @@ async function dpHandleWhatsApp(req,res){
     session.ts = Date.now();
     if(globalIntent === 'officina'){
       session.state = 'menu'; session.data = {}; session.ts = Date.now();
-      const waNum = String(from || '').replace(/^whatsapp:/i,'');
       const base = String(process.env.APP_BASE_URL || 'https://dp-rent-app.onrender.com').replace(/\/$/,'');
-      const link = `${base}/service/richiesta?nome=${encodeURIComponent(profileName||'Cliente')}&telefono=${encodeURIComponent(waNum)}`;
+      const link = `${base}/service/richiesta`;
       return dpTwimlResponse(res, `${EMJ.wrench} *DP SERVICE*\n\nPer richiedere un intervento o un appuntamento apri questo link:\n${link}\n\nCompila targa, veicolo, km e problema/intervento. La richiesta arriverà direttamente in officina.`);
     }
     if(globalIntent === 'noleggio'){
@@ -10623,9 +10634,8 @@ async function dpHandleWhatsApp(req,res){
     // Ora "2" apre sempre il sotto-menu noleggio e resetta eventuali dati vecchi.
     if(body === '1'){
       session.state = 'menu'; session.data = {}; session.ts = Date.now();
-      const waNum = String(from || '').replace(/^whatsapp:/i,'');
       const base = String(process.env.APP_BASE_URL || 'https://dp-rent-app.onrender.com').replace(/\/$/,'');
-      const link = `${base}/service/richiesta?nome=${encodeURIComponent(profileName||'Cliente')}&telefono=${encodeURIComponent(waNum)}`;
+      const link = `${base}/service/richiesta`;
       return dpTwimlResponse(res, `${EMJ.wrench} *DP SERVICE*\n\nPer richiedere un intervento o un appuntamento apri questo link:\n${link}\n\nCompila targa, veicolo, km e problema/intervento. La richiesta arriverà direttamente in officina.`);
     }
     if(body === '2'){
@@ -10660,9 +10670,8 @@ async function dpHandleWhatsApp(req,res){
       return dpTwimlResponse(res, `${known ? 'Bentornato '+(known.nome||profileName)+' 👋\n' : ''}Perfetto, iniziamo il noleggio.\n\n` + dpPromptNoleggioCategorie());
     } else if(serviceIntent === 'officina'){
       session.state = 'menu'; session.data = {}; session.ts = Date.now();
-      const waNum = String(from || '').replace(/^whatsapp:/i,'');
       const base = String(process.env.APP_BASE_URL || 'https://dp-rent-app.onrender.com').replace(/\/$/,'');
-      const link = `${base}/service/richiesta?nome=${encodeURIComponent(profileName||'Cliente')}&telefono=${encodeURIComponent(waNum)}`;
+      const link = `${base}/service/richiesta`;
       return dpTwimlResponse(res, `${EMJ.wrench} *DP SERVICE*\n\nPer richiedere un intervento o un appuntamento apri questo link:\n${link}\n\nCompila targa, veicolo, km e problema/intervento. La richiesta arriverà direttamente in officina.`);
     } else if(serviceIntent === 'vendita'){
       session.state = 'vendita'; session.data = {}; session.ts = Date.now();

@@ -3,6 +3,7 @@ const express = require('express');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const PDFDocument = require('pdfkit');
 let nodemailer = null;
 try { nodemailer = require('nodemailer'); } catch(e) { console.log('Nodemailer non disponibile DP SERVICE:',e.message); }
@@ -105,7 +106,7 @@ async function initDb(){
   const ocols = await all(`PRAGMA table_info(ordini_lavoro)`);
   const ohave = new Set(ocols.map(x => x.name));
   for (const [name, type] of [
-    ['diagnosi','TEXT'],['whatsapp_pronto_at','TEXT'],['fatturato','INTEGER DEFAULT 0']
+    ['diagnosi','TEXT'],['whatsapp_pronto_at','TEXT'],['fatturato','INTEGER DEFAULT 0'],['lavorazioni_eseguite','TEXT']
   ]) {
     if (!ohave.has(name)) await run(`ALTER TABLE ordini_lavoro ADD COLUMN ${name} ${type}`);
   }
@@ -345,6 +346,26 @@ th{background:#1d1d1f;color:white;padding:10px;text-align:left} td{padding:10px;
 }
 
 
+function pagePublic(title, body){
+return `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">
+<title>${esc(title)} - DP SERVICE</title>
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Arial,Helvetica,sans-serif;background:#f3f3f3;color:#171717}
+header{background:#0d0d0f;color:#fff;padding:18px;border-bottom:5px solid #e00000;text-align:center}
+header img{width:92px;height:62px;object-fit:cover;border-radius:12px;vertical-align:middle;margin-right:12px}
+header b{font-size:30px;vertical-align:middle}
+main{max-width:760px;margin:24px auto;padding:0 14px}.box{background:#fff;border-radius:22px;padding:22px;box-shadow:0 6px 24px #0002;border-top:6px solid #e00000}
+.hero{background:linear-gradient(120deg,#111,#8a0000,#e00000);color:#fff;padding:22px;border-radius:20px;margin-bottom:18px}
+label{font-weight:800;display:block;margin:13px 0 6px}input,textarea,select{width:100%;padding:13px;border:1px solid #bbb;border-radius:10px;font-size:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.btn{width:100%;background:#e00000;color:#fff;border:0;border-radius:13px;padding:15px;font-size:18px;font-weight:900;margin-top:16px}
+.privacy{background:#f6f6f6;border-radius:12px;padding:12px;margin-top:14px;font-size:14px;line-height:1.4}.privacy input{width:auto;margin-right:8px}
+.small{font-size:13px;color:#666}@media(max-width:650px){.grid{grid-template-columns:1fr}header b{font-size:25px}}
+</style></head><body><header><img src="/service/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b></header><main>${body}</main></body></html>`;
+}
+
+
+
 const DP_SERVICE_AZIENDA = {
   nome: 'Trasporti DP S.r.l. - DP SERVICE',
   indirizzo: 'Via Tuderte 466 - 05035 Narni (TR)',
@@ -460,34 +481,29 @@ async function dpServiceDocData(ordineId){
 function dpPdfHeader(doc, tipo, numeroLabel, dataLabel){
   const W=doc.page.width, margin=42;
   doc.rect(0,0,W,168).fill('#08090b');
-  doc.polygon([W-180,0],[W,0],[W,168],[W-250,168]).fill('#c90000');
-  doc.polygon([W-105,0],[W-58,0],[W-150,168],[W-197,168]).fill('#ffffff');
-  doc.polygon([W-65,0],[W-20,0],[W-112,168],[W-157,168]).fill('#139447');
+
+  // Tricolore compatto a destra: non passa più sopra alle scritte.
+  doc.rect(W-34,0,34,168).fill('#e31b23');
+  doc.rect(W-68,0,34,168).fill('#ffffff');
+  doc.rect(W-102,0,34,168).fill('#159447');
+
   const logoPath=path.join(__dirname,'public','dp_service_logo.png');
   if(fs.existsSync(logoPath)){
-    try{ doc.image(logoPath,margin,22,{fit:[176,118],align:'center',valign:'center'}); }catch(e){}
+    try{ doc.image(logoPath,margin,24,{fit:[165,112],align:'center',valign:'center'}); }catch(e){}
   }
-  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(26).text('DP SERVICE',230,36);
-  doc.fillColor('#ff2020').fontSize(11).text('OFFICINA MULTIMARCA',232,72,{characterSpacing:1.2});
-  doc.fillColor('#ffffff').font('Helvetica').fontSize(9).text('MANUTENZIONE  •  RIPARAZIONI  •  DIAGNOSI  •  PNEUMATICI',232,94,{width:280});
+
+  // Colonna centrale riservata al marchio/testi, con larghezza fissa.
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(24).text('DP SERVICE',222,34,{width:185});
+  doc.fillColor('#ff2020').font('Helvetica-Bold').fontSize(10).text('OFFICINA MULTIMARCA',222,70,{width:185,characterSpacing:.8});
+  doc.fillColor('#ffffff').font('Helvetica').fontSize(8.2).text('MANUTENZIONE • RIPARAZIONI\nDIAGNOSI • PNEUMATICI',222,92,{width:185,lineGap:3});
+
   const isPrev=String(tipo||'').toUpperCase()==='PREVENTIVO';
-  if(isPrev){
-    // PREVENTIVO: fascia verde fluo ad alto contrasto, stile DP SERVICE
-    doc.save();
-    doc.polygon([W-245,48],[W-28,48],[W-43,91],[W-260,91]).fill('#78ff00');
-    doc.restore();
-    doc.fillColor('#08090b').font('Helvetica-BoldOblique').fontSize(21).text('PREVENTIVO',W-232,58,{width:185,align:'center'});
-    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12).text(numeroLabel,W-205,101,{width:155,align:'right'});
-    doc.font('Helvetica').fontSize(9).text(dataLabel,W-205,121,{width:155,align:'right'});
-  } else {
-    // FATTURA: fascia rossa piena ad alto contrasto, stile DP SERVICE
-    doc.save();
-    doc.polygon([W-245,48],[W-28,48],[W-43,91],[W-260,91]).fill('#f20d12');
-    doc.restore();
-    doc.fillColor('#ffffff').font('Helvetica-BoldOblique').fontSize(22).text('FATTURA',W-232,58,{width:185,align:'center'});
-    doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(12).text(numeroLabel,W-205,101,{width:155,align:'right'});
-    doc.font('Helvetica').fontSize(9).text(dataLabel,W-205,121,{width:155,align:'right'});
-  }
+  const bx=W-196, by=28, bw=82, bh=62;
+  doc.roundedRect(bx,by,bw,bh,7).fill(isPrev?'#78ff00':'#f20d12');
+  doc.fillColor(isPrev?'#08090b':'#ffffff').font('Helvetica-Bold').fontSize(isPrev?12:14)
+    .text(isPrev?'PREVENTIVO':'FATTURA',bx+5,by+14,{width:bw-10,align:'center'});
+  doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11).text(numeroLabel,bx-18,104,{width:bw+18,align:'right'});
+  doc.font('Helvetica').fontSize(8.5).text(dataLabel,bx-18,123,{width:bw+18,align:'right'});
 }
 
 function dpPdfFooter(doc){
@@ -570,6 +586,88 @@ function dpDrawServicePdf(doc, tipo, numeroLabel, dataLabel, d, extra={}){
   }
   dpPdfFooter(doc);
 }
+
+
+const DP_MECC_COOKIE='dp_service_meccanico';
+const DP_MECC_MAX_AGE=10*60*60*1000;
+function dpMeccCookies(req){
+  const out={}; String(req.headers.cookie||'').split(';').forEach(p=>{const i=p.indexOf('=');if(i>0)out[p.slice(0,i).trim()]=decodeURIComponent(p.slice(i+1).trim());}); return out;
+}
+function dpMeccSecret(){ return String(process.env.DP_SERVICE_MECCANICI_SECRET || process.env.DP_ADMIN_SECRET || ''); }
+function dpMeccPin(){ return String(process.env.DP_SERVICE_MECCANICI_PIN || ''); }
+function dpMeccSign(v){ return crypto.createHmac('sha256',dpMeccSecret()).update(v).digest('hex'); }
+function dpMeccToken(){
+  const p=Buffer.from(JSON.stringify({role:'meccanico',exp:Date.now()+DP_MECC_MAX_AGE})).toString('base64url');
+  return p+'.'+dpMeccSign(p);
+}
+function dpMeccOk(req){
+  if(!dpMeccPin() || !dpMeccSecret()) return false;
+  const t=dpMeccCookies(req)[DP_MECC_COOKIE]; if(!t||!t.includes('.')) return false;
+  const i=t.lastIndexOf('.'),p=t.slice(0,i),sig=t.slice(i+1);
+  try{
+    const a=Buffer.from(sig),b=Buffer.from(dpMeccSign(p)); if(a.length!==b.length || !crypto.timingSafeEqual(a,b)) return false;
+    const x=JSON.parse(Buffer.from(p,'base64url').toString('utf8')); return x.role==='meccanico' && Number(x.exp)>Date.now();
+  }catch(_){ return false; }
+}
+function dpMeccSet(res){
+  const secure=String(process.env.NODE_ENV||'').toLowerCase()==='production';
+  res.setHeader('Set-Cookie',`${DP_MECC_COOKIE}=${encodeURIComponent(dpMeccToken())}; Path=/service/meccanici; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(DP_MECC_MAX_AGE/1000)}${secure?'; Secure':''}`);
+}
+function dpMeccClear(res){
+  res.setHeader('Set-Cookie',`${DP_MECC_COOKIE}=; Path=/service/meccanici; HttpOnly; SameSite=Strict; Max-Age=0`);
+}
+function pageMeccanico(title,body){
+return `<!doctype html><html lang="it"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive"><title>${esc(title)} - DP SERVICE</title>
+<style>*{box-sizing:border-box}body{font-family:Arial;margin:0;background:#111;color:#eee}header{padding:20px;background:#090909;border-bottom:5px solid #e00000}main{max-width:900px;margin:auto;padding:18px}.box{background:#1d1d1f;border-radius:18px;padding:18px;margin:14px 0}.btn{display:inline-block;background:#e00000;color:#fff;border:0;border-radius:12px;padding:12px 16px;font-weight:800;text-decoration:none}.dark{background:#333}input,textarea,select{width:100%;padding:13px;border:1px solid #555;background:#111;color:#fff;border-radius:10px;font-size:16px}label{display:block;font-weight:800;margin:12px 0 5px}.order{border-left:5px solid #e00000}.muted{color:#aaa;font-size:13px}</style></head><body><header><b>🔧 DP SERVICE — AREA MECCANICI</b></header><main>${body}</main></body></html>`;
+}
+
+router.get('/meccanici/login',(req,res)=>{
+  res.setHeader('Cache-Control','no-store');
+  if(dpMeccOk(req)) return res.redirect('/meccanici');
+  const enabled=!!(dpMeccPin()&&dpMeccSecret());
+  res.status(enabled?200:503).send(pageMeccanico('Accesso meccanici',`<div class="box"><h1>Accesso meccanici</h1>${enabled?`<form method="post" action="/service/meccanici/login"><label>PIN officina</label><input name="pin" type="password" inputmode="numeric" required><button class="btn" style="margin-top:15px">ENTRA</button></form>`:`<p>Portale non ancora configurato. Impostare DP_SERVICE_MECCANICI_PIN e DP_SERVICE_MECCANICI_SECRET su Render.</p>`}<p class="muted">Quest'area non mostra clienti, fatture, preventivi o prezzi.</p></div>`));
+});
+router.post('/meccanici/login',(req,res)=>{
+  if(!dpMeccPin() || !dpMeccSecret()) return res.status(503).send('Portale meccanici non configurato');
+  const a=Buffer.from(String(req.body.pin||'')),b=Buffer.from(dpMeccPin());
+  if(a.length!==b.length || !crypto.timingSafeEqual(a,b)) return res.status(401).send(pageMeccanico('Accesso negato',`<div class="box"><h1>PIN non corretto</h1><a class="btn" href="/service/meccanici/login">Riprova</a></div>`));
+  dpMeccSet(res); res.redirect('/meccanici');
+});
+router.get('/meccanici/esci',(req,res)=>{dpMeccClear(res);res.redirect('/meccanici/login')});
+router.use('/meccanici',(req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('X-Robots-Tag','noindex,nofollow,noarchive');if(dpMeccOk(req))return next();res.redirect('/service/meccanici/login')});
+
+router.get('/meccanici',async(req,res)=>{
+  const rows=await all(`SELECT o.id,o.numero,o.anno,o.stato,o.descrizione_lavoro,o.lavorazioni_eseguite,o.data_apertura,
+    v.targa,v.marca,v.modello
+    FROM ordini_lavoro o LEFT JOIN veicoli v ON v.id=o.veicolo_id
+    WHERE o.stato NOT IN ('CHIUSO') ORDER BY CASE o.stato WHEN 'APERTO' THEN 0 WHEN 'IN_LAVORAZIONE' THEN 1 WHEN 'ATTESA_RICAMBI' THEN 2 WHEN 'PRONTO' THEN 3 ELSE 4 END,o.id DESC LIMIT 200`);
+  res.send(pageMeccanico('Lavorazioni',`<div style="display:flex;justify-content:space-between;align-items:center"><h1>Lavorazioni officina</h1><a class="btn dark" href="/service/meccanici/esci">Esci</a></div>
+    ${rows.map(o=>`<div class="box order"><h2>${esc(o.targa||'-')} — ${esc(o.marca||'')} ${esc(o.modello||'')}</h2><p><b>ODL ${o.numero||o.id}/${o.anno||''}</b> · ${esc(o.stato||'')}</p><p><b>Richiesta:</b> ${esc(o.descrizione_lavoro||'')}</p><a class="btn" href="/service/meccanici/ordine/${o.id}">Apri lavorazione</a></div>`).join('')||'<div class="box">Nessun ordine aperto.</div>'}`));
+});
+router.get('/meccanici/ordine/:id',async(req,res)=>{
+  const o=await get(`SELECT o.id,o.numero,o.anno,o.stato,o.descrizione_lavoro,o.lavorazioni_eseguite,o.data_apertura,o.km_ingresso,
+    v.targa,v.marca,v.modello
+    FROM ordini_lavoro o LEFT JOIN veicoli v ON v.id=o.veicolo_id WHERE o.id=?`,[req.params.id]);
+  if(!o)return res.status(404).send('Ordine non trovato');
+  res.send(pageMeccanico('Lavorazione',`<a class="btn dark" href="/service/meccanici">← Elenco</a><div class="box">
+    <h1>${esc(o.targa||'-')} — ${esc(o.marca||'')} ${esc(o.modello||'')}</h1><p><b>ODL ${o.numero||o.id}/${o.anno||''}</b></p>
+    <p><b>Lavoro richiesto:</b><br>${esc(o.descrizione_lavoro||'')}</p>
+    <form method="post" action="/service/meccanici/ordine/${o.id}">
+      <label>Lavorazioni eseguite / note tecniche</label><textarea name="lavorazioni_eseguite" rows="9" required>${esc(o.lavorazioni_eseguite||'')}</textarea>
+      <label>Stato lavorazione</label><select name="stato"><option ${o.stato==='APERTO'?'selected':''}>APERTO</option><option ${o.stato==='IN_LAVORAZIONE'?'selected':''}>IN_LAVORAZIONE</option><option ${o.stato==='ATTESA_RICAMBI'?'selected':''}>ATTESA_RICAMBI</option><option ${o.stato==='PRONTO'?'selected':''}>PRONTO</option></select>
+      <button class="btn" style="margin-top:15px">💾 SALVA LAVORAZIONE</button>
+    </form><p class="muted">Non sono visibili dati cliente, prezzi, preventivi, fatture o altre sezioni del gestionale.</p></div>`));
+});
+router.post('/meccanici/ordine/:id',async(req,res)=>{
+  const stato=['APERTO','IN_LAVORAZIONE','ATTESA_RICAMBI','PRONTO'].includes(String(req.body.stato||''))?String(req.body.stato):'IN_LAVORAZIONE';
+  await run(`UPDATE ordini_lavoro SET lavorazioni_eseguite=?,stato=? WHERE id=?`,[String(req.body.lavorazioni_eseguite||'').trim(),stato,req.params.id]);
+  if(stato==='PRONTO'){
+    await run(`INSERT INTO service_alerts(tipo,titolo,messaggio,ordine_id) VALUES('MECCANICO_PRONTO','Veicolo pronto','Il meccanico ha segnato il veicolo come PRONTO.',?)`,[req.params.id]);
+  }
+  res.redirect('/meccanici/ordine/'+req.params.id);
+});
+
 
 router.get('/', async (req,res)=>{
   const c=await get('SELECT COUNT(*) n FROM clienti');
@@ -901,6 +999,7 @@ router.get('/ordini/:id', async (req,res)=>{
       <h1>🧾 Ordine di lavoro ${o.numero}/${o.anno}</h1>
       <p><b>${esc(o.ragione_sociale)}</b><br>🚗 <b>${esc(o.targa)}</b> — ${esc(o.marca)} ${esc(o.modello)} ${esc(o.versione)}</p>
       <p><b>Data ingresso:</b> ${esc(o.data_apertura)} &nbsp; <b>Km:</b> ${o.km_ingresso||0}</p>
+      ${o.lavorazioni_eseguite?`<div class="box" style="border-left:6px solid #159447"><h3>🔧 Lavorazioni registrate dai meccanici</h3><div style="white-space:pre-wrap">${esc(o.lavorazioni_eseguite)}</div></div>`:''}
       <form method="post" action="/ordini/${o.id}/dettagli" style="margin:14px 0">
         <label>Lavoro richiesto / descrizione intervento</label>
         <textarea name="descrizione_lavoro" rows="4">${esc(o.descrizione_lavoro||'')}</textarea>
@@ -1269,34 +1368,39 @@ router.post('/ricambi/:id/elimina', async (req,res)=>{
 
 
 router.get('/richiesta',(req,res)=>{
-  res.send(page('Richiesta officina',`
-    <div class="public-wrap">
-      <div class="hero"><h1 style="margin:0">🔧 Richiesta DP SERVICE</h1><p style="margin-bottom:0;font-size:18px">Descrivi il problema della tua auto. La richiesta arriva direttamente all'officina.</p></div>
-      <div class="box">
-        <form method="post" action="/richiesta">
-          <label>Nome e cognome / Azienda *</label><input name="nome" value="${esc(req.query.nome||'')}" required>
-          <label>Telefono WhatsApp *</label><input name="telefono" value="${esc(req.query.telefono||'')}" required placeholder="Es. 3331234567">
-          <label>Targa *</label><input name="targa" required style="text-transform:uppercase">
-          <div class="grid" style="margin-top:0">
-            <div><label>Marca</label><input name="marca"></div>
-            <div><label>Modello</label><input name="modello"></div>
-          </div>
-          <label>Km attuali</label><input type="number" name="km" min="0">
-          <label>Che problema ha l'auto / che lavoro vuoi fare? *</label>
-          <textarea name="richiesta" rows="6" required placeholder="Scrivi qui tutto: spie accese, rumori, tagliando, gomme, freni, diagnosi..."></textarea>
-          <p><button class="btn" type="submit">Invia richiesta all'officina</button></p>
-        </form>
-      </div>
+  res.setHeader('Cache-Control','no-store');
+  res.setHeader('X-Robots-Tag','noindex, nofollow, noarchive');
+  res.send(pagePublic('Richiesta officina',`
+    <div class="hero"><h1 style="margin:0">🔧 Richiesta DP SERVICE</h1><p style="margin-bottom:0">Compila solo i dati necessari per la tua richiesta. Questa pagina non permette di vedere clienti, ordini o altri dati del gestionale.</p></div>
+    <div class="box">
+      <form method="post" action="/service/richiesta" autocomplete="on">
+        <label>Nome e cognome / Azienda *</label><input name="nome" autocomplete="name" required>
+        <label>Telefono WhatsApp *</label><input name="telefono" inputmode="tel" autocomplete="tel" required placeholder="Es. 3331234567">
+        <label>Targa *</label><input name="targa" required autocapitalize="characters" style="text-transform:uppercase">
+        <div class="grid">
+          <div><label>Marca</label><input name="marca" placeholder="Es. Fiat"></div>
+          <div><label>Modello</label><input name="modello" placeholder="Es. Panda"></div>
+        </div>
+        <label>Km attuali</label><input type="number" name="km" min="0" inputmode="numeric">
+        <label>Problema / intervento richiesto *</label>
+        <textarea name="richiesta" rows="6" required placeholder="Descrivi il problema, le spie accese o il lavoro che vuoi richiedere"></textarea>
+        <div class="privacy"><label style="margin:0;font-weight:600"><input type="checkbox" name="privacy_ok" value="1" required>
+          Ho letto l'<a href="/privacy" target="_blank" rel="noopener noreferrer">informativa privacy</a> e autorizzo l'uso dei dati esclusivamente per gestire questa richiesta di officina.</label></div>
+        <button class="btn" type="submit">INVIA RICHIESTA ALL'OFFICINA</button>
+        <p class="small">Nessuna password del gestionale è richiesta al cliente.</p>
+      </form>
     </div>`));
 });
 
 router.post('/richiesta', async (req,res)=>{
+  res.setHeader('Cache-Control','no-store');
   const b=req.body||{};
   const nome=String(b.nome||'').trim();
   const telefono=String(b.telefono||'').trim();
   const targa=String(b.targa||'').toUpperCase().replace(/\s/g,'');
   const richiesta=String(b.richiesta||'').trim();
-  if(!nome || !telefono || !targa || !richiesta) return res.status(400).send('Compila i campi obbligatori.');
+  if(b.privacy_ok!=='1') return res.status(400).send(pagePublic('Privacy',`<div class="box"><h1>Consenso necessario</h1><p>Per inviare la richiesta devi leggere e accettare l'informativa privacy.</p></div>`));
+  if(!nome || !telefono || !targa || !richiesta) return res.status(400).send(pagePublic('Dati mancanti',`<div class="box"><h1>Dati mancanti</h1><p>Compila i campi obbligatori e riprova.</p></div>`));
 
   let c=await get(`SELECT * FROM clienti WHERE telefono=? OR telefono LIKE ? ORDER BY id LIMIT 1`,[telefono,`%${telefono.replace(/\D/g,'').slice(-8)}%`]);
   if(!c){
@@ -1318,7 +1422,7 @@ router.post('/richiesta', async (req,res)=>{
   const nx=await get('SELECT COALESCE(MAX(numero),0)+1 n FROM ordini_lavoro WHERE anno=?',[y]);
   const od=await run(`INSERT INTO ordini_lavoro(numero,anno,cliente_id,veicolo_id,data_apertura,km_ingresso,descrizione_lavoro,stato,note)
     VALUES(?,?,?,?,date('now','localtime'),?,?,?,?)`,
-    [nx.n,y,c.id,v.id,Number(b.km)||0,richiesta,'APERTO','Richiesta inviata dal cliente dalla pagina DP SERVICE']);
+    [nx.n,y,c.id,v.id,Number(b.km)||0,richiesta,'APERTO','Richiesta cliente da pagina pubblica DP SERVICE']);
   await run(`INSERT INTO richieste_service(ordine_id,nome,telefono,targa,marca,modello,km,richiesta) VALUES(?,?,?,?,?,?,?,?)`,
     [od.lastID,nome,telefono,targa,b.marca||'',b.modello||'',Number(b.km)||0,richiesta]);
 
@@ -1328,16 +1432,14 @@ router.post('/richiesta', async (req,res)=>{
 
   const link=dpServiceUrl(req,'/ordini/' + od.lastID);
   const waText=`🔧 NUOVA RICHIESTA DP SERVICE\n\nCliente: ${nome}\nTel: ${telefono}\nTarga: ${targa}\nVeicolo: ${b.marca||''} ${b.modello||''}\nKm: ${Number(b.km)||0}\n\nRichiesta:\n${richiesta}\n\nApri ordine: ${link}`;
-  const waResult=await dpServiceNotifyStaff(waText);
+  await dpServiceNotifyStaff(waText);
 
-  res.send(page('Richiesta inviata',`
-    <div class="public-wrap"><div class="box" style="text-align:center">
-      <h1>✅ Richiesta inviata</h1>
-      <p style="font-size:20px">La tua richiesta è arrivata a <b>DP SERVICE</b>.</p>
-      <p>Ordine di lavoro <b>${nx.n}/${y}</b> — Targa <b>${esc(targa)}</b></p>
-      <p>Ti risponderemo al numero WhatsApp indicato.</p>
-      ${waResult.ok?'':'<p class="muted">La richiesta è comunque registrata correttamente nel gestionale.</p>'}
-    </div></div>`));
+  res.send(pagePublic('Richiesta inviata',`
+    <div class="box" style="text-align:center"><h1>✅ Richiesta inviata</h1>
+      <p style="font-size:19px">La richiesta è arrivata a <b>DP SERVICE</b>.</p>
+      <p>Targa <b>${esc(targa)}</b> — riferimento <b>${nx.n}/${y}</b></p>
+      <p>Ti contatteremo al numero indicato per conferma e disponibilità.</p>
+    </div>`));
 });
 
 router.get('/alert', async (req,res)=>{
