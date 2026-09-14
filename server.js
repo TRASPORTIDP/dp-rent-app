@@ -11564,6 +11564,7 @@ db.serialize(()=>{
   ['portal_token TEXT','portal_attivo INTEGER DEFAULT 1','privacy_versione TEXT','privacy_accettata_at TEXT','privacy_ip TEXT'].forEach(c=>db.run(`ALTER TABLE trasporti_clienti ADD COLUMN ${c}`,()=>{}));
   ['autorizzazione_file TEXT','autorizzazione_nome TEXT','autorizzazione_mime TEXT','autorizzazione_uploaded_at TEXT','inserito_da TEXT DEFAULT \'UFFICIO\''].forEach(c=>db.run(`ALTER TABLE trasporti_ordini ADD COLUMN ${c}`,()=>{}));
   ['note_interne TEXT','note_cliente TEXT','data_carico TEXT','data_scarico TEXT','targa_bisarca TEXT'].forEach(c=>db.run(`ALTER TABLE trasporti_ordini ADD COLUMN ${c}`,()=>{}));
+  ['ordine_gruppo TEXT','ordine_posizione INTEGER DEFAULT 1','ordine_totale_auto INTEGER DEFAULT 1'].forEach(c=>db.run(`ALTER TABLE trasporti_ordini ADD COLUMN ${c}`,()=>{}));
   db.run(`ALTER TABLE trasporti_fatture ADD COLUMN tipo TEXT DEFAULT 'ORDINARIA'`,()=>{});
   db.run(`UPDATE trasporti_fatture
           SET tipo='IMMEDIATA'
@@ -12049,7 +12050,7 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css">
   <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
-    .dp-count-icon{background:#111;color:#fff;border:3px solid #fff;border-radius:50%;width:38px!important;height:38px!important;line-height:32px;text-align:center;font-weight:800;font-size:16px;box-shadow:0 2px 8px #0008}
+    .dp-count-icon{background:#d71920;color:#fff;border:3px solid #fff;border-radius:50%;width:40px!important;height:40px!important;line-height:34px;text-align:center;font-weight:900;font-size:16px;box-shadow:0 3px 10px #0008}
     .leaflet-popup-content{max-width:88vw!important}.leaflet-popup-content-wrapper{max-height:520px}
   </style>
   <div class="box"><h2>🗺️ Mappa località di carico</h2>
@@ -12073,7 +12074,7 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
   try{
     if(typeof L==='undefined') throw new Error('Leaflet non caricato');
     const m=L.map('map').setView([42.5,12.5],6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png',{
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
       subdomains:'abcd',maxZoom:20,
       attribution:'© OpenStreetMap contributors © CARTO'
     }).addTo(m);
@@ -12101,127 +12102,77 @@ app.get('/trasporti/ordine/nuovo', async (req,res)=>{
     all(`SELECT nome FROM trasporti_modelli ORDER BY nome`).catch(()=>[])
   ]);
   const modOpts=modelli.map(x=>`<option value="${esc(x.nome)}"></option>`).join('');
-  const cjs=JSON.stringify(clienti).replace(/</g,'\\u003c');
-  const sjs=JSON.stringify(siti).replace(/</g,'\\u003c');
+  const cjs=JSON.stringify(clienti).replace(/</g,'\\u003c'),sjs=JSON.stringify(siti).replace(/</g,'\\u003c');
   const js=`<script>
-  const DP_CLIENTI=${cjs}, DP_SITI=${sjs};
+  const DP_CLIENTI=${cjs},DP_SITI=${sjs};
   function eH(v){return String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
   function norm(v){return String(v||'').toLowerCase().normalize('NFD').replace(/[\\u0300-\\u036f]/g,'')}
-  function openSearch(kind){
-    const q=document.getElementById(kind+'-search').value||'';
-    renderSearch(kind,q);
-    document.getElementById(kind+'-results').style.display='block';
-  }
+  function openSearch(kind){renderSearch(kind,document.getElementById(kind+'-search').value||'');document.getElementById(kind+'-results').style.display='block'}
   function renderSearch(kind,q){
-    const isCli=kind==='cliente', arr=isCli?DP_CLIENTI:DP_SITI, n=norm(q);
-    const res=arr.filter(x=>{
-      const text=isCli
-        ? [x.ragione_sociale,x.codice,x.indirizzo,x.cap,x.citta,x.provincia,x.telefono,x.piva,x.codice_fiscale,x.email,x.pec,x.sdi].join(' ')
-        : [x.ragione_sociale,x.codice_cliente,x.indirizzo,x.cap,x.citta,x.provincia,x.regione,x.telefono,x.email,x.piva].join(' ');
-      return !n || norm(text).includes(n);
-    }).slice(0,120);
+    const isCli=kind==='cliente',arr=isCli?DP_CLIENTI:DP_SITI,n=norm(q);
+    const res=arr.filter(x=>{const t=isCli?[x.ragione_sociale,x.codice,x.indirizzo,x.cap,x.citta,x.provincia,x.telefono,x.piva,x.codice_fiscale,x.email,x.pec,x.sdi].join(' '):[x.ragione_sociale,x.codice_cliente,x.indirizzo,x.cap,x.citta,x.provincia,x.regione,x.telefono,x.email,x.piva].join(' ');return !n||norm(t).includes(n)}).slice(0,120);
     document.getElementById(kind+'-results').innerHTML=res.map(x=>{
-      if(isCli){
-        return '<button type="button" class="dp-search-row" onclick="pickCliente('+x.id+')"><b>'+eH(x.ragione_sociale||'')+'</b><br><small>'+
-          eH([x.codice,x.indirizzo,[x.cap,x.citta,x.provincia].filter(Boolean).join(' '),x.piva?'P.IVA '+x.piva:'',x.telefono?'Tel '+x.telefono:'',x.email].filter(Boolean).join(' • '))+'</small></button>';
-      }
-      return '<button type="button" class="dp-search-row" onclick="pickSito(\\''+kind+'\\','+x.id+')"><b>'+eH(x.ragione_sociale||'')+'</b><br><small>'+
-        eH([[x.indirizzo,x.cap,x.citta,x.provincia].filter(Boolean).join(' '),x.telefono?'Tel '+x.telefono:'',x.email,x.piva?'P.IVA '+x.piva:''].filter(Boolean).join(' • '))+'</small></button>';
-    }).join('') || '<div class="dp-search-empty">Nessun risultato</div>';
+      if(isCli)return '<button type="button" class="dp-search-row" onclick="pickCliente('+x.id+')"><b>'+eH(x.ragione_sociale||'')+'</b><br><small>'+eH([x.codice,x.indirizzo,[x.cap,x.citta,x.provincia].filter(Boolean).join(' '),x.piva?'P.IVA '+x.piva:'',x.telefono?'Tel '+x.telefono:'',x.email].filter(Boolean).join(' • '))+'</small></button>';
+      return '<button type="button" class="dp-search-row" onclick="pickSito(\\''+kind+'\\','+x.id+')"><b>'+eH(x.ragione_sociale||'')+'</b><br><small>'+eH([[x.indirizzo,x.cap,x.citta,x.provincia].filter(Boolean).join(' '),x.telefono?'Tel '+x.telefono:'',x.email,x.piva?'P.IVA '+x.piva:''].filter(Boolean).join(' • '))+'</small></button>';
+    }).join('')||'<div class="dp-search-empty">Nessun risultato</div>';
   }
-  function pickCliente(id){
-    const x=DP_CLIENTI.find(v=>Number(v.id)===Number(id)); if(!x)return;
-    document.getElementById('cliente-search').value=x.ragione_sociale||'';
-    document.getElementById('cliente-value').value=x.ragione_sociale||'';
-    document.getElementById('cliente-results').style.display='none';
+  function pickCliente(id){const x=DP_CLIENTI.find(v=>Number(v.id)===Number(id));if(!x)return;document.getElementById('cliente-search').value=x.ragione_sociale||'';document.getElementById('cliente-value').value=x.ragione_sociale||'';document.getElementById('cliente-results').style.display='none'}
+  function pickSito(kind,id){const x=DP_SITI.find(v=>Number(v.id)===Number(id));if(!x)return;document.getElementById(kind+'-search').value=[x.ragione_sociale,x.citta,x.provincia].filter(Boolean).join(' — ');document.getElementById(kind+'_id').value=x.id;document.getElementById(kind+'-results').style.display='none'}
+  document.addEventListener('click',ev=>{if(!ev.target.closest('.dp-search-wrap'))document.querySelectorAll('.dp-search-results').forEach(x=>x.style.display='none')});
+  function addAuto(){
+    const row=document.createElement('div');row.className='dp-auto-row';
+    row.innerHTML='<div><label>Modello</label><input name="modello[]" list="dp-modelli-list" placeholder="Es. Clio"></div><div><label>Targa / Telaio *</label><input name="targa_telaio[]" required placeholder="Targa o telaio"></div><div><label>Prezzo auto</label><input type="number" step="0.01" name="prezzo_auto[]" placeholder="€"></div><div class="dp-auto-remove"><button type="button" onclick="this.closest(\\'.dp-auto-row\\').remove();aggiornaAuto()">✕</button></div>';
+    document.getElementById('dp-auto-list').appendChild(row);aggiornaAuto()
   }
-  function pickSito(kind,id){
-    const x=DP_SITI.find(v=>Number(v.id)===Number(id)); if(!x)return;
-    document.getElementById(kind+'-search').value=[x.ragione_sociale,x.citta,x.provincia].filter(Boolean).join(' — ');
-    document.getElementById(kind+'_id').value=x.id;
-    document.getElementById(kind+'-results').style.display='none';
-  }
-  document.addEventListener('click',ev=>{
-    if(!ev.target.closest('.dp-search-wrap')) document.querySelectorAll('.dp-search-results').forEach(x=>x.style.display='none');
-  });
+  function aggiornaAuto(){document.getElementById('dp-auto-count').textContent=document.querySelectorAll('.dp-auto-row').length}
   </script>`;
-
   res.send(page('Nuovo ordine trasporto', `<style>
     .dp-search-wrap{position:relative;flex:1}.dp-search-results{display:none;position:absolute;z-index:9999;left:0;right:0;top:100%;background:#fff;border:2px solid #222;border-radius:10px;max-height:360px;overflow:auto;box-shadow:0 10px 30px #0004}
-    .dp-search-row{display:block;width:100%;text-align:left;background:#fff;color:#111;border:0;border-bottom:1px solid #ddd;padding:11px 13px;cursor:pointer}
-    .dp-search-row:hover{background:#eef5ff}.dp-search-row small{font-weight:400;line-height:1.35}.dp-search-empty{padding:14px;color:#666}
-  </style>
-  <div class="box"><h2>＋ Nuovo ordine trasporto</h2>
-  <p class="notice">Ricerca completa: puoi trovare clienti e località per nome, città, provincia, indirizzo, P.IVA, telefono, codice o email.</p>
+    .dp-search-row{display:block;width:100%;text-align:left;background:#fff;color:#111;border:0;border-bottom:1px solid #ddd;padding:11px 13px;cursor:pointer}.dp-search-row:hover{background:#eef5ff}
+    .dp-auto-wrap{border:2px solid #111;border-radius:16px;padding:14px;margin:18px 0;background:#fafafa}.dp-auto-head{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+    .dp-auto-row{display:grid;grid-template-columns:1.2fr 1.4fr .7fr 52px;gap:10px;align-items:end;padding:12px 0;border-top:1px solid #ddd}.dp-auto-row:first-of-type{border-top:0}
+    .dp-auto-remove button{background:#222;color:#fff;border:0;border-radius:10px;padding:12px 16px;font-weight:900}.dp-add-auto{background:#d71920!important}
+    @media(max-width:800px){.dp-auto-row{grid-template-columns:1fr}.dp-auto-remove button{width:100%}}
+  </style><div class="box"><h2>＋ Nuovo ordine trasporto</h2><p class="notice">Un unico ordine può contenere più auto. Esempio: 8 Clio dello stesso cliente con targhe o telai diversi.</p>
   <form method="POST" action="/trasporti/ordine/nuovo" enctype="multipart/form-data">
-    <label>Data ordine</label><input type="date" name="data_ordine" value="${new Date().toISOString().slice(0,10)}" required>
-
-    <label>Cliente</label>
-    <div style="display:flex;gap:8px">
-      <div class="dp-search-wrap">
-        <input id="cliente-search" autocomplete="off" placeholder="Cerca cliente, città, P.IVA, telefono..." onfocus="openSearch('cliente')" oninput="renderSearch('cliente',this.value)" required>
-        <input type="hidden" id="cliente-value" name="cliente">
-        <div id="cliente-results" class="dp-search-results"></div>
-      </div>
-      <a class="btn btn2" href="/trasporti/cliente/nuovo">＋ CREA</a>
-    </div>
-
-    <label>Modello auto</label><div style="display:flex;gap:8px"><input name="modello" list="dp-modelli-list" autocomplete="off" placeholder="Scrivi modello..."><a class="btn btn2" href="/trasporti/modello/nuovo">＋ CREA</a></div><datalist id="dp-modelli-list">${modOpts}</datalist>
-    <label>Targa / Telaio</label><input name="targa_telaio" required>
-
-    <h3>Carico</h3>
-    <div style="display:flex;gap:8px">
-      <div class="dp-search-wrap">
-        <input id="carico-search" autocomplete="off" placeholder="Cerca sede, città, indirizzo, CAP..." onfocus="openSearch('carico')" oninput="document.getElementById('carico_id').value='';renderSearch('carico',this.value)">
-        <input type="hidden" id="carico_id" name="sito_carico_id">
-        <div id="carico-results" class="dp-search-results"></div>
-      </div>
-      <a class="btn btn2" href="/trasporti/sito/nuovo?tipo=carico">＋ CREA</a>
-    </div>
-
-    <h3>Scarico</h3>
-    <div style="display:flex;gap:8px">
-      <div class="dp-search-wrap">
-        <input id="scarico-search" autocomplete="off" placeholder="Cerca sede, città, indirizzo, CAP..." onfocus="openSearch('scarico')" oninput="document.getElementById('scarico_id').value='';renderSearch('scarico',this.value)">
-        <input type="hidden" id="scarico_id" name="sito_scarico_id">
-        <div id="scarico-results" class="dp-search-results"></div>
-      </div>
-      <a class="btn btn2" href="/trasporti/sito/nuovo?tipo=scarico">＋ CREA</a>
-    </div>
-
-    <div class="grid">
-      <div><label>Prezzo</label><input type="number" step="0.01" name="prezzo"></div>
-      <div><label>IVA %</label><input type="number" step="0.01" name="iva" value="22"></div>
-    </div>
-    <label>Note interne DP <small>(mai visibili al cliente)</small></label><textarea name="note_interne"></textarea>
-    <label>Note visibili al cliente</label><textarea name="note_cliente"></textarea>
-    <label>📎 Autorizzazione al ritiro (PDF o foto)</label><input type="file" name="autorizzazione" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/*">
-    <button>Salva ordine</button>
-  </form><a class="btn btn2" href="/trasporti/ordini">Annulla</a></div>${js}`));
+  <label>Data ordine</label><input type="date" name="data_ordine" value="${new Date().toISOString().slice(0,10)}" required>
+  <label>Cliente</label><div style="display:flex;gap:8px"><div class="dp-search-wrap"><input id="cliente-search" autocomplete="off" placeholder="Cerca cliente, città, P.IVA, telefono..." onfocus="openSearch('cliente')" oninput="renderSearch('cliente',this.value)" required><input type="hidden" id="cliente-value" name="cliente"><div id="cliente-results" class="dp-search-results"></div></div><a class="btn btn2" href="/trasporti/cliente/nuovo">＋ CREA</a></div>
+  <div class="dp-auto-wrap"><div class="dp-auto-head"><div><h3 style="margin:0">🚗 Veicoli dell'ordine</h3><small><b id="dp-auto-count">1</b> auto inserite</small></div><button type="button" class="dp-add-auto" onclick="addAuto()">＋ AGGIUNGI AUTO</button></div><div id="dp-auto-list"><div class="dp-auto-row"><div><label>Modello</label><input name="modello[]" list="dp-modelli-list" placeholder="Es. Clio"></div><div><label>Targa / Telaio *</label><input name="targa_telaio[]" required placeholder="Targa o telaio"></div><div><label>Prezzo auto</label><input type="number" step="0.01" name="prezzo_auto[]" placeholder="€"></div><div class="dp-auto-remove"></div></div></div><datalist id="dp-modelli-list">${modOpts}</datalist></div>
+  <h3>Carico</h3><div style="display:flex;gap:8px"><div class="dp-search-wrap"><input id="carico-search" autocomplete="off" placeholder="Cerca sede, città, indirizzo, CAP..." onfocus="openSearch('carico')" oninput="document.getElementById('carico_id').value='';renderSearch('carico',this.value)"><input type="hidden" id="carico_id" name="sito_carico_id"><div id="carico-results" class="dp-search-results"></div></div><a class="btn btn2" href="/trasporti/sito/nuovo?tipo=carico">＋ CREA</a></div>
+  <h3>Scarico</h3><div style="display:flex;gap:8px"><div class="dp-search-wrap"><input id="scarico-search" autocomplete="off" placeholder="Cerca sede, città, indirizzo, CAP..." onfocus="openSearch('scarico')" oninput="document.getElementById('scarico_id').value='';renderSearch('scarico',this.value)"><input type="hidden" id="scarico_id" name="sito_scarico_id"><div id="scarico-results" class="dp-search-results"></div></div><a class="btn btn2" href="/trasporti/sito/nuovo?tipo=scarico">＋ CREA</a></div>
+  <div class="grid"><div><label>Prezzo predefinito per auto</label><input type="number" step="0.01" name="prezzo" placeholder="Usato se la singola auto non ha prezzo"></div><div><label>IVA %</label><input type="number" step="0.01" name="iva" value="22"></div></div>
+  <label>Note interne DP</label><textarea name="note_interne"></textarea><label>Note visibili al cliente</label><textarea name="note_cliente"></textarea>
+  <label>📎 Autorizzazione al ritiro</label><input type="file" name="autorizzazione" accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,application/pdf,image/*"><button>Salva ordine con tutte le auto</button></form><a class="btn btn2" href="/trasporti/ordini">Annulla</a></div>${js}`));
 });
 app.post('/trasporti/ordine/nuovo', upload.single('autorizzazione'), async (req,res)=>{
   try{
     const b=req.body||{};
-    let sc= b.sito_carico_id ? await get(`SELECT * FROM trasporti_siti WHERE id=?`,[b.sito_carico_id]).catch(()=>null) : null;
-    let ss= b.sito_scarico_id ? await get(`SELECT * FROM trasporti_siti WHERE id=?`,[b.sito_scarico_id]).catch(()=>null) : null;
-    const raw={DATA_ORD:b.data_ordine,CLIENTE:b.cliente,MOD_AUT:b.modello,TARGA:b.targa_telaio,RAG_SOC_PAR:sc?.ragione_sociale||b.ragione_carico,CITTA_PAR:sc?.citta||b.citta_carico,PROVIN_PAR:sc?.provincia||b.provincia_carico,REGIONE_PAR:sc?.regione||b.regione_carico,INDIRIZZO_CARICO:sc?.indirizzo||'',TEL_CARICO:sc?.telefono||'',RAG_SOC_ARR:ss?.ragione_sociale||b.ragione_scarico,CITTA_ARR:ss?.citta||b.citta_scarico,PROVIN_ARR:ss?.provincia||b.provincia_scarico,REGIONE_ARR:ss?.regione||b.regione_scarico,INDIRIZZO_SCARICO:ss?.indirizzo||'',TEL_SCARICO:ss?.telefono||'',PREZZO:b.prezzo,IVA:b.iva,NOTE:b.note};
-    const r=await dpTImportRow(raw); if(r.duplicate) throw new Error('Ordine già presente (possibile doppione)');
-    const oid=r.id||r.lastID;
-    await run(`UPDATE trasporti_ordini SET note_interne=?,note_cliente=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-      [dpTClean(b.note_interne),dpTClean(b.note_cliente),dpTClean(b.note_cliente),oid]).catch(()=>{});
+    const arr=v=>Array.isArray(v)?v:[v];
+    const modelli=arr(b.modello),targhe=arr(b.targa_telaio),prezzi=arr(b.prezzo_auto);
+    const cars=[];const n=Math.max(modelli.length,targhe.length,prezzi.length);
+    for(let i=0;i<n;i++){const t=dpTClean(targhe[i]);if(t)cars.push({modello:dpTClean(modelli[i]),targa:t,prezzo:dpTClean(prezzi[i])});}
+    if(!cars.length)throw new Error('Inserisci almeno una targa o telaio');
+    const sc=b.sito_carico_id?await get(`SELECT * FROM trasporti_siti WHERE id=?`,[b.sito_carico_id]).catch(()=>null):null;
+    const ss=b.sito_scarico_id?await get(`SELECT * FROM trasporti_siti WHERE id=?`,[b.sito_scarico_id]).catch(()=>null):null;
+    const gruppo='MAN-'+String(b.data_ordine||new Date().toISOString().slice(0,10)).replace(/-/g,'')+'-'+Date.now().toString().slice(-6),created=[];
+    for(let i=0;i<cars.length;i++){
+      const c=cars[i];
+      const raw={DATA_ORD:b.data_ordine,CLIENTE:b.cliente,MOD_AUT:c.modello,TARGA:c.targa,RAG_SOC_PAR:sc?.ragione_sociale||'',CITTA_PAR:sc?.citta||'',PROVIN_PAR:sc?.provincia||'',REGIONE_PAR:sc?.regione||'',INDIRIZZO_CARICO:sc?.indirizzo||'',TEL_CARICO:sc?.telefono||'',RAG_SOC_ARR:ss?.ragione_sociale||'',CITTA_ARR:ss?.citta||'',PROVIN_ARR:ss?.provincia||'',REGIONE_ARR:ss?.regione||'',INDIRIZZO_SCARICO:ss?.indirizzo||'',TEL_SCARICO:ss?.telefono||'',PREZZO:c.prezzo||b.prezzo,IVA:b.iva,NOTE:b.note_cliente};
+      const r=await dpTImportRow(raw);if(r.duplicate)throw new Error(`Ordine già presente per ${c.targa}`);
+      const oid=r.id||r.lastID;created.push(oid);
+      await run(`UPDATE trasporti_ordini SET note_interne=?,note_cliente=?,note=?,ordine_gruppo=?,ordine_posizione=?,ordine_totale_auto=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+        [dpTClean(b.note_interne),dpTClean(b.note_cliente),dpTClean(b.note_cliente),gruppo,i+1,cars.length,oid]);
+    }
     if(req.file){
-      const mime=String(req.file.mimetype||'').toLowerCase();
-      const ok=['application/pdf','image/jpeg','image/png','image/heic','image/heif'].includes(mime);
+      const mime=String(req.file.mimetype||'').toLowerCase(),ok=['application/pdf','image/jpeg','image/png','image/heic','image/heif'].includes(mime);
       if(!ok){try{fs.unlinkSync(req.file.path)}catch(_){};throw new Error('Formato autorizzazione non ammesso: usa PDF, JPG, PNG o HEIC');}
-      const ext=path.extname(req.file.originalname||'').toLowerCase().replace(/[^.a-z0-9]/g,'').slice(0,8);
-      const final=path.join(DP_T_AUTH_DIR,`ordine_${oid}_${Date.now()}${ext||'.bin'}`);
+      const ext=path.extname(req.file.originalname||'').toLowerCase().replace(/[^.a-z0-9]/g,'').slice(0,8),final=path.join(DP_T_AUTH_DIR,`ordine_${gruppo}_${Date.now()}${ext||'.bin'}`);
       fs.renameSync(req.file.path,final);
-      await run(`UPDATE trasporti_ordini SET autorizzazione_file=?,autorizzazione_nome=?,autorizzazione_mime=?,autorizzazione_uploaded_at=CURRENT_TIMESTAMP,inserito_da='UFFICIO',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[final,path.basename(req.file.originalname||'autorizzazione'),req.file.mimetype||'application/octet-stream',oid]);
-    } else await run(`UPDATE trasporti_ordini SET inserito_da='UFFICIO',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[oid]).catch(()=>{});
-    res.redirect('/trasporti/ordine/'+oid);
+      for(const oid of created)await run(`UPDATE trasporti_ordini SET autorizzazione_file=?,autorizzazione_nome=?,autorizzazione_mime=?,autorizzazione_uploaded_at=CURRENT_TIMESTAMP,inserito_da='UFFICIO',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[final,path.basename(req.file.originalname||'autorizzazione'),req.file.mimetype||'application/octet-stream',oid]);
+    }else for(const oid of created)await run(`UPDATE trasporti_ordini SET inserito_da='UFFICIO',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[oid]).catch(()=>{});
+    res.redirect('/trasporti/ordine/'+created[0]);
   }catch(e){if(req.file&&req.file.path&&fs.existsSync(req.file.path))try{fs.unlinkSync(req.file.path)}catch(_){};res.status(400).send(page('Errore ordine',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/trasporti/ordine/nuovo">Torna</a></div>`));}
 });
-
 
 
 // ============================================================
@@ -12326,6 +12277,7 @@ app.get('/trasporti/ordine/:id/autorizzazione',async(req,res)=>{
 app.get('/trasporti/ordine/:id',async(req,res)=>{
  const o=await get(`SELECT * FROM trasporti_ordini WHERE id=?`,[req.params.id]).catch(()=>null);if(!o)return res.status(404).send('Ordine non trovato');
  const c=await get(`SELECT * FROM trasporti_clienti WHERE ragione_sociale=? LIMIT 1`,[o.cliente]).catch(()=>null);
+ const gruppoAuto=o.ordine_gruppo?await all(`SELECT id,modello,targa_telaio,prezzo,stato FROM trasporti_ordini WHERE ordine_gruppo=? ORDER BY ordine_posizione,id`,[o.ordine_gruppo]).catch(()=>[]):[];
  const mov=await all(`SELECT m.*,v.codice FROM trasporti_movimenti m LEFT JOIN trasporti_viaggi v ON v.id=m.viaggio_id WHERE m.ordine_id=? ORDER BY m.id DESC LIMIT 50`,[o.id]).catch(()=>[]);
  const leg=await get(`SELECT vo.viaggio_id,vo.stato_auto,v.codice,v.autista,v.automezzo FROM trasporti_viaggio_ordini vo JOIN trasporti_viaggi v ON v.id=vo.viaggio_id WHERE vo.ordine_id=? ORDER BY vo.viaggio_id DESC LIMIT 1`,[o.id]).catch(()=>null);
  const card=(title,rag,ind,cit,prov,tel)=>`<div class="box"><h3>${title}</h3><p><b>${esc(rag||'')}</b><br>${esc(ind||'')}<br>${esc(cit||'')} ${esc(prov||'')}<br>${tel?'Tel: '+esc(tel):''}</p></div>`;
@@ -12334,7 +12286,7 @@ app.get('/trasporti/ordine/:id',async(req,res)=>{
  const consegnabile=o.stato!=='FATTURATO'&&o.stato!=='FATTURA_PRONTA';
  const fattLink=['DA_FATTURARE','FATTURA_PRONTA','FATTURATO'].includes(String(o.stato||''))?`<a class="btn dp-green" href="/trasporti/fatturazione?cliente=${encodeURIComponent(o.cliente||'')}">🧾 Vai a fatturazione cliente</a>`:'';
  res.send(page('Ordine '+o.id,`
- <div class="box"><h2>🚗 Ordine #${o.id}</h2><p><b>${esc(o.cliente)}</b>${c?`<br>${esc(c.indirizzo||'')} ${esc(c.cap||'')}<br>${esc(c.citta||'')} ${esc(c.provincia||'')}<br>P.IVA ${esc(c.piva||'')} • Tel. ${esc(c.telefono||'')}`:''}</p><p><b>${esc(o.modello)}</b> — ${esc(o.targa_telaio)} — € ${euro(o.prezzo||0)}</p><p>Stato: <b>${esc(o.stato)}</b>${o.localita_attuale?` • Posizione attuale: <b>${esc(o.localita_attuale)}</b>`:''}${leg?.codice?` • Ultimo viaggio: <b>${esc(leg.codice)}</b>`:''}</p>${bloccoFatt}<a class="btn" href="/trasporti/ordine/${o.id}/modifica">✏️ MODIFICA ORDINE</a> ${fattLink}</div>
+ <div class="box"><h2>🚗 Ordine #${o.id}</h2>${gruppoAuto.length>1?`<div class="notice"><b>🚗 Ordine multiplo: ${gruppoAuto.length} auto</b><br>${gruppoAuto.map(x=>`<a href="/trasporti/ordine/${x.id}">${esc(x.modello||'Auto')} ${esc(x.targa_telaio||'')}</a>`).join(' • ')}</div>`:''}<p><b>${esc(o.cliente)}</b>${c?`<br>${esc(c.indirizzo||'')} ${esc(c.cap||'')}<br>${esc(c.citta||'')} ${esc(c.provincia||'')}<br>P.IVA ${esc(c.piva||'')} • Tel. ${esc(c.telefono||'')}`:''}</p><p><b>${esc(o.modello)}</b> — ${esc(o.targa_telaio)} — € ${euro(o.prezzo||0)}</p><p>Stato: <b>${esc(o.stato)}</b>${o.localita_attuale?` • Posizione attuale: <b>${esc(o.localita_attuale)}</b>`:''}${leg?.codice?` • Ultimo viaggio: <b>${esc(leg.codice)}</b>`:''}</p>${bloccoFatt}<a class="btn" href="/trasporti/ordine/${o.id}/modifica">✏️ MODIFICA ORDINE</a> ${fattLink}</div>
  ${card('📍 CARICO ORIGINALE',o.ragione_carico,o.indirizzo_carico,o.citta_carico,o.provincia_carico,o.tel_carico)}
  ${card('🏁 DESTINAZIONE FINALE',o.ragione_scarico,o.indirizzo_scarico,o.citta_scarico,o.provincia_scarico,o.tel_scarico)}
  <div class="box"><h3>📎 Autorizzazione al ritiro</h3>
