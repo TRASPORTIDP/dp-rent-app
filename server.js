@@ -12043,7 +12043,31 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     all(`SELECT * FROM trasporti_autisti WHERE attivo=1 ORDER BY nome`).catch(()=>[]),
     all(`SELECT * FROM trasporti_bisarche WHERE attiva=1 AND COALESCE(stato,'ATTIVO')='ATTIVO' ORDER BY nome`).catch(()=>[])
   ]);
+
+  // V308: posizione camion da Balin. Se API disponibile aggiorna live, altrimenti usa l'ultima posizione salvata.
+  let balinDevices=[];
+  try{
+    balinDevices=await dpTBalinDevices();
+    for(const b of bis){
+      const d=balinDevices.find(x=>String(x.imei||'').trim()===String(b.balin_imei||'').trim());
+      if(!d) continue;
+      b.balin_lat=Number.isFinite(Number(d.lat))?Number(d.lat):b.balin_lat;
+      b.balin_lon=Number.isFinite(Number(d.lng))?Number(d.lng):b.balin_lon;
+      b.balin_speed=Number.isFinite(Number(d.speed))?Number(d.speed):b.balin_speed;
+      b.balin_moving=d.moving===true?1:d.moving===false?0:b.balin_moving;
+      b.balin_connected=d.is_connected===true?1:d.is_connected===false?0:b.balin_connected;
+      b.balin_last_sync=new Date().toISOString();
+      await run(`UPDATE trasporti_bisarche SET balin_lat=?,balin_lon=?,balin_speed=?,balin_moving=?,balin_connected=?,balin_last_sync=? WHERE id=?`,
+        [b.balin_lat,b.balin_lon,b.balin_speed,b.balin_moving,b.balin_connected,b.balin_last_sync,b.id]).catch(()=>{});
+    }
+  }catch(_){}
+
+  const trucks=bis.filter(b=>Number.isFinite(Number(b.balin_lat))&&Number.isFinite(Number(b.balin_lon))).map(b=>({
+    id:b.id,nome:b.nome,targa:b.targa,autista:b.autista_abituale||'',lat:Number(b.balin_lat),lon:Number(b.balin_lon),
+    speed:Number(b.balin_speed||0),moving:b.balin_moving===1,connected:b.balin_connected===1,last:b.balin_last_sync||''
+  }));
   const js=JSON.stringify(items).replace(/</g,'\\u003c');
+  const tj=JSON.stringify(trucks).replace(/</g,'\\u003c');
   const missingCount=rows.length-items.length;
 
   res.send(page('Mappa carichi',`
@@ -12054,7 +12078,10 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     .leaflet-popup-content{max-width:88vw!important}.leaflet-popup-content-wrapper{max-height:520px}
   </style>
   <div class="box"><h2>🗺️ Mappa località di carico</h2>
-    <p><b>${rows.length}</b> auto da assegnare • <b>${items.length}</b> già visibili in mappa${missingCount?` • ${missingCount} ancora da localizzare`:''}.</p>${missingCount?'<p class="notice">La mappa localizza fino a 8 nuovi punti ad ogni apertura. Premi <b>Ricarica mappa</b> finché i punti mancanti arrivano a 0.</p>':''}
+    <p><b>${rows.length}</b> auto nei piazzali • <b>${items.length}</b> localizzate • <b>${trucks.length}</b> camion Balin visibili${missingCount?` • ${missingCount} piazzali ancora da localizzare`:''}.</p>
+    <p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#d71920;margin-right:5px"></span> Auto nei piazzali
+    &nbsp;&nbsp; <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#0066cc;margin-right:5px"></span> Camion Balin</p>
+    ${missingCount?'<p class="notice">La mappa localizza fino a 8 nuovi punti ad ogni apertura. Premi <b>Ricarica mappa</b> finché i punti mancanti arrivano a 0.</p>':''}
     <a class="btn btn2" href="/trasporti/ordini">Tabella ordini</a>
     <a class="btn" href="/trasporti/mappa-carichi">Ricarica mappa</a>
   </div>
@@ -12069,7 +12096,7 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
   </form>
   <div class="box"><div id="map" style="height:70vh;min-height:520px;border-radius:14px"></div><div id="mapErr" style="display:none;padding:18px;color:#b00020;font-weight:700">Mappa non caricata. Premi “Ricarica mappa”.</div></div>
   <script>
-  const A=${js};const selected=new Set();
+  const A=${js};const T=${tj};const selected=new Set();
   function tog(id,on){on?selected.add(id):selected.delete(id);document.getElementById('dpMapCount').textContent=selected.size;document.getElementById('dpHidden').innerHTML=[...selected].map(x=>'<input type="hidden" name="ordine_id" value="'+x+'">').join('')}
   try{
     if(typeof L==='undefined') throw new Error('Leaflet non caricato');
@@ -12083,10 +12110,16 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     Object.values(g).forEach(arr=>{
       const x=arr[0];bounds.push([x.lat,x.lon]);
       const html='<div style="max-height:420px;overflow-y:auto;padding-right:8px"><b>'+x.carico+'</b><hr>'+arr.map(o=>'<label style="display:block;margin:8px 0"><input type="checkbox" onchange="tog('+o.id+',this.checked)"> 🚗 <b>'+o.modello+' '+o.targa+'</b><br>'+o.cliente+'<br>Scarico: '+o.scarico+'<br>€ '+Number(o.prezzo||0).toFixed(2)+'</label>').join('<hr>')+'</div>';
-      const icon=L.divIcon({className:'dp-count-icon',html:String(arr.length),iconSize:[38,38],iconAnchor:[19,19]});
+      const icon=L.divIcon({className:'dp-count-icon',html:String(arr.length),iconSize:[40,40],iconAnchor:[20,20]});
       L.marker([x.lat,x.lon],{icon}).addTo(m).bindPopup(html,{maxWidth:420,maxHeight:460,autoPan:true,keepInView:true});
     });
-    if(bounds.length)m.fitBounds(bounds,{padding:[30,30]});
+    T.forEach(t=>{
+      bounds.push([t.lat,t.lon]);
+      const icon=L.divIcon({className:'',html:'<div style="width:44px;height:44px;border-radius:50%;background:#0066cc;border:3px solid white;color:white;display:flex;align-items:center;justify-content:center;font-size:23px;box-shadow:0 3px 10px #0008">🚛</div>',iconSize:[44,44],iconAnchor:[22,22]});
+      const html='<b>🚛 '+(t.nome||'Bisarca')+'</b><br>Targa: <b>'+(t.targa||'-')+'</b><br>Autista: '+(t.autista||'-')+'<br>Velocità: <b>'+Number(t.speed||0).toFixed(0)+' km/h</b><br>'+(t.moving?'🟢 IN MOVIMENTO':'⚪ FERMO')+(t.connected?' • GPS online':' • GPS offline')+(t.last?'<br><small>Ultimo sync: '+t.last.replace('T',' ').slice(0,16)+'</small>':'');
+      L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).addTo(m).bindPopup(html);
+    });
+    if(bounds.length)m.fitBounds(bounds,{padding:[35,35]});
     setTimeout(()=>m.invalidateSize(),250);
   }catch(e){
     document.getElementById('map').style.display='none';
@@ -12880,7 +12913,27 @@ app.get('/trasporti/viaggio/:id', async (req,res)=>{
   const proto=(req.get('x-forwarded-proto')||req.protocol||'http').split(',')[0].trim(),baseUrl=`${proto}://${req.get('host')}`,borderoUrl=`${baseUrl}/trasporti/viaggio/${v.id}/bordero.pdf`;
   const msg=`🚛 DP TRASPORTI\n${v.codice}\nAutista: ${v.autista||''}\nBisarca: ${v.automezzo||''}${b?.targa?' - '+b.targa:''}\nAuto: ${os.length}\n\n📄 BORDERÒ PDF\n${borderoUrl}`;
   const rawDigits=String(a?.telefono||'').replace(/\D/g,''),digits=(rawDigits.length===10&&rawDigits.startsWith('3'))?'39'+rawDigits:rawDigits,wa=digits?`https://wa.me/${digits}?text=${encodeURIComponent(msg)}`:whatsappText(msg);
-  res.send(page(v.codice,`<div class="box"><h2>🚚 ${esc(v.codice)}</h2><p><b>Data:</b> ${esc(dpTItDate(v.data_viaggio))} • <b>Mezzo:</b> ${esc(v.automezzo)} ${b?.targa?'— '+esc(b.targa):''} • <b>Autista:</b> ${esc(v.autista)} ${a?.telefono?'• '+esc(a.telefono):''}</p><p>Stato viaggio: <b>${esc(v.stato)}</b></p><a class="btn" target="_blank" href="/trasporti/viaggio/${v.id}/bordero.pdf">📄 Apri borderò PDF</a><a class="btn" href="/trasporti/viaggio/${v.id}/modifica">✏️ Modifica viaggio</a><a class="btn dp-green" target="_blank" href="${esc(wa)}">📲 Invia borderò WhatsApp</a><form method="POST" action="/trasporti/viaggio/${v.id}/consegnato" style="display:inline" onsubmit="return confirm('Segnare TUTTE le auto ancora aperte come consegnate alla destinazione finale?')"><button class="btn dp-green">✅ Consegna tutte a destinazione finale</button></form></div><div class="box" style="overflow:auto"><table><tr><th>#</th><th>Auto / stato</th><th>Carico di questo viaggio</th><th>Destinazione finale</th><th>Cliente fattura</th><th>Operazione</th></tr>${trs}</table></div>`));
+  const ordineGiri=os.map(o=>`<tr><td><input type="number" min="1" max="${os.length}" name="pos_${o.id}" value="${o.posizione}" style="width:78px;font-weight:900;text-align:center"></td><td><b>${esc(o.targa_telaio)}</b> — ${esc(o.modello)}</td><td>${esc(o.carico_effettivo||o.ragione_carico||'')}</td></tr>`).join('');
+  res.send(page(v.codice,`<div class="box"><h2>🚚 ${esc(v.codice)}</h2><p><b>Data:</b> ${esc(dpTItDate(v.data_viaggio))} • <b>Mezzo:</b> ${esc(v.automezzo)} ${b?.targa?'— '+esc(b.targa):''} • <b>Autista:</b> ${esc(v.autista)} ${a?.telefono?'• '+esc(a.telefono):''}</p><p>Stato viaggio: <b>${esc(v.stato)}</b></p><a class="btn" target="_blank" href="/trasporti/viaggio/${v.id}/bordero.pdf">📄 Apri borderò PDF</a><a class="btn" href="/trasporti/viaggio/${v.id}/modifica">✏️ Modifica viaggio</a><a class="btn dp-green" target="_blank" href="${esc(wa)}">📲 Invia borderò WhatsApp</a><form method="POST" action="/trasporti/viaggio/${v.id}/consegnato" style="display:inline" onsubmit="return confirm('Segnare TUTTE le auto ancora aperte come consegnate alla destinazione finale?')"><button class="btn dp-green">✅ Consegna tutte a destinazione finale</button></form></div>
+  <div class="box"><h3>🔢 Ordine giri di carico nel borderò</h3><p>Metti 1 al primo carico, 2 al secondo, 3 al terzo ecc. Il PDF seguirà esattamente questa sequenza.</p><form method="POST" action="/trasporti/viaggio/${v.id}/riordina"><div style="overflow:auto"><table><tr><th>Giro</th><th>Auto</th><th>Carico</th></tr>${ordineGiri}</table></div><button style="margin-top:12px">SALVA ORDINE GIRI</button></form></div>
+  <div class="box" style="overflow:auto"><table><tr><th>#</th><th>Auto / stato</th><th>Carico di questo viaggio</th><th>Destinazione finale</th><th>Cliente fattura</th><th>Operazione</th></tr>${trs}</table></div>`));
+});
+
+app.post('/trasporti/viaggio/:id/riordina',async(req,res)=>{
+  const vid=Number(req.params.id);
+  const righe=await all(`SELECT ordine_id,posizione FROM trasporti_viaggio_ordini WHERE viaggio_id=?`,[vid]).catch(()=>[]);
+  if(!righe.length)return res.redirect(`/trasporti/viaggio/${vid}`);
+  const requested=righe.map(r=>({id:r.ordine_id,pos:Number(req.body['pos_'+r.ordine_id])||9999,old:Number(r.posizione)||9999}));
+  requested.sort((a,b)=>a.pos-b.pos||a.old-b.old||a.id-b.id);
+  await run('BEGIN');
+  try{
+    let n=1;
+    for(const r of requested){
+      await run(`UPDATE trasporti_viaggio_ordini SET posizione=? WHERE viaggio_id=? AND ordine_id=?`,[n++,vid,r.id]);
+    }
+    await run('COMMIT');
+  }catch(e){await run('ROLLBACK').catch(()=>{});return res.status(500).send('Errore riordino borderò: '+e.message);}
+  res.redirect(`/trasporti/viaggio/${vid}`);
 });
 
 app.post('/trasporti/viaggio/:vid/ordine/:oid/stato',async(req,res)=>{
