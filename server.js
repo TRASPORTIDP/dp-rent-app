@@ -12044,28 +12044,58 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     all(`SELECT * FROM trasporti_bisarche WHERE attiva=1 AND COALESCE(stato,'ATTIVO')='ATTIVO' ORDER BY nome`).catch(()=>[])
   ]);
 
-  // V308: posizione camion da Balin. Se API disponibile aggiorna live, altrimenti usa l'ultima posizione salvata.
-  let balinDevices=[];
+  // V309: mostra TUTTI i dispositivi restituiti da Balin.
+  // Non dipende più dall'associazione preventiva alla tabella bisarche:
+  // se trova IMEI/nome/targa li collega, altrimenti li mostra comunque come GPS Balin.
+  let balinDevices=[], balinError='';
   try{
     balinDevices=await dpTBalinDevices();
-    for(const b of bis){
-      const d=balinDevices.find(x=>String(x.imei||'').trim()===String(b.balin_imei||'').trim());
-      if(!d) continue;
-      b.balin_lat=Number.isFinite(Number(d.lat))?Number(d.lat):b.balin_lat;
-      b.balin_lon=Number.isFinite(Number(d.lng))?Number(d.lng):b.balin_lon;
-      b.balin_speed=Number.isFinite(Number(d.speed))?Number(d.speed):b.balin_speed;
-      b.balin_moving=d.moving===true?1:d.moving===false?0:b.balin_moving;
-      b.balin_connected=d.is_connected===true?1:d.is_connected===false?0:b.balin_connected;
-      b.balin_last_sync=new Date().toISOString();
-      await run(`UPDATE trasporti_bisarche SET balin_lat=?,balin_lon=?,balin_speed=?,balin_moving=?,balin_connected=?,balin_last_sync=? WHERE id=?`,
-        [b.balin_lat,b.balin_lon,b.balin_speed,b.balin_moving,b.balin_connected,b.balin_last_sync,b.id]).catch(()=>{});
-    }
-  }catch(_){}
+  }catch(e){
+    balinError=String(e?.message||e||'Errore Balin');
+  }
 
-  const trucks=bis.filter(b=>Number.isFinite(Number(b.balin_lat))&&Number.isFinite(Number(b.balin_lon))).map(b=>({
-    id:b.id,nome:b.nome,targa:b.targa,autista:b.autista_abituale||'',lat:Number(b.balin_lat),lon:Number(b.balin_lon),
-    speed:Number(b.balin_speed||0),moving:b.balin_moving===1,connected:b.balin_connected===1,last:b.balin_last_sync||''
-  }));
+  const norm=v=>String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+  const trucks=[];
+  for(const d of balinDevices){
+    const lat=Number(d.lat), lon=Number(d.lng);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat===0||lon===0) continue;
+
+    const imei=String(d.imei||'').trim();
+    const dn=norm(d.name||d.plate||d.label||'');
+    let b=bis.find(x=>imei && String(x.balin_imei||'').trim()===imei);
+    if(!b && dn){
+      b=bis.find(x=>{
+        const bt=norm(x.targa), bn=norm(x.nome);
+        return (bt && (dn.includes(bt)||bt.includes(dn))) ||
+               (bn && (dn.includes(bn)||bn.includes(dn)));
+      });
+    }
+
+    const speed=Number.isFinite(Number(d.speed))?Number(d.speed):0;
+    const moving=d.moving===true;
+    const connected=d.is_connected===true;
+    const last=d.timestamp_position
+      ? new Date(Number(d.timestamp_position)).toISOString()
+      : new Date().toISOString();
+
+    trucks.push({
+      id:b?.id||null,
+      imei,
+      nome:b?.nome||d.name||d.plate||d.label||'Dispositivo Balin',
+      targa:b?.targa||d.plate||'',
+      autista:b?.autista_abituale||'',
+      lat,lon,speed,moving,connected,last,
+      associated:!!b
+    });
+
+    if(b){
+      b.balin_lat=lat;b.balin_lon=lon;b.balin_speed=speed;
+      b.balin_moving=moving?1:0;b.balin_connected=connected?1:0;b.balin_last_sync=last;
+      await run(`UPDATE trasporti_bisarche SET balin_lat=?,balin_lon=?,balin_speed=?,balin_moving=?,balin_connected=?,balin_last_sync=? WHERE id=?`,
+        [lat,lon,speed,moving?1:0,connected?1:0,last,b.id]).catch(()=>{});
+    }
+  }
+
   const js=JSON.stringify(items).replace(/</g,'\\u003c');
   const tj=JSON.stringify(trucks).replace(/</g,'\\u003c');
   const missingCount=rows.length-items.length;
@@ -12078,7 +12108,9 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     .leaflet-popup-content{max-width:88vw!important}.leaflet-popup-content-wrapper{max-height:520px}
   </style>
   <div class="box"><h2>🗺️ Mappa località di carico</h2>
-    <p><b>${rows.length}</b> auto nei piazzali • <b>${items.length}</b> localizzate • <b>${trucks.length}</b> camion Balin visibili${missingCount?` • ${missingCount} piazzali ancora da localizzare`:''}.</p>
+    <p><b>${rows.length}</b> auto nei piazzali • <b>${items.length}</b> localizzate • <b>${trucks.length}</b> GPS Balin visibili${missingCount?` • ${missingCount} piazzali ancora da localizzare`:''}.</p>
+    ${balinError?`<p class="notice" style="border-left-color:#d71920"><b>⚠️ BALIN:</b> ${esc(balinError)}</p>`:''}
+    ${!balinError && balinDevices.length && !trucks.length?`<p class="notice"><b>⚠️ BALIN:</b> ${balinDevices.length} dispositivi ricevuti, ma nessuno ha coordinate GPS valide.</p>`:''}
     <p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#d71920;margin-right:5px"></span> Auto nei piazzali
     &nbsp;&nbsp; <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#0066cc;margin-right:5px"></span> Camion Balin</p>
     ${missingCount?'<p class="notice">La mappa localizza fino a 8 nuovi punti ad ogni apertura. Premi <b>Ricarica mappa</b> finché i punti mancanti arrivano a 0.</p>':''}
@@ -12116,7 +12148,7 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     T.forEach(t=>{
       bounds.push([t.lat,t.lon]);
       const icon=L.divIcon({className:'',html:'<div style="width:44px;height:44px;border-radius:50%;background:#0066cc;border:3px solid white;color:white;display:flex;align-items:center;justify-content:center;font-size:23px;box-shadow:0 3px 10px #0008">🚛</div>',iconSize:[44,44],iconAnchor:[22,22]});
-      const html='<b>🚛 '+(t.nome||'Bisarca')+'</b><br>Targa: <b>'+(t.targa||'-')+'</b><br>Autista: '+(t.autista||'-')+'<br>Velocità: <b>'+Number(t.speed||0).toFixed(0)+' km/h</b><br>'+(t.moving?'🟢 IN MOVIMENTO':'⚪ FERMO')+(t.connected?' • GPS online':' • GPS offline')+(t.last?'<br><small>Ultimo sync: '+t.last.replace('T',' ').slice(0,16)+'</small>':'');
+      const html='<b>🚛 '+(t.nome||'Bisarca')+'</b><br>Targa: <b>'+(t.targa||'-')+'</b><br>Autista: '+(t.autista||'-')+'<br>Velocità: <b>'+Number(t.speed||0).toFixed(0)+' km/h</b><br>'+(t.moving?'🟢 IN MOVIMENTO':'⚪ FERMO')+(t.connected?' • GPS online':' • GPS offline')+(t.last?'<br><small>Posizione: '+t.last.replace('T',' ').slice(0,16)+'</small>':'')+(!t.associated?'<br><small style="color:#b00020"><b>IMEI '+t.imei+' non ancora associato a una bisarca</b></small>':'');
       L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).addTo(m).bindPopup(html);
     });
     if(bounds.length)m.fitBounds(bounds,{padding:[35,35]});
