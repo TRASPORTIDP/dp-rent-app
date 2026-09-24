@@ -15549,3 +15549,5 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V308 - fix blocco pagina CLIENTI: seed bulk, niente sync completa ad ogni apertura
 
 // DP GESTIONALE V309 - CLIENTI unico: conteggio Trasporti dal master + redirect vecchia lista
+
+// DP GESTIONALE V310 - server invariato rispetto V309; fix nel modulo Service

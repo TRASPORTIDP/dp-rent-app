@@ -30,6 +30,8 @@ router.use((req,res,next)=>{
   res.send=(body)=>{
     if(typeof body==='string'){
       body=body.replace(/\b(href|action|src)=([\"'])\/(?!service\/)/g,'$1=$2/service/');
+      // Link speciali che devono restare FUORI dal prefisso /service.
+      body=body.replace(/([\"'])\/service\/clienti-azienda(?=\/|[\"'])/g,'$1/clienti-azienda');
       // Link speciale per tornare al menu principale DP GESTIONALE.
       body=body.replace(/href=([\"'])\/service\/__DP_MAIN__\1/g,'href=$1/$1');
     }
@@ -39,7 +41,7 @@ router.use((req,res,next)=>{
   res.redirect=(...args)=>{
     if(args.length){
       const i=args.length-1;
-      if(typeof args[i]==='string' && args[i].startsWith('/') && !args[i].startsWith('/service/')) args[i]='/service'+args[i];
+      if(typeof args[i]==='string' && args[i].startsWith('/') && !args[i].startsWith('/service/') && !args[i].startsWith('/clienti-azienda')) args[i]='/service'+args[i];
     }
     return originalRedirect(...args);
   };
@@ -1528,3 +1530,5 @@ module.exports = router;
 // DP SERVICE V308 - usa dp_clienti_master del gestionale; nessuna sync pesante sulla pagina CLIENTI
 
 // DP SERVICE V309 - Clienti apre archivio unico /clienti-azienda; nessuna sync all'apertura
+
+// DP SERVICE V310 - fix link/redirect archivio clienti master fuori da /service
