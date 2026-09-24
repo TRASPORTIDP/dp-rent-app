@@ -5083,7 +5083,7 @@ function clienteManualForm(c, action, title) {
           <div><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${val('provincia_fatturazione')}"></div>
           <div><label>CAP fatturazione</label><input name="cap_fatturazione" value="${val('cap_fatturazione')}"></div>
         </div>
-        <h3>IVA e pagamento</h3>
+        <h3 id="dati-fiscali">🧾 IVA e pagamento</h3>
         <div class="grid">
           <div><label>Codice IVA</label><input name="codice_iva" list="dp-codici-iva" value="${val('codice_iva')}" placeholder="Es. 22"></div>
           <div><label>Descrizione IVA</label><input name="codice_iva_descrizione" value="${val('codice_iva_descrizione')}" placeholder="Es. IVA 22%"></div>
@@ -5105,7 +5105,7 @@ function clienteManualForm(c, action, title) {
           <option value="RBFIN">Ri.Ba fine mese</option><option value="RID30">Rimessa diretta 30 gg</option><option value="RID60">Rimessa diretta 60 gg</option>
           <option value="RID90">Rimessa diretta 90 gg FM</option><option value="RD">Rimessa diretta a vista</option>
         </datalist>
-        <h3>Dati bancari cliente</h3>
+        <h3 id="dati-bancari">🏦 Dati bancari cliente</h3>
         <div class="grid">
           <div><label>Banca cliente</label><input name="banca_cliente" value="${val('banca_cliente')}"></div>
           <div><label>Codice banca</label><input name="banca_codice" value="${val('banca_codice')}"></div>
@@ -11967,8 +11967,29 @@ app.get('/trasporti/clienti', async(req,res)=>{
   if(q) rows=await all(`SELECT * FROM trasporti_clienti WHERE ragione_sociale LIKE ? OR codice LIKE ? OR piva LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 1000`,Array(4).fill('%'+q+'%')).catch(()=>[]);
   else rows=await all(`SELECT * FROM trasporti_clienti ORDER BY ragione_sociale LIMIT 1000`).catch(()=>[]);
   const tot=(await get(`SELECT COUNT(*) n FROM trasporti_clienti`).catch(()=>({n:0}))).n;
-  const trs=rows.map(x=>`<tr><td>${esc(x.codice||'')}</td><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.piva||'')}</td><td>${esc(x.codice_fiscale||'')}</td><td>${esc(x.indirizzo||'')}<br>${esc(x.citta||'')} ${esc(x.provincia||'')}</td><td>${esc(x.telefono||'')}</td><td style="white-space:nowrap"><a class="btn btn2" href="/trasporti/cliente/${x.id}/modifica">Modifica</a> <a class="btn" href="/trasporti/cliente/${x.id}/portale">🔗 Portale</a> <form method="POST" action="/trasporti/cliente/${x.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questa anagrafica cliente?')"><button class="btn" style="background:#b00020">Elimina</button></form></td></tr>`).join('');
-  res.send(page('Clienti trasporto',`<div class="box"><h2>👥 Clienti (${tot})</h2><form><input name="q" value="${esc(q)}" placeholder="Cerca cliente, P.IVA, città"><button>Cerca</button></form><p><a class="btn" href="/trasporti/cliente/nuovo">＋ Nuovo cliente</a></p><h3>Importa/aggiorna clienti</h3><form method="POST" enctype="multipart/form-data" action="/trasporti/clienti/importa"><input type="file" name="file" accept=".xlsx,.xls,.ods,.csv" required><button>Importa Excel / ODS</button></form><a class="btn btn2" href="/trasporti">Torna</a></div><div class="box" style="overflow:auto"><table><tr><th>Codice</th><th>Cliente</th><th>P.IVA</th><th>Cod. fiscale</th><th>Indirizzo / Località</th><th>Telefono</th><th></th></tr>${trs}</table></div>`));
+  const trs=rows.map(x=>`<tr>
+    <td>${esc(x.codice||'')}</td>
+    <td><b>${esc(x.ragione_sociale)}</b></td>
+    <td>${esc(x.piva||'')}</td>
+    <td>${esc(x.codice_fiscale||'')}</td>
+    <td>${esc(x.indirizzo||'')}<br>${esc(x.citta||'')} ${esc(x.provincia||'')}</td>
+    <td>${esc(x.telefono||'')}</td>
+    <td><b>${esc(x.codice_iva||'-')}</b><br><small>${esc(x.codice_iva_descrizione||'')}</small></td>
+    <td><b>${esc(x.codice_pagamento||'-')}</b><br><small>${esc(x.pagamento_descrizione||'')}</small></td>
+    <td>${x.banca_iban?`<b>${esc(x.banca_cliente||'Banca')}</b><br><small>${esc(x.banca_iban)}</small>`:'-'}</td>
+    <td style="white-space:nowrap">
+      <a class="btn btn2" href="/trasporti/cliente/${x.id}/modifica#dati-fiscali">💳 IVA / Pag. / Banca</a>
+      <a class="btn" href="/trasporti/cliente/${x.id}/portale">🔗 Portale</a>
+      <form method="POST" action="/trasporti/cliente/${x.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare questa anagrafica cliente?')"><button class="btn" style="background:#b00020">Elimina</button></form>
+    </td>
+  </tr>`).join('');
+  res.send(page('Clienti trasporto',`<div class="box"><h2>👥 Clienti (${tot})</h2>
+    <p class="notice"><b>Dati fiscali e bancari:</b> premi <b>IVA / Pag. / Banca</b> sul cliente per inserire codice IVA, condizione di pagamento, banca e IBAN.</p>
+    <form><input name="q" value="${esc(q)}" placeholder="Cerca cliente, P.IVA, città"><button>Cerca</button></form>
+    <p><a class="btn" href="/trasporti/cliente/nuovo">＋ Nuovo cliente</a></p>
+    <h3>Importa/aggiorna clienti</h3><form method="POST" enctype="multipart/form-data" action="/trasporti/clienti/importa"><input type="file" name="file" accept=".xlsx,.xls,.ods,.csv" required><button>Importa Excel / ODS</button></form>
+    <a class="btn btn2" href="/trasporti">Torna</a></div>
+    <div class="box" style="overflow:auto"><table><tr><th>Codice</th><th>Cliente</th><th>P.IVA</th><th>Cod. fiscale</th><th>Indirizzo / Località</th><th>Telefono</th><th>IVA</th><th>Pagamento</th><th>Banca / IBAN</th><th></th></tr>${trs}</table></div>`));
 });
 
 function dpTClientForm(c={}, action='/trasporti/cliente/nuovo'){
@@ -12132,9 +12153,8 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     all(`SELECT * FROM trasporti_bisarche WHERE attiva=1 AND COALESCE(stato,'ATTIVO')='ATTIVO' ORDER BY nome`).catch(()=>[])
   ]);
 
-  // V309: mostra TUTTI i dispositivi restituiti da Balin.
-  // Non dipende più dall'associazione preventiva alla tabella bisarche:
-  // se trova IMEI/nome/targa li collega, altrimenti li mostra comunque come GPS Balin.
+  // V306: sulla mappa TRASPORTI mostra SOLO le bisarche censite/attive.
+  // I dispositivi Balin non associati (es. mezzi noleggio) vengono ignorati.
   let balinDevices=[], balinError='';
   try{
     balinDevices=await dpTBalinDevices();
@@ -12159,6 +12179,9 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
       });
     }
 
+    // IMPORTANTISSIMO: se non è una bisarca censita, non compare sulla mappa trasporti.
+    if(!b) continue;
+
     const speed=Number.isFinite(Number(d.speed))?Number(d.speed):0;
     const moving=d.moving===true;
     const connected=d.is_connected===true;
@@ -12167,21 +12190,19 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
       : new Date().toISOString();
 
     trucks.push({
-      id:b?.id||null,
+      id:b.id,
       imei,
-      nome:b?.nome||d.name||d.plate||d.label||'Dispositivo Balin',
-      targa:b?.targa||d.plate||'',
-      autista:b?.autista_abituale||'',
+      nome:b.nome||'Bisarca',
+      targa:b.targa||'',
+      autista:b.autista_abituale||'',
       lat,lon,speed,moving,connected,last,
-      associated:!!b
+      associated:true
     });
 
-    if(b){
-      b.balin_lat=lat;b.balin_lon=lon;b.balin_speed=speed;
-      b.balin_moving=moving?1:0;b.balin_connected=connected?1:0;b.balin_last_sync=last;
-      await run(`UPDATE trasporti_bisarche SET balin_lat=?,balin_lon=?,balin_speed=?,balin_moving=?,balin_connected=?,balin_last_sync=? WHERE id=?`,
-        [lat,lon,speed,moving?1:0,connected?1:0,last,b.id]).catch(()=>{});
-    }
+    b.balin_lat=lat;b.balin_lon=lon;b.balin_speed=speed;
+    b.balin_moving=moving?1:0;b.balin_connected=connected?1:0;b.balin_last_sync=last;
+    await run(`UPDATE trasporti_bisarche SET balin_lat=?,balin_lon=?,balin_speed=?,balin_moving=?,balin_connected=?,balin_last_sync=? WHERE id=?`,
+      [lat,lon,speed,moving?1:0,connected?1:0,last,b.id]).catch(()=>{});
   }
 
   const js=JSON.stringify(items).replace(/</g,'\\u003c');
@@ -12200,7 +12221,7 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     ${balinError?`<p class="notice" style="border-left-color:#d71920"><b>⚠️ BALIN:</b> ${esc(balinError)}</p>`:''}
     ${!balinError && balinDevices.length && !trucks.length?`<p class="notice"><b>⚠️ BALIN:</b> ${balinDevices.length} dispositivi ricevuti, ma nessuno ha coordinate GPS valide.</p>`:''}
     <p><span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#d71920;margin-right:5px"></span> Auto nei piazzali
-    &nbsp;&nbsp; <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#0066cc;margin-right:5px"></span> Camion Balin</p>
+    &nbsp;&nbsp; <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:#0066cc;margin-right:5px"></span> Bisarche DP con GPS</p>
     ${missingCount?'<p class="notice">La mappa localizza fino a 8 nuovi punti ad ogni apertura. Premi <b>Ricarica mappa</b> finché i punti mancanti arrivano a 0.</p>':''}
     <a class="btn btn2" href="/trasporti/ordini">Tabella ordini</a>
     <a class="btn" href="/trasporti/mappa-carichi">Ricarica mappa</a>
@@ -12221,8 +12242,9 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
   try{
     if(typeof L==='undefined') throw new Error('Leaflet non caricato');
     const m=L.map('map').setView([42.5,12.5],6);
-    const street=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
-      subdomains:'abcd',maxZoom:20,attribution:'© OpenStreetMap contributors © CARTO'
+    const street=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      maxZoom:19,
+      attribution:'© OpenStreetMap contributors'
     }).addTo(m);
     const satellite=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
       maxZoom:19,attribution:'Tiles © Esri'
@@ -12239,7 +12261,7 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
     T.forEach(t=>{
       bounds.push([t.lat,t.lon]);
       const icon=L.divIcon({className:'',html:'<div style="width:44px;height:44px;border-radius:50%;background:#0066cc;border:3px solid white;color:white;display:flex;align-items:center;justify-content:center;font-size:23px;box-shadow:0 3px 10px #0008">🚛</div>',iconSize:[44,44],iconAnchor:[22,22]});
-      const html='<b>🚛 '+(t.nome||'Bisarca')+'</b><br>Targa: <b>'+(t.targa||'-')+'</b><br>Autista: '+(t.autista||'-')+'<br>Velocità: <b>'+Number(t.speed||0).toFixed(0)+' km/h</b><br>'+(t.moving?'🟢 IN MOVIMENTO':'⚪ FERMO')+(t.connected?' • GPS online':' • GPS offline')+(t.last?'<br><small>Posizione: '+t.last.replace('T',' ').slice(0,16)+'</small>':'')+(!t.associated?'<br><small style="color:#b00020"><b>IMEI '+t.imei+' non ancora associato a una bisarca</b></small>':'');
+      const html='<b>🚛 '+(t.nome||'Bisarca')+'</b><br>Targa: <b>'+(t.targa||'-')+'</b><br>Autista: '+(t.autista||'-')+'<br>Velocità: <b>'+Number(t.speed||0).toFixed(0)+' km/h</b><br>'+(t.moving?'🟢 IN MOVIMENTO':'⚪ FERMO')+(t.connected?' • GPS online':' • GPS offline')+(t.last?'<br><small>Posizione: '+t.last.replace('T',' ').slice(0,16)+'</small>':'');
       L.marker([t.lat,t.lon],{icon,zIndexOffset:1000}).addTo(m).bindPopup(html);
     });
     if(bounds.length)m.fitBounds(bounds,{padding:[35,35]});
@@ -15303,3 +15325,5 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 
 
 // DP GESTIONALE V305 - mappa stradale/satellite + statistiche + IVA/pagamenti/banca clienti
+
+// DP GESTIONALE V306 - fix OSM no API key + solo bisarche GPS + clienti fiscali/banca visibili
