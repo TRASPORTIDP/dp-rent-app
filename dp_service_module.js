@@ -1523,3 +1523,5 @@ router.use(async (req,res,next)=>{ try{ await dpServiceReady; next(); }catch(e){
 module.exports = router;
 
 // DP SERVICE V307 - CLIENTI MASTER CONDIVISI CON RENT/TRASPORTI
+
+// DP SERVICE V308 - usa dp_clienti_master del gestionale; nessuna sync pesante sulla pagina CLIENTI

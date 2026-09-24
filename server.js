@@ -4340,7 +4340,12 @@ function dpMasterKey(v){return dpMasterNorm(v).toUpperCase().replace(/[^A-Z0-9]/
 function dpMasterSelect(name,value,rows,placeholder){
   return `<select name="${esc(name)}"><option value="">${esc(placeholder||'Seleziona...')}</option>${rows.map(x=>`<option value="${esc(x[0])}" ${String(value||'')===String(x[0])?'selected':''}>${esc(x[0])} - ${esc(x[1])}</option>`).join('')}</select>`;
 }
+
+let DP_MASTER_SEED_PROMISE = null;
+
 async function dpMasterEnsure(){
+  // V308: questa funzione deve essere VELOCE.
+  // Crea solo struttura/indici e fa un seed SQL bulk una sola volta.
   await run(`CREATE TABLE IF NOT EXISTS dp_clienti_master(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     codice TEXT,
@@ -4355,66 +4360,79 @@ async function dpMasterEnsure(){
     note TEXT,rent_cliente_id INTEGER,trasporto_cliente_id INTEGER,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP
   )`);
-  const tr=await all(`SELECT * FROM trasporti_clienti ORDER BY id`).catch(()=>[]);
-  for(const x of tr){
-    const piva=dpMasterNorm(x.piva), cf=dpMasterNorm(x.codice_fiscale), rag=dpMasterNorm(x.ragione_sociale);
-    let m=await get(`SELECT * FROM dp_clienti_master WHERE trasporto_cliente_id=?`,[x.id]).catch(()=>null);
-    if(!m && piva) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(piva,'')))=UPPER(TRIM(?))`,[piva]).catch(()=>null);
-    if(!m && cf) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(codice_fiscale,'')))=UPPER(TRIM(?))`,[cf]).catch(()=>null);
-    if(!m && rag) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(ragione_sociale,'')))=UPPER(TRIM(?)) AND REPLACE(COALESCE(telefono,''),' ','')=REPLACE(?,' ','')`,[rag,dpMasterNorm(x.telefono)]).catch(()=>null);
-    if(m){
-      await run(`UPDATE dp_clienti_master SET
-        trasporto_cliente_id=?,codice=COALESCE(NULLIF(codice,''),?),ragione_sociale=COALESCE(NULLIF(ragione_sociale,''),?),
-        piva=COALESCE(NULLIF(piva,''),?),codice_fiscale=COALESCE(NULLIF(codice_fiscale,''),?),
-        indirizzo=COALESCE(NULLIF(indirizzo,''),?),citta=COALESCE(NULLIF(citta,''),?),provincia=COALESCE(NULLIF(provincia,''),?),cap=COALESCE(NULLIF(cap,''),?),
-        telefono=COALESCE(NULLIF(telefono,''),?),email=COALESCE(NULLIF(email,''),?),pec=COALESCE(NULLIF(pec,''),?),sdi=COALESCE(NULLIF(sdi,''),?),
-        codice_iva=COALESCE(NULLIF(codice_iva,''),?),codice_pagamento=COALESCE(NULLIF(codice_pagamento,''),?),
-        banca_cliente=COALESCE(NULLIF(banca_cliente,''),?),banca_codice=COALESCE(NULLIF(banca_codice,''),?),banca_conto=COALESCE(NULLIF(banca_conto,''),?),
-        banca_abi=COALESCE(NULLIF(banca_abi,''),?),banca_cab=COALESCE(NULLIF(banca_cab,''),?),banca_paese=COALESCE(NULLIF(banca_paese,''),?),
-        banca_cin_eur=COALESCE(NULLIF(banca_cin_eur,''),?),banca_cin_it=COALESCE(NULLIF(banca_cin_it,''),?),banca_valuta=COALESCE(NULLIF(banca_valuta,''),?),
-        banca_bic=COALESCE(NULLIF(banca_bic,''),?),banca_iban=COALESCE(NULLIF(banca_iban,''),?),banca_bban=COALESCE(NULLIF(banca_bban,''),?),
-        banca_pec=COALESCE(NULLIF(banca_pec,''),?),banca_note=COALESCE(NULLIF(banca_note,''),?),note=COALESCE(NULLIF(note,''),?),updated_at=CURRENT_TIMESTAMP
-        WHERE id=?`,
-        [x.id,x.codice,rag,piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi,x.codice_iva,x.codice_pagamento,
-         x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,m.id]).catch(()=>{});
-    }else if(rag){
-      await run(`INSERT INTO dp_clienti_master(codice,ragione_sociale,tipo_cliente,piva,codice_fiscale,indirizzo,citta,provincia,cap,telefono,email,pec,sdi,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,trasporto_cliente_id)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [x.codice,rag,'azienda',piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi,x.codice_iva,x.codice_pagamento,
-         x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,x.id]).catch(()=>{});
-    }
+
+  // Indici: accelerano ricerca e impediscono che lo stesso record sorgente venga duplicato.
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_dp_master_rent_id ON dp_clienti_master(rent_cliente_id) WHERE rent_cliente_id IS NOT NULL`).catch(()=>{});
+  await run(`CREATE UNIQUE INDEX IF NOT EXISTS idx_dp_master_trasporto_id ON dp_clienti_master(trasporto_cliente_id) WHERE trasporto_cliente_id IS NOT NULL`).catch(()=>{});
+  await run(`CREATE INDEX IF NOT EXISTS idx_dp_master_piva ON dp_clienti_master(piva)`).catch(()=>{});
+  await run(`CREATE INDEX IF NOT EXISTS idx_dp_master_cf ON dp_clienti_master(codice_fiscale)`).catch(()=>{});
+  await run(`CREATE INDEX IF NOT EXISTS idx_dp_master_ragione ON dp_clienti_master(ragione_sociale)`).catch(()=>{});
+
+  if(!DP_MASTER_SEED_PROMISE){
+    DP_MASTER_SEED_PROMISE = (async()=>{
+      // Importa i clienti trasporto mancanti in UN colpo solo.
+      await run(`
+        INSERT OR IGNORE INTO dp_clienti_master(
+          codice,ragione_sociale,tipo_cliente,piva,codice_fiscale,indirizzo,citta,provincia,cap,
+          telefono,email,pec,sdi,codice_iva,codice_pagamento,
+          banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,
+          banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,trasporto_cliente_id
+        )
+        SELECT
+          t.codice,t.ragione_sociale,'azienda',t.piva,t.codice_fiscale,t.indirizzo,t.citta,t.provincia,t.cap,
+          t.telefono,t.email,t.pec,t.sdi,t.codice_iva,t.codice_pagamento,
+          t.banca_cliente,t.banca_codice,t.banca_conto,t.banca_abi,t.banca_cab,t.banca_paese,t.banca_cin_eur,t.banca_cin_it,
+          t.banca_valuta,t.banca_bic,t.banca_iban,t.banca_bban,t.banca_pec,t.banca_note,t.note,t.id
+        FROM trasporti_clienti t
+        WHERE NOT EXISTS(
+          SELECT 1 FROM dp_clienti_master m WHERE m.trasporto_cliente_id=t.id
+        )
+      `).catch(e=>console.log('V308 seed trasporti:',e.message));
+
+      // Importa i clienti RENT mancanti; se PIVA/CF è già nel master evita il doppione.
+      await run(`
+        INSERT OR IGNORE INTO dp_clienti_master(
+          ragione_sociale,nome,cognome,tipo_cliente,piva,codice_fiscale,indirizzo,citta,provincia,cap,
+          telefono,email,pec,sdi,codice_iva,codice_pagamento,
+          banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,
+          banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,rent_cliente_id
+        )
+        SELECT
+          COALESCE(NULLIF(TRIM(c.ragione_sociale),''),NULLIF(TRIM(c.azienda),''),TRIM(COALESCE(c.nome,'')||' '||COALESCE(c.cognome,''))),
+          c.nome,c.cognome,COALESCE(NULLIF(c.tipo_cliente,''),'privato'),
+          COALESCE(NULLIF(c.piva,''),c.partita_iva),COALESCE(NULLIF(c.codice_fiscale,''),c.cf),
+          c.indirizzo,c.citta,c.provincia,c.cap,c.telefono,c.email,c.pec,COALESCE(NULLIF(c.sdi,''),c.codice_sdi),
+          c.codice_iva,c.codice_pagamento,
+          c.banca_cliente,c.banca_codice,c.banca_conto,c.banca_abi,c.banca_cab,c.banca_paese,c.banca_cin_eur,c.banca_cin_it,
+          c.banca_valuta,c.banca_bic,c.banca_iban,c.banca_bban,c.banca_pec,c.banca_note,c.note,c.id
+        FROM clienti c
+        WHERE NOT EXISTS(
+          SELECT 1 FROM dp_clienti_master m WHERE m.rent_cliente_id=c.id
+        )
+        AND NOT EXISTS(
+          SELECT 1 FROM dp_clienti_master m
+          WHERE COALESCE(NULLIF(TRIM(COALESCE(c.piva,c.partita_iva,'')),''),'#') <> '#'
+            AND UPPER(TRIM(COALESCE(m.piva,''))) = UPPER(TRIM(COALESCE(NULLIF(c.piva,''),c.partita_iva,'')))
+        )
+        AND NOT EXISTS(
+          SELECT 1 FROM dp_clienti_master m
+          WHERE COALESCE(NULLIF(TRIM(COALESCE(c.codice_fiscale,c.cf,'')),''),'#') <> '#'
+            AND UPPER(TRIM(COALESCE(m.codice_fiscale,''))) = UPPER(TRIM(COALESCE(NULLIF(c.codice_fiscale,''),c.cf,'')))
+        )
+      `).catch(e=>console.log('V308 seed rent:',e.message));
+
+      return true;
+    })().catch(e=>{
+      console.log('V308 seed master errore:',e.message);
+      return false;
+    });
   }
-  const rr=await all(`SELECT * FROM clienti ORDER BY id`).catch(()=>[]);
-  for(const x of rr){
-    const piva=dpMasterNorm(x.piva||x.partita_iva), cf=dpMasterNorm(x.codice_fiscale||x.cf);
-    const rag=dpMasterNorm(x.ragione_sociale||x.azienda||`${x.nome||''} ${x.cognome||''}`);
-    let m=await get(`SELECT * FROM dp_clienti_master WHERE rent_cliente_id=?`,[x.id]).catch(()=>null);
-    if(!m && piva) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(piva,'')))=UPPER(TRIM(?))`,[piva]).catch(()=>null);
-    if(!m && cf) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(codice_fiscale,'')))=UPPER(TRIM(?))`,[cf]).catch(()=>null);
-    if(!m && rag) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(ragione_sociale,'')))=UPPER(TRIM(?)) AND REPLACE(COALESCE(telefono,''),' ','')=REPLACE(?,' ','')`,[rag,dpMasterNorm(x.telefono)]).catch(()=>null);
-    if(m){
-      await run(`UPDATE dp_clienti_master SET rent_cliente_id=?,ragione_sociale=COALESCE(NULLIF(ragione_sociale,''),?),nome=COALESCE(NULLIF(nome,''),?),cognome=COALESCE(NULLIF(cognome,''),?),
-        tipo_cliente=COALESCE(NULLIF(tipo_cliente,''),?),piva=COALESCE(NULLIF(piva,''),?),codice_fiscale=COALESCE(NULLIF(codice_fiscale,''),?),
-        indirizzo=COALESCE(NULLIF(indirizzo,''),?),citta=COALESCE(NULLIF(citta,''),?),provincia=COALESCE(NULLIF(provincia,''),?),cap=COALESCE(NULLIF(cap,''),?),
-        telefono=COALESCE(NULLIF(telefono,''),?),email=COALESCE(NULLIF(email,''),?),pec=COALESCE(NULLIF(pec,''),?),sdi=COALESCE(NULLIF(sdi,''),?),
-        codice_iva=COALESCE(NULLIF(codice_iva,''),?),codice_pagamento=COALESCE(NULLIF(codice_pagamento,''),?),
-        banca_cliente=COALESCE(NULLIF(banca_cliente,''),?),banca_codice=COALESCE(NULLIF(banca_codice,''),?),banca_conto=COALESCE(NULLIF(banca_conto,''),?),
-        banca_abi=COALESCE(NULLIF(banca_abi,''),?),banca_cab=COALESCE(NULLIF(banca_cab,''),?),banca_paese=COALESCE(NULLIF(banca_paese,''),?),
-        banca_cin_eur=COALESCE(NULLIF(banca_cin_eur,''),?),banca_cin_it=COALESCE(NULLIF(banca_cin_it,''),?),banca_valuta=COALESCE(NULLIF(banca_valuta,''),?),
-        banca_bic=COALESCE(NULLIF(banca_bic,''),?),banca_iban=COALESCE(NULLIF(banca_iban,''),?),banca_bban=COALESCE(NULLIF(banca_bban,''),?),
-        banca_pec=COALESCE(NULLIF(banca_pec,''),?),banca_note=COALESCE(NULLIF(banca_note,''),?),note=COALESCE(NULLIF(note,''),?),updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-        [x.id,rag,x.nome,x.cognome,x.tipo_cliente,piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi||x.codice_sdi,
-         x.codice_iva,x.codice_pagamento,x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,m.id]).catch(()=>{});
-    }else if(rag){
-      await run(`INSERT INTO dp_clienti_master(ragione_sociale,nome,cognome,tipo_cliente,piva,codice_fiscale,indirizzo,citta,provincia,cap,telefono,email,pec,sdi,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,rent_cliente_id)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [rag,x.nome,x.cognome,x.tipo_cliente||'privato',piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi||x.codice_sdi,
-         x.codice_iva,x.codice_pagamento,x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,x.id]).catch(()=>{});
-    }
-  }
-  const masters=await all(`SELECT * FROM dp_clienti_master ORDER BY id`).catch(()=>[]);
-  for(const m of masters) await dpMasterSyncOne(m.id);
+
+  // Non aspettiamo migrazioni lente ad ogni apertura pagina.
+  // Alla prima apertura aspettiamo solo il seed bulk (2 query SQL).
+  await DP_MASTER_SEED_PROMISE;
 }
+
 async function dpMasterSyncOne(id){
   const m=await get(`SELECT * FROM dp_clienti_master WHERE id=?`,[id]).catch(()=>null); if(!m)return;
   let rentId=Number(m.rent_cliente_id)||0;
@@ -4475,11 +4493,19 @@ function dpMasterBody(b){
   const o={}; for(const k of f)o[k]=dpMasterNorm(b[k]); if(!o.tipo_cliente)o.tipo_cliente='azienda'; if(!o.banca_paese)o.banca_paese='IT'; if(!o.banca_valuta)o.banca_valuta='EUR'; return o;
 }
 app.get('/clienti-azienda',async(req,res)=>{
-  await dpMasterEnsure();
-  const q=dpMasterNorm(req.query.q); const like=`%${q}%`;
-  const rows=q?await all(`SELECT * FROM dp_clienti_master WHERE ragione_sociale LIKE ? OR piva LIKE ? OR codice_fiscale LIKE ? OR telefono LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 1000`,[like,like,like,like,like]):await all(`SELECT * FROM dp_clienti_master ORDER BY ragione_sociale LIMIT 1000`);
-  const trs=rows.map(x=>`<tr><td>${esc(x.codice||'')}</td><td><b>${esc(x.ragione_sociale||'')}</b></td><td>${esc(x.piva||'')}<br>${esc(x.codice_fiscale||'')}</td><td>${esc(x.citta||'')} ${esc(x.provincia||'')}</td><td>${esc(x.telefono||'')}</td><td>${esc(x.codice_iva||'-')}</td><td>${esc(x.codice_pagamento||'-')}</td><td>${x.banca_iban?esc(x.banca_iban):'-'}</td><td><a class="btn" href="/clienti-azienda/${x.id}">Apri</a><a class="btn btn2" href="/clienti-azienda/${x.id}/modifica">Modifica</a></td></tr>`).join('');
-  res.send(page('Clienti aziendali',`<div class="box"><h2>👥 CLIENTI - ANAGRAFICA UNICA</h2><p>Gli stessi clienti per <b>Noleggio, Trasporti e Officina</b>.</p><form><input name="q" value="${esc(q)}" placeholder="Cliente, P.IVA, C.F., telefono, città"><button>Cerca</button></form><a class="btn" href="/clienti-azienda/nuovo">＋ Nuovo cliente</a><a class="btn btn2" href="/">DP Gestionale</a></div><div class="box" style="overflow:auto"><table><tr><th>Codice</th><th>Cliente</th><th>P.IVA / CF</th><th>Località</th><th>Telefono</th><th>IVA</th><th>Pagamento</th><th>IBAN</th><th></th></tr>${trs||'<tr><td colspan="9">Nessun cliente</td></tr>'}</table></div>`));
+  try{
+    await dpMasterEnsure();
+    const q=dpMasterNorm(req.query.q); const like=`%${q}%`;
+    const rows=q
+      ? await all(`SELECT * FROM dp_clienti_master WHERE ragione_sociale LIKE ? OR piva LIKE ? OR codice_fiscale LIKE ? OR telefono LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 500`,[like,like,like,like,like])
+      : await all(`SELECT * FROM dp_clienti_master ORDER BY ragione_sociale LIMIT 500`);
+    const tot=await get(`SELECT COUNT(*) AS n FROM dp_clienti_master`).catch(()=>({n:rows.length}));
+    const trs=rows.map(x=>`<tr><td>${esc(x.codice||'')}</td><td><b>${esc(x.ragione_sociale||'')}</b></td><td>${esc(x.piva||'')}<br>${esc(x.codice_fiscale||'')}</td><td>${esc(x.citta||'')} ${esc(x.provincia||'')}</td><td>${esc(x.telefono||'')}</td><td>${esc(x.codice_iva||'-')}</td><td>${esc(x.codice_pagamento||'-')}</td><td>${x.banca_iban?esc(x.banca_iban):'-'}</td><td><a class="btn" href="/clienti-azienda/${x.id}">Apri</a><a class="btn btn2" href="/clienti-azienda/${x.id}/modifica">Modifica</a></td></tr>`).join('');
+    res.send(page('Clienti aziendali',`<div class="box"><h2>👥 CLIENTI - ANAGRAFICA UNICA</h2><p><b>${Number(tot?.n||0)}</b> clienti condivisi tra <b>Noleggio, Trasporti e Officina</b>.</p><form><input name="q" value="${esc(q)}" placeholder="Cliente, P.IVA, C.F., telefono, città"><button>Cerca</button></form><a class="btn" href="/clienti-azienda/nuovo">＋ Nuovo cliente</a><a class="btn btn2" href="/">DP Gestionale</a></div><div class="box" style="overflow:auto"><table><tr><th>Codice</th><th>Cliente</th><th>P.IVA / CF</th><th>Località</th><th>Telefono</th><th>IVA</th><th>Pagamento</th><th>IBAN</th><th></th></tr>${trs||'<tr><td colspan="9">Nessun cliente</td></tr>'}</table></div>`));
+  }catch(e){
+    console.error('V308 clienti azienda:',e);
+    res.status(500).send(page('Errore clienti',`<div class="box"><h2 class="bad">Errore apertura clienti</h2><pre>${esc(e.message||String(e))}</pre><a class="btn btn2" href="/">Dashboard</a></div>`));
+  }
 });
 app.get('/clienti-azienda/nuovo',async(req,res)=>{await dpMasterEnsure();res.send(dpMasterForm({},'/clienti-azienda','Nuovo cliente aziendale'));});
 app.post('/clienti-azienda',async(req,res)=>{
@@ -4498,7 +4524,7 @@ app.post('/clienti-azienda/:id/modifica',async(req,res)=>{
   await run(`UPDATE dp_clienti_master SET ${cols.map(k=>`${k}=?`).join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`,[...vals,req.params.id]);
   await dpMasterSyncOne(req.params.id);res.redirect('/clienti-azienda/'+req.params.id);
 });
-setTimeout(()=>dpMasterEnsure().catch(e=>console.log('V307 clienti master:',e.message)),3500).unref?.();
+setTimeout(()=>dpMasterEnsure().catch(e=>console.log('V308 clienti master:',e.message)),2500).unref?.();
 
 
 app.get('/', async (req, res) => {
@@ -15518,3 +15544,5 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V306 - fix OSM no API key + solo bisarche GPS + clienti fiscali/banca visibili
 
 // DP GESTIONALE V307 - CLIENTI MASTER UNICI RENT/TRASPORTI/SERVICE
+
+// DP GESTIONALE V308 - fix blocco pagina CLIENTI: seed bulk, niente sync completa ad ogni apertura
