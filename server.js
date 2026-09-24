@@ -4314,6 +4314,193 @@ async function v137AtteseRows(){
   return out;
 }
 
+
+// =========================
+// V307 - ANAGRAFICA CLIENTI AZIENDALE UNICA
+// DP RENT + DP TRASPORTI + DP SERVICE
+// =========================
+const DP_MASTER_IVA = [
+  ['22','IVA 22%'],['22SP','IVA 22% SPLIT PAYMENT'],['22RC','IVA 22% REVERSE CHARGE'],['22EX','IVA 22% EXTRA UE'],
+  ['22gma','22% IVA giroconto margine beni usati'],['10','IVA 10%'],['4','IVA 4%'],['5','IVA 5%'],
+  ['NI41','Non imponibile Art. 41 Cessioni UE'],['NI8','Non imponibile Art. 8 c.1 lett. c'],['NI8b','Non imponibile Art. 8 bis'],
+  ['FC7','Art. 7 TER operazione non soggetta'],['A07','Operazione esclusa'],['ES10','Esente Art. 10'],['ES124','Esente Art. 124']
+];
+const DP_MASTER_PAGAMENTI = [
+  ['BO30','Bonifico 30 gg'],['BO3','Bonifico a 30 gg DF FM'],['BO6','Bonifico a 60 gg FM'],['BO9','Bonifico a 90 gg DF FM'],
+  ['BO36','Bonifico 30/60 gg'],['BOFM1','Bonifico fine mese + 10 gg'],['BOIMM','Bonifico vista fattura'],
+  ['RB3','Ri.Ba. 30 gg DF FM'],['RB36','Ri.Ba. 30/60 gg DF FM'],['RB6','Ri.Ba. 60 gg DF FM'],['RB9','Ri.Ba. 90 gg DF FM'],
+  ['RB39','Ri.Ba. 30/90 giorni FM'],['RB4','Ri.Ba. 30/60/90/120'],['RB5','Ri.Ba. 30/60/90/120/150 gg FM'],
+  ['RB610','Ri.Ba. 60 gg DF FM + 10'],['RB910','Ri.Ba. 90 gg DF FM + 10'],['RBF10','Ri.Ba. fine mese + 10 gg'],['RBFIN','Ri.Ba. fine mese'],
+  ['RID30','Rimessa diretta 30 gg'],['RID60','Rimessa diretta 60 gg'],['RID90','Rimessa diretta 90 gg FM'],['RIDFM','RID fine mese'],
+  ['RD','Rimessa diretta a vista'],['RD3','Rimessa diretta 30 gg'],['RD6','Rimessa diretta 60 gg'],['RD9','Rimessa diretta 90 gg'],
+  ['COMP','Pagamento a compensazione'],['CO+RB','Contanti + Ricevuta a 30 gg']
+];
+function dpMasterNorm(v){return String(v||'').trim();}
+function dpMasterKey(v){return dpMasterNorm(v).toUpperCase().replace(/[^A-Z0-9]/g,'');}
+function dpMasterSelect(name,value,rows,placeholder){
+  return `<select name="${esc(name)}"><option value="">${esc(placeholder||'Seleziona...')}</option>${rows.map(x=>`<option value="${esc(x[0])}" ${String(value||'')===String(x[0])?'selected':''}>${esc(x[0])} - ${esc(x[1])}</option>`).join('')}</select>`;
+}
+async function dpMasterEnsure(){
+  await run(`CREATE TABLE IF NOT EXISTS dp_clienti_master(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    codice TEXT,
+    ragione_sociale TEXT,
+    nome TEXT,cognome TEXT,tipo_cliente TEXT DEFAULT 'azienda',
+    piva TEXT,codice_fiscale TEXT,
+    indirizzo TEXT,citta TEXT,provincia TEXT,cap TEXT,
+    telefono TEXT,email TEXT,pec TEXT,sdi TEXT,
+    codice_iva TEXT,codice_pagamento TEXT,
+    banca_cliente TEXT,banca_codice TEXT,banca_conto TEXT,banca_abi TEXT,banca_cab TEXT,banca_paese TEXT,
+    banca_cin_eur TEXT,banca_cin_it TEXT,banca_valuta TEXT,banca_bic TEXT,banca_iban TEXT,banca_bban TEXT,banca_pec TEXT,banca_note TEXT,
+    note TEXT,rent_cliente_id INTEGER,trasporto_cliente_id INTEGER,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+  )`);
+  const tr=await all(`SELECT * FROM trasporti_clienti ORDER BY id`).catch(()=>[]);
+  for(const x of tr){
+    const piva=dpMasterNorm(x.piva), cf=dpMasterNorm(x.codice_fiscale), rag=dpMasterNorm(x.ragione_sociale);
+    let m=await get(`SELECT * FROM dp_clienti_master WHERE trasporto_cliente_id=?`,[x.id]).catch(()=>null);
+    if(!m && piva) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(piva,'')))=UPPER(TRIM(?))`,[piva]).catch(()=>null);
+    if(!m && cf) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(codice_fiscale,'')))=UPPER(TRIM(?))`,[cf]).catch(()=>null);
+    if(!m && rag) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(ragione_sociale,'')))=UPPER(TRIM(?)) AND REPLACE(COALESCE(telefono,''),' ','')=REPLACE(?,' ','')`,[rag,dpMasterNorm(x.telefono)]).catch(()=>null);
+    if(m){
+      await run(`UPDATE dp_clienti_master SET
+        trasporto_cliente_id=?,codice=COALESCE(NULLIF(codice,''),?),ragione_sociale=COALESCE(NULLIF(ragione_sociale,''),?),
+        piva=COALESCE(NULLIF(piva,''),?),codice_fiscale=COALESCE(NULLIF(codice_fiscale,''),?),
+        indirizzo=COALESCE(NULLIF(indirizzo,''),?),citta=COALESCE(NULLIF(citta,''),?),provincia=COALESCE(NULLIF(provincia,''),?),cap=COALESCE(NULLIF(cap,''),?),
+        telefono=COALESCE(NULLIF(telefono,''),?),email=COALESCE(NULLIF(email,''),?),pec=COALESCE(NULLIF(pec,''),?),sdi=COALESCE(NULLIF(sdi,''),?),
+        codice_iva=COALESCE(NULLIF(codice_iva,''),?),codice_pagamento=COALESCE(NULLIF(codice_pagamento,''),?),
+        banca_cliente=COALESCE(NULLIF(banca_cliente,''),?),banca_codice=COALESCE(NULLIF(banca_codice,''),?),banca_conto=COALESCE(NULLIF(banca_conto,''),?),
+        banca_abi=COALESCE(NULLIF(banca_abi,''),?),banca_cab=COALESCE(NULLIF(banca_cab,''),?),banca_paese=COALESCE(NULLIF(banca_paese,''),?),
+        banca_cin_eur=COALESCE(NULLIF(banca_cin_eur,''),?),banca_cin_it=COALESCE(NULLIF(banca_cin_it,''),?),banca_valuta=COALESCE(NULLIF(banca_valuta,''),?),
+        banca_bic=COALESCE(NULLIF(banca_bic,''),?),banca_iban=COALESCE(NULLIF(banca_iban,''),?),banca_bban=COALESCE(NULLIF(banca_bban,''),?),
+        banca_pec=COALESCE(NULLIF(banca_pec,''),?),banca_note=COALESCE(NULLIF(banca_note,''),?),note=COALESCE(NULLIF(note,''),?),updated_at=CURRENT_TIMESTAMP
+        WHERE id=?`,
+        [x.id,x.codice,rag,piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi,x.codice_iva,x.codice_pagamento,
+         x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,m.id]).catch(()=>{});
+    }else if(rag){
+      await run(`INSERT INTO dp_clienti_master(codice,ragione_sociale,tipo_cliente,piva,codice_fiscale,indirizzo,citta,provincia,cap,telefono,email,pec,sdi,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,trasporto_cliente_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [x.codice,rag,'azienda',piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi,x.codice_iva,x.codice_pagamento,
+         x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,x.id]).catch(()=>{});
+    }
+  }
+  const rr=await all(`SELECT * FROM clienti ORDER BY id`).catch(()=>[]);
+  for(const x of rr){
+    const piva=dpMasterNorm(x.piva||x.partita_iva), cf=dpMasterNorm(x.codice_fiscale||x.cf);
+    const rag=dpMasterNorm(x.ragione_sociale||x.azienda||`${x.nome||''} ${x.cognome||''}`);
+    let m=await get(`SELECT * FROM dp_clienti_master WHERE rent_cliente_id=?`,[x.id]).catch(()=>null);
+    if(!m && piva) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(piva,'')))=UPPER(TRIM(?))`,[piva]).catch(()=>null);
+    if(!m && cf) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(codice_fiscale,'')))=UPPER(TRIM(?))`,[cf]).catch(()=>null);
+    if(!m && rag) m=await get(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(ragione_sociale,'')))=UPPER(TRIM(?)) AND REPLACE(COALESCE(telefono,''),' ','')=REPLACE(?,' ','')`,[rag,dpMasterNorm(x.telefono)]).catch(()=>null);
+    if(m){
+      await run(`UPDATE dp_clienti_master SET rent_cliente_id=?,ragione_sociale=COALESCE(NULLIF(ragione_sociale,''),?),nome=COALESCE(NULLIF(nome,''),?),cognome=COALESCE(NULLIF(cognome,''),?),
+        tipo_cliente=COALESCE(NULLIF(tipo_cliente,''),?),piva=COALESCE(NULLIF(piva,''),?),codice_fiscale=COALESCE(NULLIF(codice_fiscale,''),?),
+        indirizzo=COALESCE(NULLIF(indirizzo,''),?),citta=COALESCE(NULLIF(citta,''),?),provincia=COALESCE(NULLIF(provincia,''),?),cap=COALESCE(NULLIF(cap,''),?),
+        telefono=COALESCE(NULLIF(telefono,''),?),email=COALESCE(NULLIF(email,''),?),pec=COALESCE(NULLIF(pec,''),?),sdi=COALESCE(NULLIF(sdi,''),?),
+        codice_iva=COALESCE(NULLIF(codice_iva,''),?),codice_pagamento=COALESCE(NULLIF(codice_pagamento,''),?),
+        banca_cliente=COALESCE(NULLIF(banca_cliente,''),?),banca_codice=COALESCE(NULLIF(banca_codice,''),?),banca_conto=COALESCE(NULLIF(banca_conto,''),?),
+        banca_abi=COALESCE(NULLIF(banca_abi,''),?),banca_cab=COALESCE(NULLIF(banca_cab,''),?),banca_paese=COALESCE(NULLIF(banca_paese,''),?),
+        banca_cin_eur=COALESCE(NULLIF(banca_cin_eur,''),?),banca_cin_it=COALESCE(NULLIF(banca_cin_it,''),?),banca_valuta=COALESCE(NULLIF(banca_valuta,''),?),
+        banca_bic=COALESCE(NULLIF(banca_bic,''),?),banca_iban=COALESCE(NULLIF(banca_iban,''),?),banca_bban=COALESCE(NULLIF(banca_bban,''),?),
+        banca_pec=COALESCE(NULLIF(banca_pec,''),?),banca_note=COALESCE(NULLIF(banca_note,''),?),note=COALESCE(NULLIF(note,''),?),updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+        [x.id,rag,x.nome,x.cognome,x.tipo_cliente,piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi||x.codice_sdi,
+         x.codice_iva,x.codice_pagamento,x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,m.id]).catch(()=>{});
+    }else if(rag){
+      await run(`INSERT INTO dp_clienti_master(ragione_sociale,nome,cognome,tipo_cliente,piva,codice_fiscale,indirizzo,citta,provincia,cap,telefono,email,pec,sdi,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,rent_cliente_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [rag,x.nome,x.cognome,x.tipo_cliente||'privato',piva,cf,x.indirizzo,x.citta,x.provincia,x.cap,x.telefono,x.email,x.pec,x.sdi||x.codice_sdi,
+         x.codice_iva,x.codice_pagamento,x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,x.id]).catch(()=>{});
+    }
+  }
+  const masters=await all(`SELECT * FROM dp_clienti_master ORDER BY id`).catch(()=>[]);
+  for(const m of masters) await dpMasterSyncOne(m.id);
+}
+async function dpMasterSyncOne(id){
+  const m=await get(`SELECT * FROM dp_clienti_master WHERE id=?`,[id]).catch(()=>null); if(!m)return;
+  let rentId=Number(m.rent_cliente_id)||0;
+  if(rentId){
+    await run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,cf=?,indirizzo=?,citta=?,cap=?,provincia=?,tipo_cliente=?,ragione_sociale=?,azienda=?,piva=?,partita_iva=?,pec=?,sdi=?,codice_sdi=?,indirizzo_fatturazione=?,citta_fatturazione=?,provincia_fatturazione=?,cap_fatturazione=?,codice_iva=?,codice_pagamento=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [m.nome,m.cognome,m.telefono,m.email,m.codice_fiscale,m.codice_fiscale,m.indirizzo,m.citta,m.cap,m.provincia,m.tipo_cliente,m.ragione_sociale,m.ragione_sociale,m.piva,m.piva,m.pec,m.sdi,m.sdi,m.indirizzo,m.citta,m.provincia,m.cap,m.codice_iva,m.codice_pagamento,m.banca_cliente,m.banca_codice,m.banca_conto,m.banca_abi,m.banca_cab,m.banca_paese,m.banca_cin_eur,m.banca_cin_it,m.banca_valuta,m.banca_bic,m.banca_iban,m.banca_bban,m.banca_pec,m.banca_note,m.note,rentId]).catch(()=>{});
+  }else{
+    const r=await run(`INSERT INTO clienti(nome,cognome,telefono,email,codice_fiscale,cf,indirizzo,citta,cap,provincia,tipo_cliente,ragione_sociale,azienda,piva,partita_iva,pec,sdi,codice_sdi,indirizzo_fatturazione,citta_fatturazione,provincia_fatturazione,cap_fatturazione,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`,
+      [m.nome,m.cognome,m.telefono,m.email,m.codice_fiscale,m.codice_fiscale,m.indirizzo,m.citta,m.cap,m.provincia,m.tipo_cliente,m.ragione_sociale,m.ragione_sociale,m.piva,m.piva,m.pec,m.sdi,m.sdi,m.indirizzo,m.citta,m.provincia,m.cap,m.codice_iva,m.codice_pagamento,m.banca_cliente,m.banca_codice,m.banca_conto,m.banca_abi,m.banca_cab,m.banca_paese,m.banca_cin_eur,m.banca_cin_it,m.banca_valuta,m.banca_bic,m.banca_iban,m.banca_bban,m.banca_pec,m.banca_note,m.note]).catch(()=>null);
+    if(r?.lastID){rentId=r.lastID;await run(`UPDATE dp_clienti_master SET rent_cliente_id=? WHERE id=?`,[rentId,id]);}
+  }
+  let trId=Number(m.trasporto_cliente_id)||0;
+  if(trId){
+    await run(`UPDATE trasporti_clienti SET codice=?,ragione_sociale=?,indirizzo=?,telefono=?,piva=?,codice_fiscale=?,citta=?,provincia=?,nazione=COALESCE(NULLIF(nazione,''),'IT'),cap=?,email=?,pec=?,sdi=?,codice_iva=?,codice_pagamento=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [m.codice,m.ragione_sociale,m.indirizzo,m.telefono,m.piva,m.codice_fiscale,m.citta,m.provincia,m.cap,m.email,m.pec,m.sdi,m.codice_iva,m.codice_pagamento,m.banca_cliente,m.banca_codice,m.banca_conto,m.banca_abi,m.banca_cab,m.banca_paese,m.banca_cin_eur,m.banca_cin_it,m.banca_valuta,m.banca_bic,m.banca_iban,m.banca_bban,m.banca_pec,m.banca_note,m.note,trId]).catch(()=>{});
+  }else{
+    const key=`MASTER_${id}`;
+    const r=await run(`INSERT INTO trasporti_clienti(codice,ragione_sociale,indirizzo,telefono,piva,codice_fiscale,citta,provincia,nazione,cap,email,pec,sdi,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,chiave)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [m.codice,m.ragione_sociale,m.indirizzo,m.telefono,m.piva,m.codice_fiscale,m.citta,m.provincia,'IT',m.cap,m.email,m.pec,m.sdi,m.codice_iva,m.codice_pagamento,m.banca_cliente,m.banca_codice,m.banca_conto,m.banca_abi,m.banca_cab,m.banca_paese,m.banca_cin_eur,m.banca_cin_it,m.banca_valuta,m.banca_bic,m.banca_iban,m.banca_bban,m.banca_pec,m.banca_note,m.note,key]).catch(()=>null);
+    if(r?.lastID){trId=r.lastID;await run(`UPDATE dp_clienti_master SET trasporto_cliente_id=? WHERE id=?`,[trId,id]);}
+  }
+}
+function dpMasterForm(c={},action='/clienti-azienda',title='Cliente'){
+  const v=k=>esc(c[k]||'');
+  return page(title,`<div class="box"><h2>👥 ${esc(title)}</h2><p class="notice"><b>Anagrafica unica aziendale:</b> questi dati vengono usati da DP RENT, DP TRASPORTI e DP SERVICE.</p>
+  <form method="POST" action="${esc(action)}">
+  <div class="grid">
+    <div><label>Codice cliente</label><input name="codice" value="${v('codice')}"></div>
+    <div><label>Tipo cliente</label><select name="tipo_cliente"><option value="azienda" ${String(c.tipo_cliente||'azienda')==='azienda'?'selected':''}>Azienda</option><option value="privato" ${c.tipo_cliente==='privato'?'selected':''}>Privato</option></select></div>
+    <div class="full"><label>Ragione sociale / Nome cliente</label><input name="ragione_sociale" value="${v('ragione_sociale')}" required></div>
+    <div><label>Nome</label><input name="nome" value="${v('nome')}"></div><div><label>Cognome</label><input name="cognome" value="${v('cognome')}"></div>
+    <div><label>P.IVA</label><input name="piva" value="${v('piva')}"></div><div><label>Codice fiscale</label><input name="codice_fiscale" value="${v('codice_fiscale')}"></div>
+    <div class="full"><label>Indirizzo</label><input name="indirizzo" value="${v('indirizzo')}"></div>
+    <div><label>Città</label><input name="citta" value="${v('citta')}"></div><div><label>Provincia</label><input name="provincia" value="${v('provincia')}"></div><div><label>CAP</label><input name="cap" value="${v('cap')}"></div>
+    <div><label>Telefono</label><input name="telefono" value="${v('telefono')}"></div><div><label>Email</label><input name="email" value="${v('email')}"></div>
+    <div><label>PEC</label><input name="pec" value="${v('pec')}"></div><div><label>SDI</label><input name="sdi" value="${v('sdi')}"></div>
+  </div>
+  <h3>🧾 IVA e pagamento</h3>
+  <div class="grid"><div><label>Codice IVA</label>${dpMasterSelect('codice_iva',c.codice_iva,DP_MASTER_IVA,'Scegli codice IVA')}</div>
+  <div><label>Condizione di pagamento</label>${dpMasterSelect('codice_pagamento',c.codice_pagamento,DP_MASTER_PAGAMENTI,'Scegli pagamento')}</div></div>
+  <h3>🏦 Dati bancari cliente</h3>
+  <div class="grid">
+    <div><label>Banca cliente</label><input name="banca_cliente" value="${v('banca_cliente')}"></div><div><label>Codice banca</label><input name="banca_codice" value="${v('banca_codice')}"></div>
+    <div><label>Numero conto corrente</label><input name="banca_conto" value="${v('banca_conto')}"></div><div><label>ABI</label><input name="banca_abi" value="${v('banca_abi')}"></div>
+    <div><label>CAB</label><input name="banca_cab" value="${v('banca_cab')}"></div><div><label>Paese</label><input name="banca_paese" value="${v('banca_paese')||'IT'}"></div>
+    <div><label>CIN EUR</label><input name="banca_cin_eur" value="${v('banca_cin_eur')}"></div><div><label>CIN Italia</label><input name="banca_cin_it" value="${v('banca_cin_it')}"></div>
+    <div><label>Valuta</label><input name="banca_valuta" value="${v('banca_valuta')||'EUR'}"></div><div><label>BIC / SWIFT</label><input name="banca_bic" value="${v('banca_bic')}"></div>
+    <div class="full"><label>IBAN</label><input name="banca_iban" value="${v('banca_iban')}"></div><div class="full"><label>BBAN</label><input name="banca_bban" value="${v('banca_bban')}"></div>
+    <div><label>PEC banca</label><input name="banca_pec" value="${v('banca_pec')}"></div><div><label>Note banca</label><input name="banca_note" value="${v('banca_note')}"></div>
+  </div>
+  <label>Note cliente</label><textarea name="note">${v('note')}</textarea>
+  <button>💾 Salva cliente unico</button> <a class="btn btn2" href="/clienti-azienda">Annulla</a></form></div>`);
+}
+function dpMasterBody(b){
+  const f=['codice','ragione_sociale','nome','cognome','tipo_cliente','piva','codice_fiscale','indirizzo','citta','provincia','cap','telefono','email','pec','sdi','codice_iva','codice_pagamento','banca_cliente','banca_codice','banca_conto','banca_abi','banca_cab','banca_paese','banca_cin_eur','banca_cin_it','banca_valuta','banca_bic','banca_iban','banca_bban','banca_pec','banca_note','note'];
+  const o={}; for(const k of f)o[k]=dpMasterNorm(b[k]); if(!o.tipo_cliente)o.tipo_cliente='azienda'; if(!o.banca_paese)o.banca_paese='IT'; if(!o.banca_valuta)o.banca_valuta='EUR'; return o;
+}
+app.get('/clienti-azienda',async(req,res)=>{
+  await dpMasterEnsure();
+  const q=dpMasterNorm(req.query.q); const like=`%${q}%`;
+  const rows=q?await all(`SELECT * FROM dp_clienti_master WHERE ragione_sociale LIKE ? OR piva LIKE ? OR codice_fiscale LIKE ? OR telefono LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 1000`,[like,like,like,like,like]):await all(`SELECT * FROM dp_clienti_master ORDER BY ragione_sociale LIMIT 1000`);
+  const trs=rows.map(x=>`<tr><td>${esc(x.codice||'')}</td><td><b>${esc(x.ragione_sociale||'')}</b></td><td>${esc(x.piva||'')}<br>${esc(x.codice_fiscale||'')}</td><td>${esc(x.citta||'')} ${esc(x.provincia||'')}</td><td>${esc(x.telefono||'')}</td><td>${esc(x.codice_iva||'-')}</td><td>${esc(x.codice_pagamento||'-')}</td><td>${x.banca_iban?esc(x.banca_iban):'-'}</td><td><a class="btn" href="/clienti-azienda/${x.id}">Apri</a><a class="btn btn2" href="/clienti-azienda/${x.id}/modifica">Modifica</a></td></tr>`).join('');
+  res.send(page('Clienti aziendali',`<div class="box"><h2>👥 CLIENTI - ANAGRAFICA UNICA</h2><p>Gli stessi clienti per <b>Noleggio, Trasporti e Officina</b>.</p><form><input name="q" value="${esc(q)}" placeholder="Cliente, P.IVA, C.F., telefono, città"><button>Cerca</button></form><a class="btn" href="/clienti-azienda/nuovo">＋ Nuovo cliente</a><a class="btn btn2" href="/">DP Gestionale</a></div><div class="box" style="overflow:auto"><table><tr><th>Codice</th><th>Cliente</th><th>P.IVA / CF</th><th>Località</th><th>Telefono</th><th>IVA</th><th>Pagamento</th><th>IBAN</th><th></th></tr>${trs||'<tr><td colspan="9">Nessun cliente</td></tr>'}</table></div>`));
+});
+app.get('/clienti-azienda/nuovo',async(req,res)=>{await dpMasterEnsure();res.send(dpMasterForm({},'/clienti-azienda','Nuovo cliente aziendale'));});
+app.post('/clienti-azienda',async(req,res)=>{
+  await dpMasterEnsure();const d=dpMasterBody(req.body);
+  const cols=Object.keys(d), vals=Object.values(d);
+  const r=await run(`INSERT INTO dp_clienti_master(${cols.join(',')},updated_at) VALUES(${cols.map(()=>'?').join(',')},CURRENT_TIMESTAMP)`,vals);
+  await dpMasterSyncOne(r.lastID);res.redirect('/clienti-azienda/'+r.lastID);
+});
+app.get('/clienti-azienda/:id',async(req,res)=>{
+  await dpMasterEnsure();const c=await get(`SELECT * FROM dp_clienti_master WHERE id=?`,[req.params.id]);if(!c)return res.redirect('/clienti-azienda');
+  res.send(page('Scheda cliente',`<div class="box"><h2>👥 ${esc(c.ragione_sociale||'')}</h2><p><b>P.IVA:</b> ${esc(c.piva||'')} &nbsp; <b>CF:</b> ${esc(c.codice_fiscale||'')}</p><p><b>Telefono:</b> ${esc(c.telefono||'')} &nbsp; <b>Email:</b> ${esc(c.email||'')}</p><p><b>PEC / SDI:</b> ${esc(c.pec||'')} / ${esc(c.sdi||'')}</p><hr><p><b>Codice IVA:</b> ${esc(c.codice_iva||'-')}</p><p><b>Pagamento:</b> ${esc(c.codice_pagamento||'-')}</p><p><b>Banca:</b> ${esc(c.banca_cliente||'-')}</p><p><b>IBAN:</b> ${esc(c.banca_iban||'-')}</p><p><a class="btn" href="/clienti-azienda/${c.id}/modifica">✏️ Modifica</a><a class="btn btn2" href="/clienti-azienda">Torna clienti</a></p></div>`));
+});
+app.get('/clienti-azienda/:id/modifica',async(req,res)=>{await dpMasterEnsure();const c=await get(`SELECT * FROM dp_clienti_master WHERE id=?`,[req.params.id]);if(!c)return res.redirect('/clienti-azienda');res.send(dpMasterForm(c,`/clienti-azienda/${c.id}/modifica`,'Modifica cliente aziendale'));});
+app.post('/clienti-azienda/:id/modifica',async(req,res)=>{
+  await dpMasterEnsure();const d=dpMasterBody(req.body);const cols=Object.keys(d),vals=Object.values(d);
+  await run(`UPDATE dp_clienti_master SET ${cols.map(k=>`${k}=?`).join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`,[...vals,req.params.id]);
+  await dpMasterSyncOne(req.params.id);res.redirect('/clienti-azienda/'+req.params.id);
+});
+setTimeout(()=>dpMasterEnsure().catch(e=>console.log('V307 clienti master:',e.message)),3500).unref?.();
+
+
 app.get('/', async (req, res) => {
   try {
     const rentFatt = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
@@ -4331,6 +4518,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/service/"><span class="ico">🔧</span>DP SERVICE<small>Officina, ordini di lavoro, ricambi, preventivi e fatture</small></a>
           <a class="dp-home-card" href="/trasporti"><span class="ico">🚛</span>DP TRASPORTI<small>Ordini, viaggi, borderò, autisti</small></a>
           <a class="dp-home-card" href="/fatturazione"><span class="ico">🧾</span>FATTURAZIONE<small>Noleggio + trasporti da fatturare</small></a>
+          <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>CLIENTI<small>Anagrafica unica • Noleggio • Trasporti • Officina</small></a>
         </section>
       </div>
     `));
@@ -4363,6 +4551,7 @@ app.get('/noleggio', async (req, res) => {
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
           <a class="dp-home-card" href="/statistiche?modulo=noleggio"><span class="ico">📊</span>Statistiche<small>Incassi per giorno / mese / anno</small></a>
+          <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>Clienti aziendali<small>Anagrafica condivisa con Trasporti e Officina</small></a>
           <a class="dp-home-card" href="/chiusura-aziendale"><span class="ico">🌴</span>Chiusura aziendale<small>ON/OFF manuale: blocca sito e WhatsApp</small></a>
           <a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
         </section>
@@ -5149,7 +5338,7 @@ app.post('/cliente-nuovo', (req,res)=>{
   db.run(`INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,tipo_cliente,ragione_sociale,piva,partita_iva,pec,sdi,codice_sdi,indirizzo_fatturazione,citta_fatturazione,provincia_fatturazione,cap_fatturazione,codice_iva,codice_iva_descrizione,codice_pagamento,pagamento_descrizione,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,updated_at)
           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`,
     [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.tipo_cliente,d.ragione_sociale,d.piva,d.partita_iva,d.pec,d.sdi,d.codice_sdi,d.indirizzo_fatturazione,d.citta_fatturazione,d.provincia_fatturazione,d.cap_fatturazione,d.codice_iva,d.codice_iva_descrizione,d.codice_pagamento,d.pagamento_descrizione,d.banca_cliente,d.banca_codice,d.banca_conto,d.banca_abi,d.banca_cab,d.banca_paese,d.banca_cin_eur,d.banca_cin_it,d.banca_valuta,d.banca_bic,d.banca_iban,d.banca_bban,d.banca_pec,d.banca_note,d.note],
-    function(err){ if(err) return res.status(500).send(page('Errore cliente', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); res.redirect('/cliente/'+this.lastID); });
+    async function(err){ if(err) return res.status(500).send(page('Errore cliente', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); const rid=this.lastID; try{await dpMasterEnsure();}catch(e){} res.redirect('/cliente/'+rid); });
 });
 app.get('/cliente/:id/modifica', (req,res)=>{
   db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err,c)=>{ if(!c) return res.redirect('/clienti'); res.send(clienteManualForm(c, `/cliente/${c.id}/modifica`, 'Modifica cliente')); });
@@ -5158,7 +5347,7 @@ app.post('/cliente/:id/modifica', (req,res)=>{
   const d = clienteManualData(req.body);
   db.run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,tipo_cliente=?,ragione_sociale=?,piva=?,partita_iva=?,pec=?,sdi=?,codice_sdi=?,indirizzo_fatturazione=?,citta_fatturazione=?,provincia_fatturazione=?,cap_fatturazione=?,codice_iva=?,codice_iva_descrizione=?,codice_pagamento=?,pagamento_descrizione=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
     [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.tipo_cliente,d.ragione_sociale,d.piva,d.partita_iva,d.pec,d.sdi,d.codice_sdi,d.indirizzo_fatturazione,d.citta_fatturazione,d.provincia_fatturazione,d.cap_fatturazione,d.codice_iva,d.codice_iva_descrizione,d.codice_pagamento,d.pagamento_descrizione,d.banca_cliente,d.banca_codice,d.banca_conto,d.banca_abi,d.banca_cab,d.banca_paese,d.banca_cin_eur,d.banca_cin_it,d.banca_valuta,d.banca_bic,d.banca_iban,d.banca_bban,d.banca_pec,d.banca_note,d.note,req.params.id],
-    err=>{ if(err) return res.status(500).send(page('Errore modifica', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); res.redirect('/cliente/'+req.params.id); });
+    async err=>{ if(err) return res.status(500).send(page('Errore modifica', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); try{await dpMasterEnsure();}catch(e){} res.redirect('/cliente/'+req.params.id); });
 });
 app.get('/cliente/:id/elimina', (req,res)=>{
   db.get(`SELECT * FROM clienti WHERE id=?`, [req.params.id], (err,c)=>{ if(!c) return res.redirect('/clienti'); res.send(page('Elimina cliente', `<div class="box"><h2 class="bad">Eliminare cliente ${esc(c.nome)} ${esc(c.cognome)}?</h2><p>I contratti già creati restano nello storico.</p><form method="POST" action="/cliente/${c.id}/elimina"><button class="btn bad" type="submit">Conferma eliminazione</button><a class="btn btn2" href="/cliente/${c.id}">Annulla</a></form></div>`)); });
@@ -11868,7 +12057,7 @@ app.get('/trasporti', async (req,res)=>{
     <section class="dp-home-grid">
       <a class="dp-home-card primary" href="/trasporti/ordine/nuovo"><span class="ico">＋</span>Nuovo ordine<small>Cliente, modello e siti con ricerca rapida</small></a>
       <a class="dp-home-card" href="/trasporti/importa"><span class="ico">📥</span>Importa ordini<small>Excel / ODS</small></a>
-      <a class="dp-home-card" href="/trasporti/clienti"><span class="ico">👥</span>Clienti<small>${stats[4].tot||0} anagrafiche</small></a>
+      <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>Clienti<small>${stats[4].tot||0} anagrafiche</small></a>
       <a class="dp-home-card" href="/statistiche?modulo=trasporti"><span class="ico">📊</span>Statistiche<small>Produzione per bisarca / periodo</small></a>
       <a class="dp-home-card" href="/trasporti/ordini"><span class="ico">📋</span>Ordini<small>Ricerca, filtri, export</small></a>
       <a class="dp-home-card" href="/trasporti/viaggi"><span class="ico">🚚</span>Viaggi / Borderò<small>Assegna bisarca e autista</small></a>
@@ -12015,7 +12204,7 @@ function dpTClientForm(c={}, action='/trasporti/cliente/nuovo'){
 app.get('/trasporti/cliente/nuovo',(req,res)=>res.send(page('Nuovo cliente',dpTClientForm())));
 app.post('/trasporti/cliente/nuovo',async(req,res)=>{try{await dpTUpsertClient(req.body||{});res.redirect('/trasporti/clienti');}catch(e){res.status(400).send(page('Errore',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}});
 app.get('/trasporti/cliente/:id/modifica',async(req,res)=>{const c=await get(`SELECT * FROM trasporti_clienti WHERE id=?`,[req.params.id]).catch(()=>null);if(!c)return res.status(404).send('Cliente non trovato');res.send(page('Modifica cliente',dpTClientForm(c,`/trasporti/cliente/${c.id}/modifica`)+`<div class="box"><a class="btn" href="/trasporti/cliente/${c.id}/portale">🔗 PORTALE CLIENTE</a></div>`));});
-app.post('/trasporti/cliente/:id/modifica',async(req,res)=>{const b=req.body||{};const key=dpTClientKey(b.ragione_sociale);await run(`UPDATE trasporti_clienti SET codice=?,ragione_sociale=?,indirizzo=?,telefono=?,piva=?,codice_fiscale=?,citta=?,provincia=?,nazione=?,cap=?,email=?,pec=?,sdi=?,codice_iva=?,codice_iva_descrizione=?,codice_pagamento=?,pagamento_descrizione=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,chiave=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[dpTClean(b.codice)||null,dpTClean(b.ragione_sociale),dpTClean(b.indirizzo),dpTClean(b.telefono),dpTClean(b.piva),dpTClean(b.codice_fiscale),dpTClean(b.citta),dpTClean(b.provincia),dpTClean(b.nazione),dpTClean(b.cap),dpTClean(b.email),dpTClean(b.pec),dpTClean(b.sdi),dpTClean(b.codice_iva),dpTClean(b.codice_iva_descrizione),dpTClean(b.codice_pagamento),dpTClean(b.pagamento_descrizione),dpTClean(b.banca_cliente),dpTClean(b.banca_codice),dpTClean(b.banca_conto),dpTClean(b.banca_abi),dpTClean(b.banca_cab),dpTClean(b.banca_paese),dpTClean(b.banca_cin_eur),dpTClean(b.banca_cin_it),dpTClean(b.banca_valuta),dpTClean(b.banca_bic),dpTClean(b.banca_iban),dpTClean(b.banca_bban),dpTClean(b.banca_pec),dpTClean(b.banca_note),dpTClean(b.note),key,req.params.id]);res.redirect('/trasporti/clienti');});
+app.post('/trasporti/cliente/:id/modifica',async(req,res)=>{const b=req.body||{};const key=dpTClientKey(b.ragione_sociale);await run(`UPDATE trasporti_clienti SET codice=?,ragione_sociale=?,indirizzo=?,telefono=?,piva=?,codice_fiscale=?,citta=?,provincia=?,nazione=?,cap=?,email=?,pec=?,sdi=?,codice_iva=?,codice_iva_descrizione=?,codice_pagamento=?,pagamento_descrizione=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,chiave=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[dpTClean(b.codice)||null,dpTClean(b.ragione_sociale),dpTClean(b.indirizzo),dpTClean(b.telefono),dpTClean(b.piva),dpTClean(b.codice_fiscale),dpTClean(b.citta),dpTClean(b.provincia),dpTClean(b.nazione),dpTClean(b.cap),dpTClean(b.email),dpTClean(b.pec),dpTClean(b.sdi),dpTClean(b.codice_iva),dpTClean(b.codice_iva_descrizione),dpTClean(b.codice_pagamento),dpTClean(b.pagamento_descrizione),dpTClean(b.banca_cliente),dpTClean(b.banca_codice),dpTClean(b.banca_conto),dpTClean(b.banca_abi),dpTClean(b.banca_cab),dpTClean(b.banca_paese),dpTClean(b.banca_cin_eur),dpTClean(b.banca_cin_it),dpTClean(b.banca_valuta),dpTClean(b.banca_bic),dpTClean(b.banca_iban),dpTClean(b.banca_bban),dpTClean(b.banca_pec),dpTClean(b.banca_note),dpTClean(b.note),key,req.params.id]);try{await dpMasterEnsure();}catch(e){}res.redirect('/clienti-azienda');});
 
 app.get('/trasporti/modello/nuovo',(req,res)=>res.send(page('Nuovo modello',`<div class="box"><h2>🚗 Nuovo modello auto</h2><form method="POST"><label>Modello</label><input name="nome" required autofocus><button>Salva modello</button></form><a class="btn btn2" href="/trasporti/ordine/nuovo">Annulla</a></div>`)));
 app.post('/trasporti/modello/nuovo',async(req,res)=>{await dpTUpsertModel(req.body.nome);res.redirect('/trasporti/ordine/nuovo');});
@@ -15327,3 +15516,5 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V305 - mappa stradale/satellite + statistiche + IVA/pagamenti/banca clienti
 
 // DP GESTIONALE V306 - fix OSM no API key + solo bisarche GPS + clienti fiscali/banca visibili
+
+// DP GESTIONALE V307 - CLIENTI MASTER UNICI RENT/TRASPORTI/SERVICE

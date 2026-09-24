@@ -16,6 +16,9 @@ const router = express.Router();
 let dataDir = process.env.DATA_DIR || '/var/data';
 try { fs.mkdirSync(dataDir,{recursive:true}); } catch(e) { dataDir=path.join(__dirname,'data'); fs.mkdirSync(dataDir,{recursive:true}); }
 const db = new sqlite3.Database(path.join(dataDir, 'dp_service.sqlite'));
+const mainDbPath = process.env.DB_PATH || path.join(dataDir,'database.sqlite');
+const mainDb = new sqlite3.Database(mainDbPath);
+
 
 router.use(express.urlencoded({ extended: true }));
 router.use(express.json());
@@ -46,6 +49,62 @@ router.use((req,res,next)=>{
 const run = (sql, params=[]) => new Promise((resolve,reject)=>db.run(sql, params, function(err){ if(err) reject(err); else resolve(this); }));
 const all = (sql, params=[]) => new Promise((resolve,reject)=>db.all(sql, params, (err,rows)=>err?reject(err):resolve(rows)));
 const get = (sql, params=[]) => new Promise((resolve,reject)=>db.get(sql, params, (err,row)=>err?reject(err):resolve(row)));
+const mainRun = (sql, params=[]) => new Promise((resolve,reject)=>mainDb.run(sql, params, function(err){ if(err) reject(err); else resolve(this); }));
+const mainAll = (sql, params=[]) => new Promise((resolve,reject)=>mainDb.all(sql, params, (err,rows)=>err?reject(err):resolve(rows)));
+const mainGet = (sql, params=[]) => new Promise((resolve,reject)=>mainDb.get(sql, params, (err,row)=>err?reject(err):resolve(row)));
+
+async function dpServiceSyncMaster(){
+  const exists=await mainGet(`SELECT name FROM sqlite_master WHERE type='table' AND name='dp_clienti_master'`).catch(()=>null);
+  if(!exists) return 0;
+  const rows=await mainAll(`SELECT * FROM dp_clienti_master ORDER BY id`).catch(()=>[]);
+  let n=0;
+  for(const m of rows){
+    let ex=await get(`SELECT * FROM clienti WHERE source_main_id=? LIMIT 1`,[m.id]).catch(()=>null);
+    if(!ex && String(m.piva||'').trim()) ex=await get(`SELECT * FROM clienti WHERE TRIM(COALESCE(piva,''))<>'' AND UPPER(TRIM(piva))=UPPER(TRIM(?)) LIMIT 1`,[m.piva]).catch(()=>null);
+    if(!ex && String(m.codice_fiscale||'').trim()) ex=await get(`SELECT * FROM clienti WHERE TRIM(COALESCE(cf,''))<>'' AND UPPER(TRIM(cf))=UPPER(TRIM(?)) LIMIT 1`,[m.codice_fiscale]).catch(()=>null);
+    if(!ex && String(m.ragione_sociale||'').trim() && String(m.telefono||'').trim()) ex=await get(`SELECT * FROM clienti WHERE UPPER(TRIM(COALESCE(ragione_sociale,'')))=UPPER(TRIM(?)) AND REPLACE(COALESCE(telefono,''),' ','')=REPLACE(?,' ','') LIMIT 1`,[m.ragione_sociale,m.telefono]).catch(()=>null);
+    const vals=[m.codice,m.ragione_sociale,m.piva,m.codice_fiscale,m.indirizzo,m.citta,m.provincia,m.telefono,m.email,m.pec,m.sdi,
+      m.codice_iva,m.codice_pagamento,m.banca_cliente,m.banca_codice,m.banca_conto,m.banca_abi,m.banca_cab,m.banca_paese,m.banca_cin_eur,m.banca_cin_it,m.banca_valuta,m.banca_bic,m.banca_iban,m.banca_bban,m.banca_pec,m.banca_note,m.note,m.id];
+    if(ex){
+      await run(`UPDATE clienti SET codice=?,ragione_sociale=?,piva=?,cf=?,indirizzo=?,citta=?,provincia=?,telefono=?,email=?,pec=?,sdi=?,codice_iva=?,codice_pagamento=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,source_main_id=? WHERE id=?`,[...vals,ex.id]).catch(()=>{});
+    }else{
+      await run(`INSERT INTO clienti(codice,ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,source_main_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,vals).catch(()=>{});
+    }
+    n++;
+  }
+  return n;
+}
+async function dpServiceSaveToMaster(localId,b){
+  const local=await get(`SELECT * FROM clienti WHERE id=?`,[localId]).catch(()=>null);
+  const data={
+    codice:String(b.codice||local?.codice||'').trim(),ragione_sociale:String(b.ragione_sociale||local?.ragione_sociale||'').trim(),
+    piva:String(b.piva||local?.piva||'').trim(),codice_fiscale:String(b.cf||b.codice_fiscale||local?.cf||'').trim(),
+    indirizzo:String(b.indirizzo||local?.indirizzo||'').trim(),citta:String(b.citta||local?.citta||'').trim(),provincia:String(b.provincia||local?.provincia||'').trim(),
+    telefono:String(b.telefono||local?.telefono||'').trim(),email:String(b.email||local?.email||'').trim(),pec:String(b.pec||local?.pec||'').trim(),sdi:String(b.sdi||local?.sdi||'').trim(),
+    codice_iva:String(b.codice_iva||local?.codice_iva||'').trim(),codice_pagamento:String(b.codice_pagamento||local?.codice_pagamento||'').trim(),
+    banca_cliente:String(b.banca_cliente||local?.banca_cliente||'').trim(),banca_codice:String(b.banca_codice||local?.banca_codice||'').trim(),banca_conto:String(b.banca_conto||local?.banca_conto||'').trim(),
+    banca_abi:String(b.banca_abi||local?.banca_abi||'').trim(),banca_cab:String(b.banca_cab||local?.banca_cab||'').trim(),banca_paese:String(b.banca_paese||local?.banca_paese||'IT').trim(),
+    banca_cin_eur:String(b.banca_cin_eur||local?.banca_cin_eur||'').trim(),banca_cin_it:String(b.banca_cin_it||local?.banca_cin_it||'').trim(),banca_valuta:String(b.banca_valuta||local?.banca_valuta||'EUR').trim(),
+    banca_bic:String(b.banca_bic||local?.banca_bic||'').trim(),banca_iban:String(b.banca_iban||local?.banca_iban||'').trim(),banca_bban:String(b.banca_bban||local?.banca_bban||'').trim(),
+    banca_pec:String(b.banca_pec||local?.banca_pec||'').trim(),banca_note:String(b.banca_note||local?.banca_note||'').trim(),note:String(b.note||local?.note||'').trim()
+  };
+  let masterId=Number(local?.source_main_id)||0;
+  if(masterId){
+    const cols=Object.keys(data); await mainRun(`UPDATE dp_clienti_master SET ${cols.map(k=>`${k}=?`).join(',')},updated_at=CURRENT_TIMESTAMP WHERE id=?`,[...Object.values(data),masterId]);
+  }else{
+    let m=null;
+    if(data.piva)m=await mainGet(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(piva,'')))=UPPER(TRIM(?))`,[data.piva]).catch(()=>null);
+    if(!m&&data.codice_fiscale)m=await mainGet(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(COALESCE(codice_fiscale,'')))=UPPER(TRIM(?))`,[data.codice_fiscale]).catch(()=>null);
+    if(m) masterId=m.id;
+    else{
+      const cols=Object.keys(data);const r=await mainRun(`INSERT INTO dp_clienti_master(${cols.join(',')},updated_at) VALUES(${cols.map(()=>'?').join(',')},CURRENT_TIMESTAMP)`,Object.values(data));masterId=r.lastID;
+    }
+    await run(`UPDATE clienti SET source_main_id=? WHERE id=?`,[masterId,localId]).catch(()=>{});
+  }
+  await dpServiceSyncMaster();
+  return masterId;
+}
+
 
 async function initDb(){
   await run(`CREATE TABLE IF NOT EXISTS clienti (
@@ -60,7 +119,10 @@ async function initDb(){
   const have = new Set(ccols.map(x => x.name));
   for (const [name, type] of [
     ['cf','TEXT'],['indirizzo','TEXT'],['citta','TEXT'],['provincia','TEXT'],
-    ['pec','TEXT'],['sdi','TEXT'],['note','TEXT'],['created_at','TEXT'],['codice','TEXT'],['source_main_id','INTEGER'],['source_key','TEXT']
+    ['pec','TEXT'],['sdi','TEXT'],['note','TEXT'],['created_at','TEXT'],['codice','TEXT'],['source_main_id','INTEGER'],['source_key','TEXT'],
+    ['codice_iva','TEXT'],['codice_pagamento','TEXT'],['banca_cliente','TEXT'],['banca_codice','TEXT'],['banca_conto','TEXT'],
+    ['banca_abi','TEXT'],['banca_cab','TEXT'],['banca_paese','TEXT'],['banca_cin_eur','TEXT'],['banca_cin_it','TEXT'],['banca_valuta','TEXT'],
+    ['banca_bic','TEXT'],['banca_iban','TEXT'],['banca_bban','TEXT'],['banca_pec','TEXT'],['banca_note','TEXT']
   ]) {
     if (!have.has(name)) await run(`ALTER TABLE clienti ADD COLUMN ${name} ${type}`);
   }
@@ -201,100 +263,14 @@ async function initDb(){
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   )`);
 
-  // Sincronizza automaticamente le anagrafiche dal database principale DP Gestionale.
-  // Non modifica DP RENT/Trasporti: copia solo nel database DP SERVICE.
+  // V307 - sincronizzazione con ANAGRAFICA MASTER unica del DP Gestionale.
   try{
-    const mainDbPath = process.env.DB_PATH || path.join(process.env.DATA_DIR || '/var/data','database.sqlite');
-    if(fs.existsSync(mainDbPath)){
-      await run(`ATTACH DATABASE ? AS dp_main`,[mainDbPath]);
-      await run(`INSERT INTO clienti
-        (ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,created_at,source_main_id)
-        SELECT
-          CASE
-            WHEN TRIM(COALESCE(m.azienda,''))<>'' THEN TRIM(m.azienda)
-            WHEN TRIM(COALESCE(m.nome,'') || ' ' || COALESCE(m.cognome,''))<>'' THEN TRIM(COALESCE(m.nome,'') || ' ' || COALESCE(m.cognome,''))
-            ELSE 'Cliente #' || m.id
-          END,
-          COALESCE(m.piva,''),COALESCE(m.cf,''),COALESCE(m.indirizzo,''),COALESCE(m.citta,''),COALESCE(m.provincia,''),
-          COALESCE(m.telefono,''),COALESCE(m.email,''),COALESCE(m.pec,''),COALESCE(m.sdi,''),COALESCE(m.created_at,CURRENT_TIMESTAMP),m.id
-        FROM dp_main.clienti m
-        WHERE NOT EXISTS (SELECT 1 FROM clienti s WHERE s.source_main_id=m.id)`);
-      // V12.1 - importa TUTTE le anagrafiche Trasporti.
-      try{
-        const tt = await all(`SELECT name FROM dp_main.sqlite_master WHERE type='table' AND name='trasporti_clienti'`);
-        if(tt.length){
-          const trows = await all(`SELECT
-              id,
-              COALESCE(codice,'') codice,
-              COALESCE(ragione_sociale,'') ragione_sociale,
-              COALESCE(piva,'') piva,
-              COALESCE(codice_fiscale,'') cf,
-              COALESCE(indirizzo,'') indirizzo,
-              COALESCE(citta,'') citta,
-              COALESCE(provincia,'') provincia,
-              COALESCE(telefono,'') telefono,
-              COALESCE(email,'') email,
-              COALESCE(pec,'') pec,
-              COALESCE(sdi,'') sdi,
-              COALESCE(note,'') note,
-              COALESCE(created_at,CURRENT_TIMESTAMP) created_at
-            FROM dp_main.trasporti_clienti
-            WHERE TRIM(COALESCE(ragione_sociale,''))<>''`);
-
-          for(const m of trows){
-            const key='T:'+m.id;
-            let ex = await get(`SELECT id FROM clienti WHERE source_key=? LIMIT 1`,[key]);
-
-            if(!ex && String(m.piva||'').trim()){
-              ex = await get(`SELECT id FROM clienti WHERE TRIM(COALESCE(piva,''))<>'' AND UPPER(TRIM(piva))=UPPER(TRIM(?)) LIMIT 1`,[m.piva]);
-            }
-            if(!ex && String(m.cf||'').trim()){
-              ex = await get(`SELECT id FROM clienti WHERE TRIM(COALESCE(cf,''))<>'' AND UPPER(TRIM(cf))=UPPER(TRIM(?)) LIMIT 1`,[m.cf]);
-            }
-            if(!ex && String(m.ragione_sociale||'').trim() && String(m.telefono||'').trim()){
-              ex = await get(`SELECT id FROM clienti
-                WHERE UPPER(TRIM(COALESCE(ragione_sociale,'')))=UPPER(TRIM(?))
-                  AND REPLACE(REPLACE(REPLACE(COALESCE(telefono,''),' ',''),'-',''),'.','')
-                    =REPLACE(REPLACE(REPLACE(?,' ',''),'-',''),'.','')
-                LIMIT 1`,[m.ragione_sociale,m.telefono]);
-            }
-
-            if(ex){
-              await run(`UPDATE clienti SET
-                source_key=COALESCE(NULLIF(source_key,''),?),
-                codice=COALESCE(NULLIF(codice,''),?),
-                ragione_sociale=COALESCE(NULLIF(ragione_sociale,''),?),
-                piva=COALESCE(NULLIF(piva,''),?),
-                cf=COALESCE(NULLIF(cf,''),?),
-                indirizzo=COALESCE(NULLIF(indirizzo,''),?),
-                citta=COALESCE(NULLIF(citta,''),?),
-                provincia=COALESCE(NULLIF(provincia,''),?),
-                telefono=COALESCE(NULLIF(telefono,''),?),
-                email=COALESCE(NULLIF(email,''),?),
-                pec=COALESCE(NULLIF(pec,''),?),
-                sdi=COALESCE(NULLIF(sdi,''),?),
-                note=COALESCE(NULLIF(note,''),?)
-                WHERE id=?`,
-                [key,m.codice,m.ragione_sociale,m.piva,m.cf,m.indirizzo,m.citta,m.provincia,m.telefono,m.email,m.pec,m.sdi,m.note,ex.id]);
-            }else{
-              await run(`INSERT INTO clienti
-                (codice,ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,note,created_at,source_key)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-                [m.codice,m.ragione_sociale,m.piva,m.cf,m.indirizzo,m.citta,m.provincia,m.telefono,m.email,m.pec,m.sdi,m.note,m.created_at,key]);
-            }
-          }
-          console.log('DP SERVICE sync Trasporti completato:',trows.length,'anagrafiche sorgente');
-        }
-      }catch(e){
-        console.log('DP SERVICE sync trasporti_clienti non eseguito:',e.message);
-      }
-
-      await run(`DETACH DATABASE dp_main`);
-    }
+    const n=await dpServiceSyncMaster();
+    console.log('DP SERVICE sync clienti master:',n);
   }catch(e){
-    console.log('DP SERVICE sync clienti non eseguito:', e.message);
-    try{ await run(`DETACH DATABASE dp_main`); }catch(_){}
+    console.log('DP SERVICE sync clienti master non eseguito:',e.message);
   }
+
 }
 
 
@@ -709,6 +685,7 @@ router.get('/', async (req,res)=>{
 });
 
 router.get('/clienti', async (req,res)=>{
+  await dpServiceSyncMaster().catch(()=>{});
   const q=(req.query.q||'').trim();
   const rows=q
     ? await all(`SELECT * FROM clienti WHERE ragione_sociale LIKE ? OR piva LIKE ? OR cf LIKE ? OR telefono LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 500`,
@@ -718,15 +695,16 @@ router.get('/clienti', async (req,res)=>{
     <div class="actions"><a class="btn dark" href="/__DP_MAIN__">🏠 Menu DP Gestionale</a><a class="btn" href="/clienti/nuovo">+ Nuovo cliente</a></div>
     <div class="box"><h1>👥 Clienti (${rows.length})</h1>
       <form class="filters"><input name="q" placeholder="Cliente, P.IVA, C.F., telefono, città" value="${esc(q)}"><span></span><span></span><button class="btn">Cerca</button></form>
-      <table><tr><th>Cliente</th><th>P.IVA / C.F.</th><th>Località</th><th>Telefono</th><th></th></tr>
-      ${rows.map(x=>`<tr><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.piva)}<br>${esc(x.cf)}</td><td>${esc(x.indirizzo)}<br>${esc(x.citta)} ${esc(x.provincia)}</td><td>${esc(x.telefono)}</td><td><a class="btn dark" href="/clienti/${x.id}">Apri</a></td></tr>`).join('')}
+      <p class="muted"><b>Anagrafica condivisa:</b> gli stessi clienti di DP RENT e DP TRASPORTI.</p>
+      <table><tr><th>Cliente</th><th>P.IVA / C.F.</th><th>Località</th><th>Telefono</th><th>IVA</th><th>Pagamento</th><th>IBAN</th><th></th></tr>
+      ${rows.map(x=>`<tr><td><b>${esc(x.ragione_sociale)}</b></td><td>${esc(x.piva)}<br>${esc(x.cf)}</td><td>${esc(x.indirizzo)}<br>${esc(x.citta)} ${esc(x.provincia)}</td><td>${esc(x.telefono)}</td><td>${esc(x.codice_iva||'-')}</td><td>${esc(x.codice_pagamento||'-')}</td><td>${esc(x.banca_iban||'-')}</td><td><a class="btn dark" href="/clienti/${x.id}">Apri</a></td></tr>`).join('')}
       </table>
     </div>`));
 });
 
-router.get('/clienti/nuovo',(req,res)=>res.send(page('Nuovo cliente',`
+router.get('/clienti/nuovo',(req,res)=>{const CLIENTE={};res.send(page('Nuovo cliente',`
   <div class="actions"><a class="btn dark" href="/clienti">Indietro</a></div>
-  <div class="box"><h1>+ Nuovo cliente</h1>
+  <div class="box"><h1>+ Nuovo cliente</h1><p class="muted">Verrà salvato nell'anagrafica unica DP Gestionale.</p>
   <form method="post" action="/clienti">
     <label>Ragione sociale / Nome</label><input name="ragione_sociale" required>
     <label>P.IVA</label><input name="piva">
@@ -738,14 +716,36 @@ router.get('/clienti/nuovo',(req,res)=>res.send(page('Nuovo cliente',`
     <label>Email</label><input name="email">
     <label>PEC</label><input name="pec">
     <label>SDI</label><input name="sdi">
+
+    <h3>🧾 IVA e pagamento</h3>
+    <label>Codice IVA</label><select name="codice_iva">
+      <option value="">Scegli...</option>
+      ${[['22','IVA 22%'],['22SP','IVA 22% SPLIT PAYMENT'],['22RC','IVA 22% REVERSE CHARGE'],['22EX','IVA 22% EXTRA UE'],['10','IVA 10%'],['4','IVA 4%'],['5','IVA 5%'],['NI41','Non imponibile Art. 41 Cessioni UE'],['NI8','Non imponibile Art. 8 c.1 lett. c'],['NI8b','Non imponibile Art. 8 bis'],['FC7','Art. 7 TER operazione non soggetta']].map(x=>`<option value="${x[0]}" ${String(CLIENTE.codice_iva||'')===x[0]?'selected':''}>${x[0]} - ${x[1]}</option>`).join('')}
+    </select>
+    <label>Condizione di pagamento</label><select name="codice_pagamento">
+      <option value="">Scegli...</option>
+      ${[['BO30','Bonifico 30 gg'],['BO6','Bonifico 60 gg'],['BO9','Bonifico 90 gg'],['BOIMM','Bonifico vista fattura'],['RB3','Ri.Ba. 30 gg DF FM'],['RB36','Ri.Ba. 30/60 gg DF FM'],['RB6','Ri.Ba. 60 gg DF FM'],['RB9','Ri.Ba. 90 gg DF FM'],['RBF10','Ri.Ba. fine mese +10'],['RBFIN','Ri.Ba. fine mese'],['RID30','Rimessa diretta 30 gg'],['RID60','Rimessa diretta 60 gg'],['RID90','Rimessa diretta 90 gg FM'],['RD','Rimessa diretta a vista']].map(x=>`<option value="${x[0]}" ${String(CLIENTE.codice_pagamento||'')===x[0]?'selected':''}>${x[0]} - ${x[1]}</option>`).join('')}
+    </select>
+    <h3>🏦 Dati bancari cliente</h3>
+    <label>Banca cliente</label><input name="banca_cliente" value="${esc(CLIENTE.banca_cliente||'')}">
+    <label>Codice banca</label><input name="banca_codice" value="${esc(CLIENTE.banca_codice||'')}">
+    <label>Numero conto corrente</label><input name="banca_conto" value="${esc(CLIENTE.banca_conto||'')}">
+    <label>ABI</label><input name="banca_abi" value="${esc(CLIENTE.banca_abi||'')}"><label>CAB</label><input name="banca_cab" value="${esc(CLIENTE.banca_cab||'')}">
+    <label>Paese</label><input name="banca_paese" value="${esc(CLIENTE.banca_paese||'IT')}">
+    <label>CIN EUR</label><input name="banca_cin_eur" value="${esc(CLIENTE.banca_cin_eur||'')}"><label>CIN Italia</label><input name="banca_cin_it" value="${esc(CLIENTE.banca_cin_it||'')}">
+    <label>Valuta</label><input name="banca_valuta" value="${esc(CLIENTE.banca_valuta||'EUR')}"><label>BIC / SWIFT</label><input name="banca_bic" value="${esc(CLIENTE.banca_bic||'')}">
+    <label>IBAN</label><input name="banca_iban" value="${esc(CLIENTE.banca_iban||'')}"><label>BBAN</label><input name="banca_bban" value="${esc(CLIENTE.banca_bban||'')}">
+    <label>PEC banca</label><input name="banca_pec" value="${esc(CLIENTE.banca_pec||'')}"><label>Note banca</label><input name="banca_note" value="${esc(CLIENTE.banca_note||'')}">
+
     <label>Note</label><textarea name="note"></textarea>
     <p><button class="btn">Salva cliente</button></p>
-  </form></div>`)));
+  </form></div>`));});
 
 router.post('/clienti', async (req,res)=>{
   const b=req.body;
-  const r=await run(`INSERT INTO clienti(ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
-    [b.ragione_sociale,b.piva,b.cf,b.indirizzo,b.citta,b.provincia,b.telefono,b.email,b.pec,b.sdi,b.note]);
+  const r=await run(`INSERT INTO clienti(ragione_sociale,piva,cf,indirizzo,citta,provincia,telefono,email,pec,sdi,codice_iva,codice_pagamento,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [b.ragione_sociale,b.piva,b.cf,b.indirizzo,b.citta,b.provincia,b.telefono,b.email,b.pec,b.sdi,b.codice_iva,b.codice_pagamento,b.banca_cliente,b.banca_codice,b.banca_conto,b.banca_abi,b.banca_cab,b.banca_paese,b.banca_cin_eur,b.banca_cin_it,b.banca_valuta,b.banca_bic,b.banca_iban,b.banca_bban,b.banca_pec,b.banca_note,b.note]);
+  await dpServiceSaveToMaster(r.lastID,b);
   res.redirect('/clienti/'+r.lastID);
 });
 
@@ -760,6 +760,8 @@ router.get('/clienti/:id', async (req,res)=>{
       <p><b>Indirizzo:</b> ${esc(c.indirizzo)} ${esc(c.citta)} ${esc(c.provincia)}</p>
       <p><b>Telefono:</b> ${esc(c.telefono)} &nbsp; <b>Email:</b> ${esc(c.email)}</p>
       <p><b>PEC:</b> ${esc(c.pec)} &nbsp; <b>SDI:</b> ${esc(c.sdi)}</p>
+      <p><b>Codice IVA:</b> ${esc(c.codice_iva||'-')} &nbsp; <b>Pagamento:</b> ${esc(c.codice_pagamento||'-')}</p>
+      <p><b>Banca:</b> ${esc(c.banca_cliente||'-')} &nbsp; <b>IBAN:</b> ${esc(c.banca_iban||'-')}</p>
       <p><b>Note:</b> ${esc(c.note)}</p>
     </div>
     <div class="box"><h2>🚗 Veicoli del cliente (${vs.length})</h2>
@@ -770,7 +772,9 @@ router.get('/clienti/:id', async (req,res)=>{
 });
 
 router.get('/clienti/:id/modifica', async (req,res)=>{
+  await dpServiceSyncMaster().catch(()=>{});
   const c=await get('SELECT * FROM clienti WHERE id=?',[req.params.id]); if(!c) return res.status(404).send('Cliente non trovato');
+  const CLIENTE=c;
   res.send(page('Modifica cliente',`
   <div class="actions"><a class="btn dark" href="/clienti/${c.id}">Indietro</a></div>
   <div class="box"><h1>Modifica cliente</h1><form method="post" action="/clienti/${c.id}/modifica">
@@ -778,13 +782,35 @@ router.get('/clienti/:id/modifica', async (req,res)=>{
   <label>P.IVA</label><input name="piva" value="${esc(c.piva)}"><label>Codice fiscale</label><input name="cf" value="${esc(c.cf)}">
   <label>Indirizzo</label><input name="indirizzo" value="${esc(c.indirizzo)}"><label>Città</label><input name="citta" value="${esc(c.citta)}"><label>Provincia</label><input name="provincia" value="${esc(c.provincia)}">
   <label>Telefono</label><input name="telefono" value="${esc(c.telefono)}"><label>Email</label><input name="email" value="${esc(c.email)}"><label>PEC</label><input name="pec" value="${esc(c.pec)}"><label>SDI</label><input name="sdi" value="${esc(c.sdi)}">
+
+    <h3>🧾 IVA e pagamento</h3>
+    <label>Codice IVA</label><select name="codice_iva">
+      <option value="">Scegli...</option>
+      ${[['22','IVA 22%'],['22SP','IVA 22% SPLIT PAYMENT'],['22RC','IVA 22% REVERSE CHARGE'],['22EX','IVA 22% EXTRA UE'],['10','IVA 10%'],['4','IVA 4%'],['5','IVA 5%'],['NI41','Non imponibile Art. 41 Cessioni UE'],['NI8','Non imponibile Art. 8 c.1 lett. c'],['NI8b','Non imponibile Art. 8 bis'],['FC7','Art. 7 TER operazione non soggetta']].map(x=>`<option value="${x[0]}" ${String(CLIENTE.codice_iva||'')===x[0]?'selected':''}>${x[0]} - ${x[1]}</option>`).join('')}
+    </select>
+    <label>Condizione di pagamento</label><select name="codice_pagamento">
+      <option value="">Scegli...</option>
+      ${[['BO30','Bonifico 30 gg'],['BO6','Bonifico 60 gg'],['BO9','Bonifico 90 gg'],['BOIMM','Bonifico vista fattura'],['RB3','Ri.Ba. 30 gg DF FM'],['RB36','Ri.Ba. 30/60 gg DF FM'],['RB6','Ri.Ba. 60 gg DF FM'],['RB9','Ri.Ba. 90 gg DF FM'],['RBF10','Ri.Ba. fine mese +10'],['RBFIN','Ri.Ba. fine mese'],['RID30','Rimessa diretta 30 gg'],['RID60','Rimessa diretta 60 gg'],['RID90','Rimessa diretta 90 gg FM'],['RD','Rimessa diretta a vista']].map(x=>`<option value="${x[0]}" ${String(CLIENTE.codice_pagamento||'')===x[0]?'selected':''}>${x[0]} - ${x[1]}</option>`).join('')}
+    </select>
+    <h3>🏦 Dati bancari cliente</h3>
+    <label>Banca cliente</label><input name="banca_cliente" value="${esc(CLIENTE.banca_cliente||'')}">
+    <label>Codice banca</label><input name="banca_codice" value="${esc(CLIENTE.banca_codice||'')}">
+    <label>Numero conto corrente</label><input name="banca_conto" value="${esc(CLIENTE.banca_conto||'')}">
+    <label>ABI</label><input name="banca_abi" value="${esc(CLIENTE.banca_abi||'')}"><label>CAB</label><input name="banca_cab" value="${esc(CLIENTE.banca_cab||'')}">
+    <label>Paese</label><input name="banca_paese" value="${esc(CLIENTE.banca_paese||'IT')}">
+    <label>CIN EUR</label><input name="banca_cin_eur" value="${esc(CLIENTE.banca_cin_eur||'')}"><label>CIN Italia</label><input name="banca_cin_it" value="${esc(CLIENTE.banca_cin_it||'')}">
+    <label>Valuta</label><input name="banca_valuta" value="${esc(CLIENTE.banca_valuta||'EUR')}"><label>BIC / SWIFT</label><input name="banca_bic" value="${esc(CLIENTE.banca_bic||'')}">
+    <label>IBAN</label><input name="banca_iban" value="${esc(CLIENTE.banca_iban||'')}"><label>BBAN</label><input name="banca_bban" value="${esc(CLIENTE.banca_bban||'')}">
+    <label>PEC banca</label><input name="banca_pec" value="${esc(CLIENTE.banca_pec||'')}"><label>Note banca</label><input name="banca_note" value="${esc(CLIENTE.banca_note||'')}">
+
   <label>Note</label><textarea name="note">${esc(c.note)}</textarea><p><button class="btn">Salva modifiche</button></p></form></div>`));
 });
 
 router.post('/clienti/:id/modifica', async (req,res)=>{
   const b=req.body;
-  await run(`UPDATE clienti SET ragione_sociale=?,piva=?,cf=?,indirizzo=?,citta=?,provincia=?,telefono=?,email=?,pec=?,sdi=?,note=? WHERE id=?`,
-    [b.ragione_sociale,b.piva,b.cf,b.indirizzo,b.citta,b.provincia,b.telefono,b.email,b.pec,b.sdi,b.note,req.params.id]);
+  await run(`UPDATE clienti SET ragione_sociale=?,piva=?,cf=?,indirizzo=?,citta=?,provincia=?,telefono=?,email=?,pec=?,sdi=?,codice_iva=?,codice_pagamento=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=? WHERE id=?`,
+    [b.ragione_sociale,b.piva,b.cf,b.indirizzo,b.citta,b.provincia,b.telefono,b.email,b.pec,b.sdi,b.codice_iva,b.codice_pagamento,b.banca_cliente,b.banca_codice,b.banca_conto,b.banca_abi,b.banca_cab,b.banca_paese,b.banca_cin_eur,b.banca_cin_it,b.banca_valuta,b.banca_bic,b.banca_iban,b.banca_bban,b.banca_pec,b.banca_note,b.note,req.params.id]);
+  await dpServiceSaveToMaster(Number(req.params.id),b);
   res.redirect('/clienti/'+req.params.id);
 });
 
@@ -803,6 +829,7 @@ router.get('/veicoli', async (req,res)=>{
 });
 
 router.get('/veicoli/nuovo', async (req,res)=>{
+  await dpServiceSyncMaster().catch(()=>{});
   const cs=await all('SELECT id,ragione_sociale FROM clienti ORDER BY ragione_sociale LIMIT 5000');
   const selected=Number(req.query.cliente_id)||0;
   res.send(page('Nuovo veicolo',`
@@ -907,6 +934,7 @@ router.get('/ordini', async (req,res)=>{
 });
 
 router.get('/ordini/nuovo', async (req,res)=>{
+  await dpServiceSyncMaster().catch(()=>{});
   const clienti=await all(`SELECT id,ragione_sociale,piva,telefono FROM clienti ORDER BY ragione_sociale LIMIT 6000`);
   const selectedCliente=Number(req.query.cliente_id)||0;
   res.send(page('Nuovo ordine di lavoro',`
@@ -1490,5 +1518,8 @@ router.get('/ricerca', async (req,res)=>{
 });
 
 const dpServiceReady = initDb().then(()=>dpServiceSeedListino());
+setTimeout(()=>dpServiceSyncMaster().catch(e=>console.log('DP SERVICE master sync startup:',e.message)),5000).unref?.();
 router.use(async (req,res,next)=>{ try{ await dpServiceReady; next(); }catch(e){ next(e); } });
 module.exports = router;
+
+// DP SERVICE V307 - CLIENTI MASTER CONDIVISI CON RENT/TRASPORTI
