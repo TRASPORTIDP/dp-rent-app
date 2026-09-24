@@ -4215,6 +4215,17 @@ try {
   addColumn('clienti','piva','TEXT'); addColumn('clienti','partita_iva','TEXT'); addColumn('clienti','pec','TEXT'); addColumn('clienti','sdi','TEXT'); addColumn('clienti','codice_sdi','TEXT');
   addColumn('clienti','indirizzo_fatturazione','TEXT'); addColumn('clienti','citta_fatturazione','TEXT'); addColumn('clienti','provincia_fatturazione','TEXT'); addColumn('clienti','cap_fatturazione','TEXT');
   addColumn('clienti','documento_file','TEXT'); addColumn('clienti','patente_file','TEXT');
+  // V305 - dati fiscali/pagamento/banca cliente
+  [
+    ['codice_iva','TEXT'],['codice_iva_descrizione','TEXT'],
+    ['codice_pagamento','TEXT'],['pagamento_descrizione','TEXT'],
+    ['banca_cliente','TEXT'],['banca_codice','TEXT'],['banca_conto','TEXT'],
+    ['banca_abi','TEXT'],['banca_cab','TEXT'],['banca_paese','TEXT'],
+    ['banca_cin_eur','TEXT'],['banca_cin_it','TEXT'],['banca_valuta','TEXT'],
+    ['banca_bic','TEXT'],['banca_iban','TEXT'],['banca_bban','TEXT'],
+    ['banca_pec','TEXT'],['banca_note','TEXT']
+  ].forEach(([c,t])=>addColumn('clienti',c,t));
+
   
 // V265 - fatture da emettere dopo pagamento Nexi/Bonifico
 ['fattura_stato','fattura_metodo','fattura_pagamento_data','fattura_alert_48h_inviato','fattura_alert_48h_data','fattura_numero','fattura_note'].forEach((c)=>{
@@ -4351,6 +4362,7 @@ app.get('/noleggio', async (req, res) => {
           <a class="dp-home-card" href="/prenotazioni"><span class="ico">📄</span>Contratti<small>Storico e gestione PDF</small></a>
           <a class="dp-home-card" href="/video-mezzi"><span class="ico">🎥</span>Video mezzi<small>Cartelle Drive per targa</small></a>
           <a class="dp-home-card" href="/avanzate"><span class="ico">⚙️</span>Avanzate<small>Documenti, import, CARGOS</small></a>
+          <a class="dp-home-card" href="/statistiche?modulo=noleggio"><span class="ico">📊</span>Statistiche<small>Incassi per giorno / mese / anno</small></a>
           <a class="dp-home-card" href="/chiusura-aziendale"><span class="ico">🌴</span>Chiusura aziendale<small>ON/OFF manuale: blocca sito e WhatsApp</small></a>
           <a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
         </section>
@@ -5015,6 +5027,9 @@ app.get('/cliente/:id', (req, res) => {
       <p><b>CF:</b> ${esc(c.codice_fiscale||'')}</p>
       <p><b>Fatturazione:</b> ${esc(c.tipo_cliente||'Privato')} ${esc(c.ragione_sociale||'')} ${esc(c.piva||c.partita_iva||'')}</p>
       <p><b>PEC/SDI:</b> ${esc(c.pec||'')} ${esc(c.sdi||c.codice_sdi||'')}</p>
+      <p><b>IVA cliente:</b> ${esc(c.codice_iva||'')} ${esc(c.codice_iva_descrizione||'')}</p>
+      <p><b>Pagamento:</b> ${esc(c.codice_pagamento||'')} ${esc(c.pagamento_descrizione||'')}</p>
+      <p><b>Banca / IBAN:</b> ${esc(c.banca_cliente||'')} ${esc(c.banca_iban||'')}</p>
       <p><b>Indirizzo:</b> ${esc(c.indirizzo||'')}, ${esc(c.citta||'')} ${esc(c.cap||'')}</p>
       <p><b>Documento:</b> ${esc(c.documento_numero||'')} - scad. ${esc(c.documento_scadenza||'')}</p>
       <p><b>Patente:</b> ${esc(c.patente_numero||'')} - scad. ${esc(c.patente_scadenza||'')} - cat. ${esc(c.categoria_patente||'')}</p>
@@ -5068,6 +5083,45 @@ function clienteManualForm(c, action, title) {
           <div><label>Provincia fatturazione</label><input name="provincia_fatturazione" value="${val('provincia_fatturazione')}"></div>
           <div><label>CAP fatturazione</label><input name="cap_fatturazione" value="${val('cap_fatturazione')}"></div>
         </div>
+        <h3>IVA e pagamento</h3>
+        <div class="grid">
+          <div><label>Codice IVA</label><input name="codice_iva" list="dp-codici-iva" value="${val('codice_iva')}" placeholder="Es. 22"></div>
+          <div><label>Descrizione IVA</label><input name="codice_iva_descrizione" value="${val('codice_iva_descrizione')}" placeholder="Es. IVA 22%"></div>
+          <div><label>Codice pagamento</label><input name="codice_pagamento" list="dp-codici-pagamento" value="${val('codice_pagamento')}" placeholder="Es. BO30 / RB3"></div>
+          <div><label>Descrizione pagamento</label><input name="pagamento_descrizione" value="${val('pagamento_descrizione')}" placeholder="Es. Bonifico 30 gg"></div>
+        </div>
+        <datalist id="dp-codici-iva">
+          <option value="22">IVA 22%</option><option value="22SP">IVA 22% SPLIT PAYMENT</option><option value="22RC">IVA 22% REVERSE CHARGE</option>
+          <option value="22EX">IVA 22% EXTRA UE</option><option value="22gma">22% IVA giroconto margine beni usati</option>
+          <option value="NI41">Non imponibile Art. 41 Cessioni UE</option><option value="NI8">Non imponibile Art. 8 c.1 lett. c</option>
+          <option value="NI8b">Non imponibile Art. 8 bis</option><option value="FC7">Art. 7 TER operazione non soggetta</option>
+          <option value="10">IVA 10%</option><option value="4">IVA 4%</option><option value="5">IVA 5%</option>
+        </datalist>
+        <datalist id="dp-codici-pagamento">
+          <option value="BO30">Bonifico 30 gg</option><option value="BO3">Bonifico a 30 gg DF FM</option><option value="BO6">Bonifico a 60 gg FM</option>
+          <option value="BO9">Bonifico a 90 gg DF FM</option><option value="BO36">Bonifico 30/60 gg</option><option value="BOFM1">Bonifico fine mese + 10 gg</option>
+          <option value="BOIMM">Bonifico vista fattura</option><option value="RB3">Ri.Ba. 30 gg DF FM</option><option value="RB36">Ri.Ba. 30/60 gg DF FM</option>
+          <option value="RB6">Ri.Ba. 60 gg DF FM</option><option value="RB9">Ri.Ba. 90 gg DF FM</option><option value="RBF10">Ri.Ba fine mese + 10 gg</option>
+          <option value="RBFIN">Ri.Ba fine mese</option><option value="RID30">Rimessa diretta 30 gg</option><option value="RID60">Rimessa diretta 60 gg</option>
+          <option value="RID90">Rimessa diretta 90 gg FM</option><option value="RD">Rimessa diretta a vista</option>
+        </datalist>
+        <h3>Dati bancari cliente</h3>
+        <div class="grid">
+          <div><label>Banca cliente</label><input name="banca_cliente" value="${val('banca_cliente')}"></div>
+          <div><label>Codice banca</label><input name="banca_codice" value="${val('banca_codice')}"></div>
+          <div><label>Numero conto corrente</label><input name="banca_conto" value="${val('banca_conto')}"></div>
+          <div><label>ABI</label><input name="banca_abi" value="${val('banca_abi')}"></div>
+          <div><label>CAB</label><input name="banca_cab" value="${val('banca_cab')}"></div>
+          <div><label>Paese</label><input name="banca_paese" value="${val('banca_paese')||'IT'}"></div>
+          <div><label>CIN EUR</label><input name="banca_cin_eur" value="${val('banca_cin_eur')}"></div>
+          <div><label>CIN Italia</label><input name="banca_cin_it" value="${val('banca_cin_it')}"></div>
+          <div><label>Valuta</label><input name="banca_valuta" value="${val('banca_valuta')||'EUR'}"></div>
+          <div><label>BIC / SWIFT</label><input name="banca_bic" value="${val('banca_bic')}"></div>
+          <div class="full"><label>IBAN</label><input name="banca_iban" value="${val('banca_iban')}"></div>
+          <div class="full"><label>BBAN</label><input name="banca_bban" value="${val('banca_bban')}"></div>
+          <div><label>PEC banca</label><input name="banca_pec" value="${val('banca_pec')}"></div>
+          <div><label>Note banca</label><input name="banca_note" value="${val('banca_note')}"></div>
+        </div>
         <label>Note</label><textarea name="note">${val('note')}</textarea>
         <button>Salva cliente</button>
         <a class="btn btn2" href="/clienti">Annulla</a>
@@ -5079,15 +5133,22 @@ function clienteManualData(b){
     nome:b.nome||'', cognome:b.cognome||'', telefono:b.telefono||'', email:b.email||'', codice_fiscale:String(b.codice_fiscale||'').toUpperCase(),
     indirizzo:b.indirizzo||'', citta:b.citta||'', cap:b.cap||'', data_nascita:b.data_nascita||'', luogo_nascita:b.luogo_nascita||'',
     documento_numero:b.documento_numero||'', documento_scadenza:b.documento_scadenza||'', patente_numero:b.patente_numero||'',
-    patente_scadenza:b.patente_scadenza||'', categoria_patente:b.categoria_patente||'', tipo_cliente:b.tipo_cliente||'privato', ragione_sociale:b.ragione_sociale||'', piva:b.piva||b.partita_iva||'', partita_iva:b.piva||b.partita_iva||'', pec:b.pec||'', sdi:b.sdi||b.codice_sdi||'', codice_sdi:b.sdi||b.codice_sdi||'', indirizzo_fatturazione:b.indirizzo_fatturazione||b.indirizzo||'', citta_fatturazione:b.citta_fatturazione||b.citta||'', provincia_fatturazione:b.provincia_fatturazione||b.provincia||'', cap_fatturazione:b.cap_fatturazione||b.cap||'', note:b.note||''
+    patente_scadenza:b.patente_scadenza||'', categoria_patente:b.categoria_patente||'', tipo_cliente:b.tipo_cliente||'privato', ragione_sociale:b.ragione_sociale||'', piva:b.piva||b.partita_iva||'', partita_iva:b.piva||b.partita_iva||'', pec:b.pec||'', sdi:b.sdi||b.codice_sdi||'', codice_sdi:b.sdi||b.codice_sdi||'', indirizzo_fatturazione:b.indirizzo_fatturazione||b.indirizzo||'', citta_fatturazione:b.citta_fatturazione||b.citta||'', provincia_fatturazione:b.provincia_fatturazione||b.provincia||'', cap_fatturazione:b.cap_fatturazione||b.cap||'',
+    codice_iva:b.codice_iva||'', codice_iva_descrizione:b.codice_iva_descrizione||'',
+    codice_pagamento:b.codice_pagamento||'', pagamento_descrizione:b.pagamento_descrizione||'',
+    banca_cliente:b.banca_cliente||'', banca_codice:b.banca_codice||'', banca_conto:b.banca_conto||'',
+    banca_abi:b.banca_abi||'', banca_cab:b.banca_cab||'', banca_paese:b.banca_paese||'IT',
+    banca_cin_eur:b.banca_cin_eur||'', banca_cin_it:b.banca_cin_it||'', banca_valuta:b.banca_valuta||'EUR',
+    banca_bic:b.banca_bic||'', banca_iban:b.banca_iban||'', banca_bban:b.banca_bban||'',
+    banca_pec:b.banca_pec||'', banca_note:b.banca_note||'', note:b.note||''
   };
 }
 app.get('/cliente-nuovo', (req,res)=>res.send(clienteManualForm({}, '/cliente-nuovo', 'Nuovo cliente manuale')));
 app.post('/cliente-nuovo', (req,res)=>{
   const d = clienteManualData(req.body);
-  db.run(`INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,tipo_cliente,ragione_sociale,piva,partita_iva,pec,sdi,codice_sdi,indirizzo_fatturazione,citta_fatturazione,provincia_fatturazione,cap_fatturazione,note,updated_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`,
-    [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.tipo_cliente,d.ragione_sociale,d.piva,d.partita_iva,d.pec,d.sdi,d.codice_sdi,d.indirizzo_fatturazione,d.citta_fatturazione,d.provincia_fatturazione,d.cap_fatturazione,d.note],
+  db.run(`INSERT INTO clienti (nome,cognome,telefono,email,codice_fiscale,indirizzo,citta,cap,data_nascita,luogo_nascita,documento_numero,documento_scadenza,patente_numero,patente_scadenza,categoria_patente,tipo_cliente,ragione_sociale,piva,partita_iva,pec,sdi,codice_sdi,indirizzo_fatturazione,citta_fatturazione,provincia_fatturazione,cap_fatturazione,codice_iva,codice_iva_descrizione,codice_pagamento,pagamento_descrizione,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,updated_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)`,
+    [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.tipo_cliente,d.ragione_sociale,d.piva,d.partita_iva,d.pec,d.sdi,d.codice_sdi,d.indirizzo_fatturazione,d.citta_fatturazione,d.provincia_fatturazione,d.cap_fatturazione,d.codice_iva,d.codice_iva_descrizione,d.codice_pagamento,d.pagamento_descrizione,d.banca_cliente,d.banca_codice,d.banca_conto,d.banca_abi,d.banca_cab,d.banca_paese,d.banca_cin_eur,d.banca_cin_it,d.banca_valuta,d.banca_bic,d.banca_iban,d.banca_bban,d.banca_pec,d.banca_note,d.note],
     function(err){ if(err) return res.status(500).send(page('Errore cliente', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); res.redirect('/cliente/'+this.lastID); });
 });
 app.get('/cliente/:id/modifica', (req,res)=>{
@@ -5095,8 +5156,8 @@ app.get('/cliente/:id/modifica', (req,res)=>{
 });
 app.post('/cliente/:id/modifica', (req,res)=>{
   const d = clienteManualData(req.body);
-  db.run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,tipo_cliente=?,ragione_sociale=?,piva=?,partita_iva=?,pec=?,sdi=?,codice_sdi=?,indirizzo_fatturazione=?,citta_fatturazione=?,provincia_fatturazione=?,cap_fatturazione=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-    [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.tipo_cliente,d.ragione_sociale,d.piva,d.partita_iva,d.pec,d.sdi,d.codice_sdi,d.indirizzo_fatturazione,d.citta_fatturazione,d.provincia_fatturazione,d.cap_fatturazione,d.note,req.params.id],
+  db.run(`UPDATE clienti SET nome=?,cognome=?,telefono=?,email=?,codice_fiscale=?,indirizzo=?,citta=?,cap=?,data_nascita=?,luogo_nascita=?,documento_numero=?,documento_scadenza=?,patente_numero=?,patente_scadenza=?,categoria_patente=?,tipo_cliente=?,ragione_sociale=?,piva=?,partita_iva=?,pec=?,sdi=?,codice_sdi=?,indirizzo_fatturazione=?,citta_fatturazione=?,provincia_fatturazione=?,cap_fatturazione=?,codice_iva=?,codice_iva_descrizione=?,codice_pagamento=?,pagamento_descrizione=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+    [d.nome,d.cognome,d.telefono,d.email,d.codice_fiscale,d.indirizzo,d.citta,d.cap,d.data_nascita,d.luogo_nascita,d.documento_numero,d.documento_scadenza,d.patente_numero,d.patente_scadenza,d.categoria_patente,d.tipo_cliente,d.ragione_sociale,d.piva,d.partita_iva,d.pec,d.sdi,d.codice_sdi,d.indirizzo_fatturazione,d.citta_fatturazione,d.provincia_fatturazione,d.cap_fatturazione,d.codice_iva,d.codice_iva_descrizione,d.codice_pagamento,d.pagamento_descrizione,d.banca_cliente,d.banca_codice,d.banca_conto,d.banca_abi,d.banca_cab,d.banca_paese,d.banca_cin_eur,d.banca_cin_it,d.banca_valuta,d.banca_bic,d.banca_iban,d.banca_bban,d.banca_pec,d.banca_note,d.note,req.params.id],
     err=>{ if(err) return res.status(500).send(page('Errore modifica', `<div class="box"><h2 class="bad">Errore</h2><pre>${esc(err.message)}</pre></div>`)); res.redirect('/cliente/'+req.params.id); });
 });
 app.get('/cliente/:id/elimina', (req,res)=>{
@@ -11561,6 +11622,13 @@ db.serialize(()=>{
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
   ['cap TEXT','email TEXT','pec TEXT','sdi TEXT','note TEXT'].forEach(c=>db.run(`ALTER TABLE trasporti_clienti ADD COLUMN ${c}`,()=>{}));
+  [
+    'codice_iva TEXT','codice_iva_descrizione TEXT','codice_pagamento TEXT','pagamento_descrizione TEXT',
+    'banca_cliente TEXT','banca_codice TEXT','banca_conto TEXT','banca_abi TEXT','banca_cab TEXT',
+    'banca_paese TEXT','banca_cin_eur TEXT','banca_cin_it TEXT','banca_valuta TEXT',
+    'banca_bic TEXT','banca_iban TEXT','banca_bban TEXT','banca_pec TEXT','banca_note TEXT'
+  ].forEach(c=>db.run(`ALTER TABLE trasporti_clienti ADD COLUMN ${c}`,()=>{}));
+
   ['portal_token TEXT','portal_attivo INTEGER DEFAULT 1','privacy_versione TEXT','privacy_accettata_at TEXT','privacy_ip TEXT'].forEach(c=>db.run(`ALTER TABLE trasporti_clienti ADD COLUMN ${c}`,()=>{}));
   ['autorizzazione_file TEXT','autorizzazione_nome TEXT','autorizzazione_mime TEXT','autorizzazione_uploaded_at TEXT','inserito_da TEXT DEFAULT \'UFFICIO\''].forEach(c=>db.run(`ALTER TABLE trasporti_ordini ADD COLUMN ${c}`,()=>{}));
   ['note_interne TEXT','note_cliente TEXT','data_carico TEXT','data_scarico TEXT','targa_bisarca TEXT'].forEach(c=>db.run(`ALTER TABLE trasporti_ordini ADD COLUMN ${c}`,()=>{}));
@@ -11670,16 +11738,23 @@ async function dpTUpsertClient(c){
     indirizzo:dpTClean(c.indirizzo||c.Indirizzo), telefono:dpTClean(c.telefono||c.Telefono),
     piva:dpTClean(c.piva||c['Partita IVA']), cf:dpTClean(c.codice_fiscale||c['Codice fiscale']),
     citta:dpTClean(c.citta||c['Località']), provincia:dpTClean(c.provincia||c['Prov.']), nazione:dpTClean(c.nazione||c['Naz.']),
-    cap:dpTClean(c.cap||c.CAP), email:dpTClean(c.email||c.EMAIL), pec:dpTClean(c.pec||c.PEC), sdi:dpTClean(c.sdi||c.SDI||c['Codice SDI']), note:dpTClean(c.note||c.NOTE)
+    cap:dpTClean(c.cap||c.CAP), email:dpTClean(c.email||c.EMAIL), pec:dpTClean(c.pec||c.PEC), sdi:dpTClean(c.sdi||c.SDI||c['Codice SDI']),
+    codice_iva:dpTClean(c.codice_iva||c['Codice IVA']), codice_iva_descrizione:dpTClean(c.codice_iva_descrizione||c['Descrizione IVA']),
+    codice_pagamento:dpTClean(c.codice_pagamento||c['Codice pagamento']), pagamento_descrizione:dpTClean(c.pagamento_descrizione||c['Pagamento']),
+    banca_cliente:dpTClean(c.banca_cliente||c['Banca cliente']), banca_codice:dpTClean(c.banca_codice), banca_conto:dpTClean(c.banca_conto),
+    banca_abi:dpTClean(c.banca_abi), banca_cab:dpTClean(c.banca_cab), banca_paese:dpTClean(c.banca_paese),
+    banca_cin_eur:dpTClean(c.banca_cin_eur), banca_cin_it:dpTClean(c.banca_cin_it), banca_valuta:dpTClean(c.banca_valuta),
+    banca_bic:dpTClean(c.banca_bic), banca_iban:dpTClean(c.banca_iban||c.IBAN), banca_bban:dpTClean(c.banca_bban),
+    banca_pec:dpTClean(c.banca_pec), banca_note:dpTClean(c.banca_note), note:dpTClean(c.note||c.NOTE)
   };
   let old=await get(`SELECT * FROM trasporti_clienti WHERE chiave=? OR (codice<>'' AND codice=?) LIMIT 1`,[chiave,codice]).catch(()=>null);
   if(old){
-    await run(`UPDATE trasporti_clienti SET codice=COALESCE(NULLIF(?,''),codice),ragione_sociale=?,indirizzo=COALESCE(NULLIF(?,''),indirizzo),telefono=COALESCE(NULLIF(?,''),telefono),piva=COALESCE(NULLIF(?,''),piva),codice_fiscale=COALESCE(NULLIF(?,''),codice_fiscale),citta=COALESCE(NULLIF(?,''),citta),provincia=COALESCE(NULLIF(?,''),provincia),nazione=COALESCE(NULLIF(?,''),nazione),cap=COALESCE(NULLIF(?,''),cap),email=COALESCE(NULLIF(?,''),email),pec=COALESCE(NULLIF(?,''),pec),sdi=COALESCE(NULLIF(?,''),sdi),note=COALESCE(NULLIF(?,''),note),updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-      [codice,ragione,x.indirizzo,x.telefono,x.piva,x.cf,x.citta,x.provincia,x.nazione,x.cap,x.email,x.pec,x.sdi,x.note,old.id]).catch(()=>{});
+    await run(`UPDATE trasporti_clienti SET codice=COALESCE(NULLIF(?,''),codice),ragione_sociale=?,indirizzo=COALESCE(NULLIF(?,''),indirizzo),telefono=COALESCE(NULLIF(?,''),telefono),piva=COALESCE(NULLIF(?,''),piva),codice_fiscale=COALESCE(NULLIF(?,''),codice_fiscale),citta=COALESCE(NULLIF(?,''),citta),provincia=COALESCE(NULLIF(?,''),provincia),nazione=COALESCE(NULLIF(?,''),nazione),cap=COALESCE(NULLIF(?,''),cap),email=COALESCE(NULLIF(?,''),email),pec=COALESCE(NULLIF(?,''),pec),sdi=COALESCE(NULLIF(?,''),sdi),codice_iva=COALESCE(NULLIF(?,''),codice_iva),codice_iva_descrizione=COALESCE(NULLIF(?,''),codice_iva_descrizione),codice_pagamento=COALESCE(NULLIF(?,''),codice_pagamento),pagamento_descrizione=COALESCE(NULLIF(?,''),pagamento_descrizione),banca_cliente=COALESCE(NULLIF(?,''),banca_cliente),banca_codice=COALESCE(NULLIF(?,''),banca_codice),banca_conto=COALESCE(NULLIF(?,''),banca_conto),banca_abi=COALESCE(NULLIF(?,''),banca_abi),banca_cab=COALESCE(NULLIF(?,''),banca_cab),banca_paese=COALESCE(NULLIF(?,''),banca_paese),banca_cin_eur=COALESCE(NULLIF(?,''),banca_cin_eur),banca_cin_it=COALESCE(NULLIF(?,''),banca_cin_it),banca_valuta=COALESCE(NULLIF(?,''),banca_valuta),banca_bic=COALESCE(NULLIF(?,''),banca_bic),banca_iban=COALESCE(NULLIF(?,''),banca_iban),banca_bban=COALESCE(NULLIF(?,''),banca_bban),banca_pec=COALESCE(NULLIF(?,''),banca_pec),banca_note=COALESCE(NULLIF(?,''),banca_note),note=COALESCE(NULLIF(?,''),note),updated_at=CURRENT_TIMESTAMP WHERE id=?`,
+      [codice,ragione,x.indirizzo,x.telefono,x.piva,x.cf,x.citta,x.provincia,x.nazione,x.cap,x.email,x.pec,x.sdi,x.codice_iva,x.codice_iva_descrizione,x.codice_pagamento,x.pagamento_descrizione,x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,old.id]).catch(()=>{});
     return old.id;
   }
-  const r=await run(`INSERT OR IGNORE INTO trasporti_clienti (codice,ragione_sociale,indirizzo,telefono,piva,codice_fiscale,citta,provincia,nazione,cap,email,pec,sdi,note,chiave) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [codice||null,ragione,x.indirizzo,x.telefono,x.piva,x.cf,x.citta,x.provincia,x.nazione,x.cap,x.email,x.pec,x.sdi,x.note,chiave]).catch(()=>({lastID:0}));
+  const r=await run(`INSERT OR IGNORE INTO trasporti_clienti (codice,ragione_sociale,indirizzo,telefono,piva,codice_fiscale,citta,provincia,nazione,cap,email,pec,sdi,codice_iva,codice_iva_descrizione,codice_pagamento,pagamento_descrizione,banca_cliente,banca_codice,banca_conto,banca_abi,banca_cab,banca_paese,banca_cin_eur,banca_cin_it,banca_valuta,banca_bic,banca_iban,banca_bban,banca_pec,banca_note,note,chiave) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [codice||null,ragione,x.indirizzo,x.telefono,x.piva,x.cf,x.citta,x.provincia,x.nazione,x.cap,x.email,x.pec,x.sdi,x.codice_iva,x.codice_iva_descrizione,x.codice_pagamento,x.pagamento_descrizione,x.banca_cliente,x.banca_codice,x.banca_conto,x.banca_abi,x.banca_cab,x.banca_paese,x.banca_cin_eur,x.banca_cin_it,x.banca_valuta,x.banca_bic,x.banca_iban,x.banca_bban,x.banca_pec,x.banca_note,x.note,chiave]).catch(()=>({lastID:0}));
   return r.lastID||null;
 }
 async function dpTUpsertModel(nome){
@@ -11794,6 +11869,7 @@ app.get('/trasporti', async (req,res)=>{
       <a class="dp-home-card primary" href="/trasporti/ordine/nuovo"><span class="ico">＋</span>Nuovo ordine<small>Cliente, modello e siti con ricerca rapida</small></a>
       <a class="dp-home-card" href="/trasporti/importa"><span class="ico">📥</span>Importa ordini<small>Excel / ODS</small></a>
       <a class="dp-home-card" href="/trasporti/clienti"><span class="ico">👥</span>Clienti<small>${stats[4].tot||0} anagrafiche</small></a>
+      <a class="dp-home-card" href="/statistiche?modulo=trasporti"><span class="ico">📊</span>Statistiche<small>Produzione per bisarca / periodo</small></a>
       <a class="dp-home-card" href="/trasporti/ordini"><span class="ico">📋</span>Ordini<small>Ricerca, filtri, export</small></a>
       <a class="dp-home-card" href="/trasporti/viaggi"><span class="ico">🚚</span>Viaggi / Borderò<small>Assegna bisarca e autista</small></a>
       <a class="dp-home-card" href="/trasporti/siti"><span class="ico">📍</span>Siti<small>${stats[3].tot||0} punti carico/scarico</small></a>
@@ -11901,12 +11977,24 @@ function dpTClientForm(c={}, action='/trasporti/cliente/nuovo'){
   <label>Ragione sociale</label><input name="ragione_sociale" value="${esc(c.ragione_sociale||'')}" required>
   <label>Partita IVA</label><input name="piva" value="${esc(c.piva||'')}"><label>Codice fiscale</label><input name="codice_fiscale" value="${esc(c.codice_fiscale||'')}">
   <label>Indirizzo</label><input name="indirizzo" value="${esc(c.indirizzo||'')}"><label>CAP</label><input name="cap" value="${esc(c.cap||'')}"><label>Città</label><input name="citta" value="${esc(c.citta||'')}"><label>Provincia</label><input name="provincia" value="${esc(c.provincia||'')}"><label>Nazione</label><input name="nazione" value="${esc(c.nazione||'IT')}">
-  <label>Telefono</label><input name="telefono" value="${esc(c.telefono||'')}"><label>Email</label><input type="email" name="email" value="${esc(c.email||'')}"><label>PEC</label><input type="email" name="pec" value="${esc(c.pec||'')}"><label>Codice SDI</label><input name="sdi" value="${esc(c.sdi||'')}"><label>Note</label><textarea name="note">${esc(c.note||'')}</textarea><button>Salva cliente</button></form><a class="btn btn2" href="/trasporti/clienti">Annulla</a></div>`;
+  <label>Telefono</label><input name="telefono" value="${esc(c.telefono||'')}"><label>Email</label><input type="email" name="email" value="${esc(c.email||'')}"><label>PEC</label><input type="email" name="pec" value="${esc(c.pec||'')}"><label>Codice SDI</label><input name="sdi" value="${esc(c.sdi||'')}">
+  <h3>IVA e pagamento</h3>
+  <label>Codice IVA</label><input name="codice_iva" list="dp-t-iva" value="${esc(c.codice_iva||'')}"><label>Descrizione IVA</label><input name="codice_iva_descrizione" value="${esc(c.codice_iva_descrizione||'')}">
+  <label>Codice pagamento</label><input name="codice_pagamento" list="dp-t-pag" value="${esc(c.codice_pagamento||'')}"><label>Descrizione pagamento</label><input name="pagamento_descrizione" value="${esc(c.pagamento_descrizione||'')}">
+  <datalist id="dp-t-iva"><option value="22"><option value="22SP"><option value="22RC"><option value="22EX"><option value="NI41"><option value="NI8"><option value="NI8b"><option value="FC7"><option value="10"><option value="4"><option value="5"></datalist>
+  <datalist id="dp-t-pag"><option value="BO30"><option value="BO3"><option value="BO6"><option value="BO9"><option value="BO36"><option value="BOFM1"><option value="BOIMM"><option value="RB3"><option value="RB36"><option value="RB6"><option value="RB9"><option value="RBF10"><option value="RBFIN"><option value="RID30"><option value="RID60"><option value="RID90"><option value="RD"></datalist>
+  <h3>Dati bancari cliente</h3>
+  <label>Banca cliente</label><input name="banca_cliente" value="${esc(c.banca_cliente||'')}"><label>Codice banca</label><input name="banca_codice" value="${esc(c.banca_codice||'')}">
+  <label>Numero conto corrente</label><input name="banca_conto" value="${esc(c.banca_conto||'')}"><label>ABI</label><input name="banca_abi" value="${esc(c.banca_abi||'')}"><label>CAB</label><input name="banca_cab" value="${esc(c.banca_cab||'')}">
+  <label>Paese</label><input name="banca_paese" value="${esc(c.banca_paese||'IT')}"><label>CIN EUR</label><input name="banca_cin_eur" value="${esc(c.banca_cin_eur||'')}"><label>CIN Italia</label><input name="banca_cin_it" value="${esc(c.banca_cin_it||'')}">
+  <label>Valuta</label><input name="banca_valuta" value="${esc(c.banca_valuta||'EUR')}"><label>BIC / SWIFT</label><input name="banca_bic" value="${esc(c.banca_bic||'')}"><label>IBAN</label><input name="banca_iban" value="${esc(c.banca_iban||'')}">
+  <label>BBAN</label><input name="banca_bban" value="${esc(c.banca_bban||'')}"><label>PEC banca</label><input name="banca_pec" value="${esc(c.banca_pec||'')}"><label>Note banca</label><input name="banca_note" value="${esc(c.banca_note||'')}">
+  <label>Note</label><textarea name="note">${esc(c.note||'')}</textarea><button>Salva cliente</button></form><a class="btn btn2" href="/trasporti/clienti">Annulla</a></div>`;
 }
 app.get('/trasporti/cliente/nuovo',(req,res)=>res.send(page('Nuovo cliente',dpTClientForm())));
 app.post('/trasporti/cliente/nuovo',async(req,res)=>{try{await dpTUpsertClient(req.body||{});res.redirect('/trasporti/clienti');}catch(e){res.status(400).send(page('Errore',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}});
 app.get('/trasporti/cliente/:id/modifica',async(req,res)=>{const c=await get(`SELECT * FROM trasporti_clienti WHERE id=?`,[req.params.id]).catch(()=>null);if(!c)return res.status(404).send('Cliente non trovato');res.send(page('Modifica cliente',dpTClientForm(c,`/trasporti/cliente/${c.id}/modifica`)+`<div class="box"><a class="btn" href="/trasporti/cliente/${c.id}/portale">🔗 PORTALE CLIENTE</a></div>`));});
-app.post('/trasporti/cliente/:id/modifica',async(req,res)=>{const b=req.body||{};const key=dpTClientKey(b.ragione_sociale);await run(`UPDATE trasporti_clienti SET codice=?,ragione_sociale=?,indirizzo=?,telefono=?,piva=?,codice_fiscale=?,citta=?,provincia=?,nazione=?,cap=?,email=?,pec=?,sdi=?,note=?,chiave=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[dpTClean(b.codice)||null,dpTClean(b.ragione_sociale),dpTClean(b.indirizzo),dpTClean(b.telefono),dpTClean(b.piva),dpTClean(b.codice_fiscale),dpTClean(b.citta),dpTClean(b.provincia),dpTClean(b.nazione),dpTClean(b.cap),dpTClean(b.email),dpTClean(b.pec),dpTClean(b.sdi),dpTClean(b.note),key,req.params.id]);res.redirect('/trasporti/clienti');});
+app.post('/trasporti/cliente/:id/modifica',async(req,res)=>{const b=req.body||{};const key=dpTClientKey(b.ragione_sociale);await run(`UPDATE trasporti_clienti SET codice=?,ragione_sociale=?,indirizzo=?,telefono=?,piva=?,codice_fiscale=?,citta=?,provincia=?,nazione=?,cap=?,email=?,pec=?,sdi=?,codice_iva=?,codice_iva_descrizione=?,codice_pagamento=?,pagamento_descrizione=?,banca_cliente=?,banca_codice=?,banca_conto=?,banca_abi=?,banca_cab=?,banca_paese=?,banca_cin_eur=?,banca_cin_it=?,banca_valuta=?,banca_bic=?,banca_iban=?,banca_bban=?,banca_pec=?,banca_note=?,note=?,chiave=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[dpTClean(b.codice)||null,dpTClean(b.ragione_sociale),dpTClean(b.indirizzo),dpTClean(b.telefono),dpTClean(b.piva),dpTClean(b.codice_fiscale),dpTClean(b.citta),dpTClean(b.provincia),dpTClean(b.nazione),dpTClean(b.cap),dpTClean(b.email),dpTClean(b.pec),dpTClean(b.sdi),dpTClean(b.codice_iva),dpTClean(b.codice_iva_descrizione),dpTClean(b.codice_pagamento),dpTClean(b.pagamento_descrizione),dpTClean(b.banca_cliente),dpTClean(b.banca_codice),dpTClean(b.banca_conto),dpTClean(b.banca_abi),dpTClean(b.banca_cab),dpTClean(b.banca_paese),dpTClean(b.banca_cin_eur),dpTClean(b.banca_cin_it),dpTClean(b.banca_valuta),dpTClean(b.banca_bic),dpTClean(b.banca_iban),dpTClean(b.banca_bban),dpTClean(b.banca_pec),dpTClean(b.banca_note),dpTClean(b.note),key,req.params.id]);res.redirect('/trasporti/clienti');});
 
 app.get('/trasporti/modello/nuovo',(req,res)=>res.send(page('Nuovo modello',`<div class="box"><h2>🚗 Nuovo modello auto</h2><form method="POST"><label>Modello</label><input name="nome" required autofocus><button>Salva modello</button></form><a class="btn btn2" href="/trasporti/ordine/nuovo">Annulla</a></div>`)));
 app.post('/trasporti/modello/nuovo',async(req,res)=>{await dpTUpsertModel(req.body.nome);res.redirect('/trasporti/ordine/nuovo');});
@@ -12133,10 +12221,13 @@ app.get('/trasporti/mappa-carichi',async(req,res)=>{
   try{
     if(typeof L==='undefined') throw new Error('Leaflet non caricato');
     const m=L.map('map').setView([42.5,12.5],6);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
-      subdomains:'abcd',maxZoom:20,
-      attribution:'© OpenStreetMap contributors © CARTO'
+    const street=L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',{
+      subdomains:'abcd',maxZoom:20,attribution:'© OpenStreetMap contributors © CARTO'
     }).addTo(m);
+    const satellite=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+      maxZoom:19,attribution:'Tiles © Esri'
+    });
+    L.control.layers({'Stradale':street,'Satellite':satellite},null,{position:'topright',collapsed:false}).addTo(m);
     const g={};A.forEach(x=>{const k=x.lat.toFixed(4)+'|'+x.lon.toFixed(4);(g[k]||(g[k]=[])).push(x)});
     const bounds=[];
     Object.values(g).forEach(arr=>{
@@ -13749,6 +13840,80 @@ console.log('DP GESTIONALE V279: anagrafiche autisti complete + mezzi modificabi
 
 
 // DP GESTIONALE V304 - Fatture DP RENT serie N + pulizia test + pagamento PDF pulito
+
+// =========================
+// V305 - STATISTICHE RENT + TRASPORTI
+// =========================
+function dpV305Iso(v){
+  const x=String(v||'').trim(); if(!x)return '';
+  let m=x.match(/^(\d{4})-(\d{2})-(\d{2})/); if(m)return `${m[1]}-${m[2]}-${m[3]}`;
+  m=x.match(/^(\d{2})[\/.-](\d{2})[\/.-](\d{4})/); if(m)return `${m[3]}-${m[2]}-${m[1]}`;
+  return '';
+}
+function dpV305Range(q){
+  const now=moment(); const p=String(q.periodo||'mese');
+  if(p==='oggi') return {dal:now.format('YYYY-MM-DD'),al:now.format('YYYY-MM-DD'),label:'Oggi'};
+  if(p==='settimana') return {dal:now.clone().startOf('isoWeek').format('YYYY-MM-DD'),al:now.clone().endOf('isoWeek').format('YYYY-MM-DD'),label:'Settimana'};
+  if(p==='anno') return {dal:now.clone().startOf('year').format('YYYY-MM-DD'),al:now.clone().endOf('year').format('YYYY-MM-DD'),label:'Anno'};
+  if(p==='totale') return {dal:'',al:'',label:'Totale'};
+  if(p==='custom') return {dal:dpV305Iso(q.dal),al:dpV305Iso(q.al),label:'Dal / Al'};
+  return {dal:now.clone().startOf('month').format('YYYY-MM-DD'),al:now.clone().endOf('month').format('YYYY-MM-DD'),label:'Mese'};
+}
+function dpV305InRange(d,r){d=dpV305Iso(d);if(!d)return false;if(r.dal&&d<r.dal)return false;if(r.al&&d>r.al)return false;return true;}
+function dpV305Money(n){return '€ '+Number(n||0).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});}
+app.get('/statistiche',async(req,res)=>{
+  try{
+    const modulo=String(req.query.modulo||'noleggio')==='trasporti'?'trasporti':'noleggio';
+    const r=dpV305Range(req.query);
+    const mezzo=String(req.query.mezzo||'').trim();
+    let records=[], mezzi=[];
+    if(modulo==='noleggio'){
+      mezzi=await all(`SELECT id,targa,marca,modello,categoria FROM mezzi ORDER BY categoria,targa`).catch(()=>[]);
+      const rows=await all(`SELECT p.*,m.categoria AS mezzo_categoria,m.marca AS mezzo_marca_db,m.modello AS mezzo_modello_db,m.targa AS mezzo_targa_db FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE COALESCE(p.stato,'') NOT IN ('bozza','preventivo','annullato','eliminato_attesa') ORDER BY p.id DESC`).catch(()=>[]);
+      records=rows.map(x=>({
+        data:dpV305Iso(x.data_fine||x.data_inizio),
+        mezzo:String(x.mezzo_id||''),
+        nome:[x.mezzo_targa_db||x.targa||'',x.mezzo_marca_db||'',x.mezzo_modello_db||x.mezzo||''].filter(Boolean).join(' '),
+        importo:Number(x.totale_finale||x.prezzo_manual_totale||x.totale||0),
+        giorni:Math.max(1,Number(x.giorni||1)),
+        ref:x.codice||('N-'+x.id)
+      })).filter(x=>dpV305InRange(x.data,r)&&(!mezzo||x.mezzo===mezzo));
+    }else{
+      mezzi=await all(`SELECT id,nome,targa FROM trasporti_bisarche WHERE attiva=1 ORDER BY nome`).catch(()=>[]);
+      const rows=await all(`SELECT * FROM trasporti_ordini WHERE COALESCE(stato,'') NOT IN ('ANNULLATO','ELIMINATO') ORDER BY id DESC`).catch(()=>[]);
+      records=rows.map(x=>{
+        const key=String(x.targa_bisarca||x.automezzo||'').trim();
+        return {data:dpV305Iso(x.data_consegna||x.data_scarico||x.data_partenza||x.data_ordine),mezzo:key,nome:key||'Non assegnata',importo:Number(x.prezzo||0),giorni:1,ref:x.id_esterno||('T-'+x.id)};
+      }).filter(x=>dpV305InRange(x.data,r)&&(!mezzo||x.mezzo===mezzo));
+    }
+    const totale=records.reduce((a,x)=>a+x.importo,0), num=records.length;
+    const giorniAttivi=new Set(records.map(x=>x.data).filter(Boolean)).size;
+    const mediaGiorno=giorniAttivi?totale/giorniAttivi:0, mediaRecord=num?totale/num:0;
+    const byDay={}; for(const x of records){const k=x.data||'Senza data'; if(!byDay[k])byDay[k]={n:0,tot:0};byDay[k].n++;byDay[k].tot+=x.importo;}
+    const daily=Object.entries(byDay).sort((a,b)=>b[0].localeCompare(a[0])).map(([d,v])=>`<tr><td>${esc(d==='Senza data'?d:dpDateIt(d))}</td><td>${v.n}</td><td><b>${dpV305Money(v.tot)}</b></td></tr>`).join('');
+    const options=modulo==='noleggio'
+      ? mezzi.map(m=>`<option value="${m.id}" ${mezzo===String(m.id)?'selected':''}>${esc([m.targa,m.marca,m.modello,m.categoria].filter(Boolean).join(' - '))}</option>`).join('')
+      : Array.from(new Set(mezzi.flatMap(m=>[m.nome,m.targa].filter(Boolean)))).map(v=>`<option value="${esc(v)}" ${mezzo===String(v)?'selected':''}>${esc(v)}</option>`).join('');
+    const p=String(req.query.periodo||'mese');
+    res.send(page('Statistiche',`
+      <div class="box"><h2>📊 Statistiche ${modulo==='noleggio'?'DP RENT':'DP TRASPORTI'}</h2>
+      <div class="actions"><a class="btn ${modulo==='noleggio'?'':'btn2'}" href="/statistiche?modulo=noleggio">Noleggio</a><a class="btn ${modulo==='trasporti'?'':'btn2'}" href="/statistiche?modulo=trasporti">Bisarche</a></div>
+      <form method="GET"><input type="hidden" name="modulo" value="${modulo}">
+      <div class="grid"><div><label>Periodo</label><select name="periodo"><option value="oggi" ${p==='oggi'?'selected':''}>Oggi</option><option value="settimana" ${p==='settimana'?'selected':''}>Settimana</option><option value="mese" ${p==='mese'?'selected':''}>Mese</option><option value="anno" ${p==='anno'?'selected':''}>Anno</option><option value="totale" ${p==='totale'?'selected':''}>Totale</option><option value="custom" ${p==='custom'?'selected':''}>Dal / Al</option></select></div>
+      <div><label>Mezzo / Bisarca</label><select name="mezzo"><option value="">Tutti</option>${options}</select></div>
+      <div><label>Dal</label><input type="date" name="dal" value="${esc(req.query.dal||r.dal||'')}"></div><div><label>Al</label><input type="date" name="al" value="${esc(req.query.al||r.al||'')}"></div></div><button>Applica filtri</button></form></div>
+      <div class="dp-home-alerts">
+        <div class="dp-alert-card"><span>💶</span><b>${dpV305Money(totale)}</b> Incasso / produzione</div>
+        <div class="dp-alert-card warn"><span>📄</span><b>${num}</b> ${modulo==='noleggio'?'contratti':'trasporti'}</div>
+        <div class="dp-alert-card"><span>📅</span><b>${giorniAttivi}</b> giorni attivi</div>
+        <div class="dp-alert-card warn"><span>Ø</span><b>${dpV305Money(mediaGiorno)}</b> media/giorno</div>
+        <div class="dp-alert-card"><span>Ø</span><b>${dpV305Money(mediaRecord)}</b> media/${modulo==='noleggio'?'contratto':'trasporto'}</div>
+      </div>
+      <div class="box"><h3>Dettaglio giornaliero</h3><div style="overflow:auto"><table><tr><th>Giorno</th><th>N.</th><th>Totale</th></tr>${daily||'<tr><td colspan="3">Nessun dato nel periodo.</td></tr>'}</table></div>
+      <p class="notice">I valori mostrano incasso/produzione. Il guadagno netto reale richiede anche i costi.</p></div>`));
+  }catch(e){res.status(500).send(page('Errore statistiche',`<div class="box"><h2 class="bad">Errore statistiche</h2><pre>${esc(e.message)}</pre></div>`));}
+});
+
 // DP SERVICE - officina integrata nello stesso DP Gestionale
 const dpServiceRouter = require('./dp_service_module');
 app.use('/service', dpServiceRouter);
@@ -15135,3 +15300,6 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V294 - portale siti + pulsante cliente + PDF fattura DP definitivo
 
 // DP GESTIONALE V301 - patch esatta su server V294 reale: PDF + immediate + modifica/elimina + pagamenti
+
+
+// DP GESTIONALE V305 - mappa stradale/satellite + statistiche + IVA/pagamenti/banca clienti
