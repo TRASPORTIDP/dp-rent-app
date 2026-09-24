@@ -12071,7 +12071,7 @@ app.get('/trasporti', async (req,res)=>{
     get(`SELECT COUNT(*) tot FROM trasporti_viaggi WHERE COALESCE(stato,'') NOT IN ('CONSEGNATO','CHIUSO')`).catch(()=>({tot:0})),
     get(`SELECT COUNT(*) tot FROM trasporti_ordini WHERE stato IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0})),
     get(`SELECT COUNT(*) tot FROM trasporti_siti`).catch(()=>({tot:0})),
-    get(`SELECT COUNT(*) tot FROM trasporti_clienti`).catch(()=>({tot:0})),
+    get(`SELECT COUNT(*) tot FROM dp_clienti_master`).catch(()=>get(`SELECT COUNT(*) tot FROM trasporti_clienti`).catch(()=>({tot:0}))),
     get(`SELECT COUNT(*) tot FROM trasporti_modelli`).catch(()=>({tot:0})),
     get(`SELECT valore FROM trasporti_meta WHERE chiave='stock_reale_20260909'`).catch(()=>null)
   ]);
@@ -12177,6 +12177,7 @@ app.post('/trasporti/importa', dpTUpload.single('file'), async (req,res)=>{
   finally{ if(fp) fs.unlink(fp,()=>{}); }
 });
 
+app.get('/trasporti/clienti', (req,res)=>res.redirect('/clienti-azienda'));
 app.get('/trasporti/clienti', async(req,res)=>{
   const q=dpTClean(req.query.q); let rows=[];
   if(q) rows=await all(`SELECT * FROM trasporti_clienti WHERE ragione_sociale LIKE ? OR codice LIKE ? OR piva LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 1000`,Array(4).fill('%'+q+'%')).catch(()=>[]);
@@ -15546,3 +15547,5 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V307 - CLIENTI MASTER UNICI RENT/TRASPORTI/SERVICE
 
 // DP GESTIONALE V308 - fix blocco pagina CLIENTI: seed bulk, niente sync completa ad ogni apertura
+
+// DP GESTIONALE V309 - CLIENTI unico: conteggio Trasporti dal master + redirect vecchia lista

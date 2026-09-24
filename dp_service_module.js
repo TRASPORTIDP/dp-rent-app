@@ -661,7 +661,8 @@ router.post('/meccanici/ordine/:id',async(req,res)=>{
 
 
 router.get('/', async (req,res)=>{
-  const c=await get('SELECT COUNT(*) n FROM clienti');
+  let c=await mainGet('SELECT COUNT(*) n FROM dp_clienti_master').catch(()=>null);
+  if(!c) c=await get('SELECT COUNT(*) n FROM clienti');
   const v=await get('SELECT COUNT(*) n FROM veicoli');
   const o=await get("SELECT COUNT(*) n FROM ordini_lavoro WHERE stato IN ('APERTO','IN_LAVORAZIONE','ATTESA_RICAMBI')");
   const r=await get("SELECT COUNT(*) n FROM ricambi WHERE attivo=1");
@@ -672,7 +673,7 @@ router.get('/', async (req,res)=>{
   res.send(page('Dashboard',`
     <div class="hero"><h1 style="margin:0;font-size:44px">DP SERVICE</h1><div style="font-size:20px;font-weight:700">Gestionale Officina</div></div>
     <div class="grid">
-      <a class="card red" href="/clienti">👥 Clienti<br><small>${c.n} anagrafiche</small></a>
+      <a class="card red" href="/clienti-azienda">👥 Clienti<br><small>${c.n} anagrafiche • archivio unico</small></a>
       <a class="card blue" href="/veicoli">🚗 Veicoli clienti<br><small>${v.n} veicoli</small></a>
       <a class="card" href="/ricerca">🔎 Ricerca globale<br><small>Targa • Cliente • Modello</small></a>
       <a class="card" href="/ordini">🧾 Ordini di lavoro<br><small>${o.n} aperti</small></a>
@@ -684,8 +685,8 @@ router.get('/', async (req,res)=>{
     </div>`));
 });
 
+router.get('/clienti', (req,res)=>res.redirect('/clienti-azienda'));
 router.get('/clienti', async (req,res)=>{
-  await dpServiceSyncMaster().catch(()=>{});
   const q=(req.query.q||'').trim();
   const rows=q
     ? await all(`SELECT * FROM clienti WHERE ragione_sociale LIKE ? OR piva LIKE ? OR cf LIKE ? OR telefono LIKE ? OR citta LIKE ? ORDER BY ragione_sociale LIMIT 500`,
@@ -1525,3 +1526,5 @@ module.exports = router;
 // DP SERVICE V307 - CLIENTI MASTER CONDIVISI CON RENT/TRASPORTI
 
 // DP SERVICE V308 - usa dp_clienti_master del gestionale; nessuna sync pesante sulla pagina CLIENTI
+
+// DP SERVICE V309 - Clienti apre archivio unico /clienti-azienda; nessuna sync all'apertura
