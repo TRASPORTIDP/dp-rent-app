@@ -3144,12 +3144,13 @@ async function generaPdfContratto(id, opts = {}) {
       itNow(),
       `Dal ${itDateTime(p.data_inizio, p.ora_inizio)}\nAl ${itDateTime(p.data_fine, p.ora_fine)}`,
       euroTxt(totaleFinale),
-      euroTxt(p.cauzione_importo || p.cauzione || CAUZIONE)
+      cauzioneValorePdf
     ];
     for (let i=1;i<4;i++) doc.moveTo(xs[i]-12, y+11).lineTo(xs[i]-12, y+40).strokeColor('#e0e3ea').lineWidth(0.6).stroke();
     for (let i=0;i<4;i++) {
-      fitText(labels[i], xs[i], y+11, i===1?135:110, 8, 5.8, true, MUTED);
-      fitText(vals[i], xs[i], y+24, i===1?135:110, 20, i===2?10.5:7.2, true, i===2?RED:BLACK);
+      fitText(labels[i], xs[i], y+8, i===1?135:110, 8, 5.8, true, MUTED);
+      fitText(vals[i], xs[i], y+21, i===1?135:110, i===3?12:20, i===2?10.5:(i===3?7.6:7.2), true, i===2?RED:(i===3 && !cauzioneRicevutaPdf ? RED_DARK : BLACK));
+      if(i===3 && cauzioneSottoPdf) fitText(cauzioneSottoPdf, xs[i], y+35, 110, 10, 5.6, false, MUTED);
     }
     y += 60;
   }
@@ -3284,6 +3285,12 @@ async function generaPdfContratto(id, opts = {}) {
   const tariffaManualeAttiva = String(p.prezzo_manual_enabled || '').toLowerCase() === 'si' || dpMoneyNum(p.prezzo_manual_totale) > 0;
   const indirizzoAz = safe(`${p.fatt_indirizzo || p.indirizzo_fatturazione || p.azienda_indirizzo || ''} ${p.fatt_cap || p.cap_fatturazione || p.azienda_cap || ''} ${p.fatt_citta || p.citta_fatturazione || p.azienda_citta || ''} ${p.fatt_provincia || p.provincia_fatturazione || p.azienda_provincia || ''}`);
   const pecSdi = safe(`${p.pec || ''}${p.pec && p.sdi ? ' | ' : ''}${p.sdi || ''}`);
+  const cauzioneRichiestaPdf = String(p.cauzione_richiesta || 'si').toLowerCase() === 'si';
+  const cauzioneRicevutaPdf = String(p.cauzione_ricevuta || 'no').toLowerCase() === 'si';
+  const cauzioneImportoPdf = (p.cauzione_importo != null && p.cauzione_importo !== '') ? dpMoneyNum(p.cauzione_importo) : dpMoneyNum(p.cauzione || CAUZIONE);
+  const cauzioneMetodoPdf = dpCauzioneMetodoLabel(p.cauzione_metodo);
+  const cauzioneValorePdf = !cauzioneRichiestaPdf ? 'NON RICHIESTA' : (cauzioneRicevutaPdf ? euroTxt(cauzioneImportoPdf) : 'NON VERSATA');
+  const cauzioneSottoPdf = cauzioneRicevutaPdf ? `Ricevuta - ${cauzioneMetodoPdf}` : '';
 
   drawHeader();
   sectionTitle();
@@ -3325,7 +3332,11 @@ async function generaPdfContratto(id, opts = {}) {
   econRows.push(['Extra km rientro', kmExtraRientro > 0 ? `${kmExtraRientro} km - ${euroTxt(extraRientroIvato)} IVA incl.` : '-']);
   if (tariffaManualeAttiva) econRows.push(['Tariffa manuale', `${euroTxt(p.prezzo_manual_totale || baseTotale)} IVA incl.`]);
   else { econRows.push(['Imponibile', euroTxt(p.imponibile)]); econRows.push(['IVA 22%', euroTxt(p.iva)]); econRows.push(['Noleggio automatico', `${euroTxt(baseTotale)} IVA incl.`]); }
-  // La cauzione è già evidenziata nella barra in alto: non la ripetiamo qui per lasciare spazio al totale.
+  // V313: la cauzione compare nel riepilogo SOLO se realmente ricevuta.
+  // Sotto l'importo viene indicato chiaramente il metodo usato.
+  if (cauzioneRicevutaPdf) econRows.push(['Cauzione ricevuta', `${euroTxt(cauzioneImportoPdf)} - ${cauzioneMetodoPdf}`]);
+  else if (cauzioneRichiestaPdf) econRows.push(['Cauzione', 'NON VERSATA']);
+  else econRows.push(['Cauzione', 'NON RICHIESTA']);
   const r2 = econBox(M + COL + GAP, y2, COL, 'RIEPILOGO ECONOMICO', econRows, totaleFinale);
   y = Math.max(l2, r2);
 
@@ -10123,9 +10134,9 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
           <label>Prezzo manuale IVA inclusa<input type="number" step="0.01" name="prezzo_manual_totale" value="${esc(p.prezzo_manual_totale || '')}" placeholder="Lascia vuoto = automatico"></label>
           <label>Nota tariffa manuale<input name="tariffa_manuale_note" value="${esc(p.tariffa_manuale_note || '')}" placeholder="Es. prezzo concordato"></label>
           <label>Stato<select name="stato"><option value="preventivo" ${p.stato==='preventivo'?'selected':''}>Preventivo</option><option value="bozza" ${p.stato==='bozza'?'selected':''}>Bozza</option><option value="contratto" ${p.stato==='contratto'?'selected':''}>Contratto</option><option value="firmato" ${p.stato==='firmato'?'selected':''}>Firmato</option><option value="in_corso" ${p.stato==='in_corso'?'selected':''}>In corso/check-out</option><option value="rientrato" ${p.stato==='rientrato'?'selected':''}>Rientrato/check-in</option><option value="chiuso" ${p.stato==='chiuso'?'selected':''}>Chiuso</option></select></label>
-          <label>Cauzione ricevuta<select name="cauzione_ricevuta"><option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option></select></label>
-          <label>Cauzione (€) default 500 modificabile<input name="cauzione_importo" value="${esc((p.cauzione_importo != null && p.cauzione_importo !== '') ? p.cauzione_importo : (p.cauzione || 500))}"></label>
-          <label>Metodo cauzione<select name="cauzione_metodo"><option value="">---</option><option value="contanti" ${p.cauzione_metodo==='contanti'?'selected':''}>Contanti</option><option value="carta" ${p.cauzione_metodo==='carta'?'selected':''}>Carta</option><option value="bonifico" ${p.cauzione_metodo==='bonifico'?'selected':''}>Bonifico</option><option value="non_versata" ${p.cauzione_metodo==='non_versata'?'selected':''}>Non versata</option></select></label>
+          <label>Cauzione ricevuta<select name="cauzione_ricevuta" id="cauzione_ricevuta_v313"><option value="no" ${(p.cauzione_ricevuta||'no')==='no'?'selected':''}>NO</option><option value="si" ${p.cauzione_ricevuta==='si'?'selected':''}>SI</option></select></label>
+          <label>Importo cauzione (€) - modificabile<input type="number" step="0.01" min="0" name="cauzione_importo" value="${esc((p.cauzione_importo != null && p.cauzione_importo !== '') ? p.cauzione_importo : (p.cauzione || 500))}"></label>
+          <label>Metodo cauzione<select name="cauzione_metodo" id="cauzione_metodo_v313"><option value="">---</option><option value="contanti" ${p.cauzione_metodo==='contanti'?'selected':''}>Contanti</option><option value="carta" ${p.cauzione_metodo==='carta'?'selected':''}>Carta</option><option value="preautorizzazione" ${p.cauzione_metodo==='preautorizzazione'?'selected':''}>Preautorizzazione carta</option><option value="bonifico" ${p.cauzione_metodo==='bonifico'?'selected':''}>Bonifico</option><option value="non_versata" ${p.cauzione_metodo==='non_versata'?'selected':''}>Non versata</option></select></label>
         </div>
         <label>Note<textarea name="note">${esc(p.note)}</textarea></label>
         <button class="btn" type="submit">Salva modifiche</button>
@@ -10173,6 +10184,10 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
       }
       const cauzioneStd = v62Money(mezzo.cauzione || oldP.cauzione || oldP.cauzione_importo || CAUZIONE);
       const cauzioneImporto = (String(b.cauzione_importo || '').trim() !== '') ? v62Money(b.cauzione_importo) : cauzioneStd;
+      const cauzioneRicevuta = String(b.cauzione_ricevuta || 'no').toLowerCase() === 'si' ? 'si' : 'no';
+      const cauzioneMetodo = cauzioneRicevuta === 'si'
+        ? v62Val(b.cauzione_metodo || '')
+        : 'non_versata';
 
       await run(`UPDATE prenotazioni SET
         mezzo_id=COALESCE(?,mezzo_id), targa=COALESCE(?,targa), marca=COALESCE(?,marca), modello=COALESCE(?,modello), tipo=COALESCE(?,tipo), categoria=COALESCE(?,categoria),
@@ -10191,7 +10206,7 @@ app.post('/prenotazione/:id/modifica', async (req,res)=>{
           v62Val(b.conducente2_nome), v62Val(b.conducente2_cognome), v62Val([b.conducente2_nome,b.conducente2_cognome].filter(Boolean).join(' ')), v62Val(b.conducente2_cf), v62Val(b.conducente2_data_nascita), v62Val(b.conducente2_doc_numero), v62Val(b.conducente2_doc_scadenza), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_numero), v62Val(b.conducente2_patente_scadenza), v62Val(b.conducente2_categoria_patente), v62Val(b.tipo_cliente || 'privato'), v62Val(b.ragione_sociale), v62Val(b.partita_iva), v62Val(b.partita_iva), v62Val(b.pec), v62Val(b.codice_sdi), v62Val(b.codice_sdi), v62Val(b.indirizzo_fatturazione),
           dataInizio, oraInizio, dataFine, oraFine, v62Val(b.check_out_orario), v62Val(b.check_in_orario),
           calc.giorni, kmPrevisti, Number(mezzo.km_inclusi || kmCategoria(mezzo.categoria)), calc.extra_fuori_orario, calc.extraKm, calc.imponibile, calc.iva, calc.totale, (Number(oldP.supplemento_km_rientro||0) > 0 || oldP.km_rientro ? v180Money(v188TotaleFinale(calc.totale, oldP.supplemento_km_rientro)) : null), prezzoManualeAttivo ? 'si' : '', prezzoManualeAttivo ? v180Money(calc.imponibile) : '', prezzoManualeAttivo ? v180Money(calc.totale) : '', v62Val(b.tariffa_manuale_note), cauzioneImporto, v62Val(b.stato || 'contratto'),
-          v62Val(b.cauzione_ricevuta || 'no'), cauzioneImporto, v62Val(b.cauzione_metodo), v62Val(b.note), req.params.id
+          cauzioneRicevuta, cauzioneImporto, cauzioneMetodo, v62Val(b.note), req.params.id
       ]);
       try{ if (typeof v163AfterContractChange === 'function') { await v163AfterContractChange(req.params.id); } else { await syncContrattoDriveV63(req.params.id); } }catch(e){ console.log('V170 sync dopo modifica warning:', e.message); }
       res.redirect(`/contratto/${req.params.id}/gestisci`);
@@ -10267,12 +10282,22 @@ function euroHtml(v){
   const n = Number(String(v ?? 0).replace(',', '.'));
   return '&euro; ' + (Number.isFinite(n) ? n.toFixed(2).replace('.', ',') : String(v || '0'));
 }
+function dpCauzioneMetodoLabel(v){
+  const k = String(v || '').trim().toLowerCase();
+  if(k === 'contanti') return 'Contanti';
+  if(k === 'carta') return 'Carta';
+  if(k === 'preautorizzazione') return 'Preautorizzazione carta';
+  if(k === 'bonifico') return 'Bonifico';
+  if(k === 'non_versata') return 'Non versata';
+  return v ? String(v) : 'Metodo non indicato';
+}
 function cauzioneHtml(p){
   const richiesta = String(p?.cauzione_richiesta || 'si').toLowerCase() === 'si';
   const ricevuta = String(p?.cauzione_ricevuta || 'no').toLowerCase() === 'si';
-  const importo = p?.cauzione_importo || p?.cauzione || 500;
-  if (!richiesta) return '<div class="cauzione-box"><span class="label">Cauzione:</span><span class="badge badge-warn">Non richiesta</span></div>';
-  return '<div class="cauzione-box"><span class="label">Cauzione:</span><span class="badge badge-money">' + euroHtml(importo) + '</span><span class="badge ' + (ricevuta ? 'badge-ok' : 'badge-danger') + '">' + (ricevuta ? 'RICEVUTA' : 'DA RICEVERE') + '</span></div>';
+  const importo = (p?.cauzione_importo != null && p?.cauzione_importo !== '') ? p.cauzione_importo : (p?.cauzione || 500);
+  if (!richiesta) return '<div class="cauzione-box"><span class="label">Cauzione:</span><span class="badge badge-warn">NON RICHIESTA</span></div>';
+  if (!ricevuta) return '<div class="cauzione-box"><span class="label">Cauzione:</span><span class="badge badge-danger">NON VERSATA</span></div>';
+  return '<div class="cauzione-box"><span class="label">Cauzione:</span><span class="badge badge-money">' + euroHtml(importo) + '</span><span class="badge badge-ok">RICEVUTA</span><span class="badge badge-ok">' + esc(dpCauzioneMetodoLabel(p?.cauzione_metodo)) + '</span></div>';
 }
 const DP_TWILIO_WHATSAPP_NUMBER = dpNormalizeWhatsAppNumber(process.env.TWILIO_WHATSAPP_NUMBER || '+390744817108');
 const DP_STAFF_NUMBERS = dpParseNumbers(process.env.INTERNAL_GENERAL_NUMBERS || process.env.STAFF_WHATSAPP_NUMBERS, [
@@ -11679,16 +11704,28 @@ async function v233EnsureMezzo(m) {
     await run(`ALTER TABLE mezzi ADD COLUMN km_attuali TEXT`).catch(()=>{});
     await run(`ALTER TABLE mezzi ADD COLUMN note TEXT`).catch(()=>{});
   } catch(e) {}
-  const old = await get(`SELECT id FROM mezzi WHERE UPPER(TRIM(targa))=? LIMIT 1`, [targa]).catch(()=>null);
+  const old = await get(`SELECT * FROM mezzi WHERE UPPER(TRIM(targa))=? LIMIT 1`, [targa]).catch(()=>null);
+
+  // V313: I SEED DI AVVIO NON DEVONO PIU' TOCCARE I VALORI COMMERCIALI.
+  // Se il mezzo esiste, prezzo/km/cauzione/stato restano ESATTAMENTE quelli salvati nel database.
+  if (old && old.id) {
+    return {
+      exists: true,
+      preserved: true,
+      id: old.id,
+      targa,
+      prezzo_giorno: old.prezzo_giorno,
+      km_inclusi: old.km_inclusi,
+      cauzione: old.cauzione,
+      stato: old.stato_operativo || old.stato
+    };
+  }
+
   const vals = [
     targa, m.marca || '', m.modello || '', m.tipo || '', m.categoria || '', m.posti || '',
     m.prezzo_giorno || 70, m.km_inclusi || 150, m.cauzione || 500,
     m.stato || 'attivo', m.stato_operativo || 'attivo', m.note || ''
   ];
-  if (old && old.id) {
-    await run(`UPDATE mezzi SET targa=?, marca=?, modello=?, tipo=?, categoria=?, posti=?, prezzo_giorno=?, km_inclusi=?, cauzione=?, stato=?, stato_operativo=?, note=? WHERE id=?`, vals.concat([old.id]));
-    return { updated: true, id: old.id, targa };
-  }
   const r = await run(`INSERT INTO mezzi (targa,marca,modello,tipo,categoria,posti,prezzo_giorno,km_inclusi,cauzione,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`, vals);
   return { inserted: true, id: r && r.lastID, targa };
 }
@@ -11760,7 +11797,8 @@ async function dpV262EnsureHe151wc(){
     const old = await get(`SELECT * FROM mezzi WHERE UPPER(REPLACE(targa,' ',''))=? LIMIT 1`, [data.targa]).catch(()=>null);
     let id = old && old.id;
     if(id){
-      await run(`UPDATE mezzi SET marca=?, modello=?, categoria=?, posti=?, prezzo_giorno=?, km_inclusi=?, cauzione=?, descrizione_pubblica=?, stato='attivo', stato_operativo='attivo' WHERE id=?`, [data.marca,data.modello,data.categoria,data.posti,data.prezzo_giorno,data.km_inclusi,data.cauzione,data.descrizione_pubblica,id]);
+      // V313: HE151WC gia' presente -> NON TOCCARE prezzo, km, cauzione, stato o altri dati impostati dall'utente.
+      // La routine serve ormai solo ad assicurare la presenza del mezzo e della cartella video.
     } else {
       const r = await run(`INSERT INTO mezzi (targa,marca,modello,categoria,posti,prezzo_giorno,km_inclusi,cauzione,descrizione_pubblica,note,stato,stato_operativo) VALUES (?,?,?,?,?,?,?,?,?,?, 'attivo','attivo')`, [data.targa,data.marca,data.modello,data.categoria,data.posti,data.prezzo_giorno,data.km_inclusi,data.cauzione,data.descrizione_pubblica,data.note]);
       id = r.lastID;
@@ -15769,3 +15807,7 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V311 - scadenze pagamento, IBAN PDF, scadenzario incassi, solleciti email massivi
 
 // DP GESTIONALE V312 - PDF fattura Trasporti: eliminato box Dati trasporto; DDT invariato
+
+// DP GESTIONALE V313
+// - seed/deploy: mai piu' sovrascrittura prezzo/km/cauzione/stato dei mezzi esistenti
+// - contratto: cauzione NO = NON VERSATA senza importo; SI = importo + metodo
