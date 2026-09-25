@@ -4315,6 +4315,142 @@ async function v137AtteseRows(){
 }
 
 
+
+// =========================
+// V311 - CONDIZIONI PAGAMENTO / SCADENZIARIO INCASSI
+// =========================
+const DP_PAYMENT_LABELS = {
+  BOIMM:'Bonifico vista fattura', BO30:'Bonifico 30 gg', BO3:'Bonifico 30 gg DF FM',
+  BO6:'Bonifico 60 gg FM', BO9:'Bonifico 90 gg DF FM', BO36:'Bonifico 30/60 gg',
+  BOFM1:'Bonifico fine mese + 10 gg',
+  RB3:'Ri.Ba. 30 gg DF FM', RB36:'Ri.Ba. 30/60 gg DF FM', RB6:'Ri.Ba. 60 gg DF FM',
+  RB9:'Ri.Ba. 90 gg DF FM', RB39:'Ri.Ba. 30/90 gg FM', RB4:'Ri.Ba. 30/60/90/120 gg',
+  RB5:'Ri.Ba. 30/60/90/120/150 gg FM', RB610:'Ri.Ba. 60 gg FM + 10',
+  RB910:'Ri.Ba. 90 gg FM + 10', RBF10:'Ri.Ba. fine mese + 10 gg', RBFIN:'Ri.Ba. fine mese',
+  RID30:'Rimessa diretta 30 gg', RID60:'Rimessa diretta 60 gg', RID90:'Rimessa diretta 90 gg',
+  RIDFM:'Rimessa diretta fine mese', RD:'Rimessa diretta a vista', RD3:'Rimessa diretta 30 gg',
+  RD6:'Rimessa diretta 60 gg', RD9:'Rimessa diretta 90 gg', COMP:'Pagamento a compensazione',
+  'CO+RB':'Contanti + Ri.Ba. 30 gg'
+};
+function dpPayCode(v){
+  const x=String(v||'').trim().toUpperCase();
+  if(DP_PAYMENT_LABELS[x]) return x;
+  const low=String(v||'').toLowerCase();
+  const pairs=[
+    ['30/60/90/120/150','RB5'],['30/60/90/120','RB4'],['30/60/90','RIBA'],
+    ['30/90','RB39'],['30/60','RB36'],['fine mese + 10','RBF10'],
+    ['60 gg fm + 10','RB610'],['90 gg fm + 10','RB910'],
+    ['bonifico vista','BOIMM'],['vista fattura','BOIMM'],
+    ['bonifico 90','BO9'],['bonifico 60','BO6'],['bonifico 30','BO30'],
+    ['ri.ba. 90','RB9'],['riba 90','RB9'],['ri.ba. 60','RB6'],['riba 60','RB6'],
+    ['ri.ba. 30','RB3'],['riba 30','RB3'],['rimessa diretta 90','RD9'],
+    ['rimessa diretta 60','RD6'],['rimessa diretta 30','RD3'],['rimessa diretta a vista','RD']
+  ];
+  for(const [needle,code] of pairs) if(low.includes(needle)) return code;
+  return x || 'BOIMM';
+}
+function dpDateAddDays(iso,days){ const d=new Date(iso+'T12:00:00'); d.setDate(d.getDate()+Number(days||0)); return d.toISOString().slice(0,10); }
+function dpMonthEnd(iso,months=0){
+  const d=new Date(iso+'T12:00:00'); return new Date(d.getFullYear(),d.getMonth()+Number(months||0)+1,0,12).toISOString().slice(0,10);
+}
+function dpPaymentSchedule(codeOrText, invoiceDate, total){
+  const code=dpPayCode(codeOrText), t=Number(total||0);
+  let dates=[], mode='fm';
+  const fm=n=>dpMonthEnd(invoiceDate,n);
+  switch(code){
+    case 'COMP': return [];
+    case 'BOIMM': case 'RD': dates=[invoiceDate]; break;
+    case 'BO30': case 'RID30': case 'RD3': dates=[dpDateAddDays(invoiceDate,30)]; mode='days'; break;
+    case 'RID60': case 'RD6': dates=[dpDateAddDays(invoiceDate,60)]; mode='days'; break;
+    case 'RID90': case 'RD9': dates=[dpDateAddDays(invoiceDate,90)]; mode='days'; break;
+    case 'BO3': case 'RB3': dates=[fm(1)]; break;
+    case 'BO6': case 'RB6': dates=[fm(2)]; break;
+    case 'BO9': case 'RB9': dates=[fm(3)]; break;
+    case 'BO36': case 'RB36': dates=[fm(1),fm(2)]; break;
+    case 'RB39': dates=[fm(1),fm(3)]; break;
+    case 'RB4': dates=[fm(1),fm(2),fm(3),fm(4)]; break;
+    case 'RB5': dates=[fm(1),fm(2),fm(3),fm(4),fm(5)]; break;
+    case 'BOFM1': case 'RBF10': dates=[dpDateAddDays(fm(0),10)]; break;
+    case 'RBFIN': case 'RIDFM': dates=[fm(0)]; break;
+    case 'RB610': dates=[dpDateAddDays(fm(2),10)]; break;
+    case 'RB910': dates=[dpDateAddDays(fm(3),10)]; break;
+    case 'CO+RB': dates=[invoiceDate,fm(1)]; break;
+    default: dates=[invoiceDate];
+  }
+  const n=dates.length||1, base=Math.floor((t/n)*100)/100;
+  let assigned=0;
+  return dates.map((date,i)=>{
+    const amount=i===n-1 ? Math.round((t-assigned)*100)/100 : base;
+    assigned+=amount;
+    return {numero:i+1,data:date,importo:amount,codice:code,descrizione:DP_PAYMENT_LABELS[code]||String(codeOrText||code)};
+  });
+}
+async function dpReceivablesEnsure(){
+  await run(`CREATE TABLE IF NOT EXISTS dp_scadenze_incassi(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    modulo TEXT NOT NULL,
+    fattura_id INTEGER NOT NULL,
+    numero_fattura TEXT,
+    data_fattura TEXT,
+    cliente_nome TEXT,
+    cliente_email TEXT,
+    codice_pagamento TEXT,
+    descrizione_pagamento TEXT,
+    rata_numero INTEGER DEFAULT 1,
+    scadenza TEXT,
+    importo REAL DEFAULT 0,
+    stato TEXT DEFAULT 'DA_INCASSARE',
+    incassata_at TEXT,
+    solleciti INTEGER DEFAULT 0,
+    ultimo_sollecito_at TEXT,
+    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(modulo,fattura_id,rata_numero)
+  )`);
+  await run(`CREATE INDEX IF NOT EXISTS idx_scad_incassi_data ON dp_scadenze_incassi(scadenza,stato)`).catch(()=>{});
+}
+async function dpUpsertReceivables({modulo,fattura_id,numero_fattura,data_fattura,cliente_nome,cliente_email,codice_pagamento,pagamento,totale}){
+  await dpReceivablesEnsure();
+  const code=dpPayCode(codice_pagamento||pagamento);
+  const rows=dpPaymentSchedule(code,data_fattura,totale);
+  if(!rows.length) return [];
+  const keep=[];
+  for(const r of rows){
+    keep.push(r.numero);
+    await run(`INSERT INTO dp_scadenze_incassi
+      (modulo,fattura_id,numero_fattura,data_fattura,cliente_nome,cliente_email,codice_pagamento,descrizione_pagamento,rata_numero,scadenza,importo)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      ON CONFLICT(modulo,fattura_id,rata_numero) DO UPDATE SET
+        numero_fattura=excluded.numero_fattura,data_fattura=excluded.data_fattura,cliente_nome=excluded.cliente_nome,
+        cliente_email=excluded.cliente_email,codice_pagamento=excluded.codice_pagamento,descrizione_pagamento=excluded.descrizione_pagamento,
+        scadenza=CASE WHEN dp_scadenze_incassi.stato='INCASSATA' THEN dp_scadenze_incassi.scadenza ELSE excluded.scadenza END,
+        importo=CASE WHEN dp_scadenze_incassi.stato='INCASSATA' THEN dp_scadenze_incassi.importo ELSE excluded.importo END,
+        updated_at=CURRENT_TIMESTAMP`,
+      [modulo,fattura_id,numero_fattura,data_fattura,cliente_nome||'',cliente_email||'',code,r.descrizione,r.numero,r.data,r.importo]);
+  }
+  if(keep.length){
+    const qs=keep.map(()=>'?').join(',');
+    await run(`DELETE FROM dp_scadenze_incassi WHERE modulo=? AND fattura_id=? AND stato<>'INCASSATA' AND rata_numero NOT IN (${qs})`,
+      [modulo,fattura_id,...keep]).catch(()=>{});
+  }
+  return rows;
+}
+async function dpBackfillMainReceivables(){
+  await dpReceivablesEnsure();
+  const tf=await all(`SELECT f.*,c.email,c.codice_pagamento FROM trasporti_fatture f
+    LEFT JOIN trasporti_clienti c ON c.id=f.cliente_id`).catch(()=>[]);
+  for(const f of tf) await dpUpsertReceivables({modulo:'TRASPORTI',fattura_id:f.id,numero_fattura:f.numero_display,data_fattura:f.data_fattura,
+    cliente_nome:f.cliente,cliente_email:f.email,codice_pagamento:f.codice_pagamento||f.pagamento,pagamento:f.pagamento,totale:f.totale});
+  const nf=await all(`SELECT f.*,COALESCE(c.email,p.email,'') email,COALESCE(c.codice_pagamento,'') codice_pagamento
+    FROM noleggio_fatture f LEFT JOIN prenotazioni p ON p.id=f.prenotazione_id LEFT JOIN clienti c ON c.id=f.cliente_id`).catch(()=>[]);
+  for(const f of nf) await dpUpsertReceivables({modulo:'NOLEGGIO',fattura_id:f.id,numero_fattura:f.numero_display,data_fattura:f.data_fattura,
+    cliente_nome:f.cliente,cliente_email:f.email,codice_pagamento:f.codice_pagamento||f.pagamento,pagamento:f.pagamento,totale:f.totale});
+}
+function dpScheduleHtml(rows){
+  if(!rows||!rows.length) return '<span>Nessuna scadenza</span>';
+  return rows.map(r=>`${dpTItDate(r.data)} — € ${euro(r.importo)}`).join('<br>');
+}
+
 // =========================
 // V307 - ANAGRAFICA CLIENTI AZIENDALE UNICA
 // DP RENT + DP TRASPORTI + DP SERVICE
@@ -4545,6 +4681,7 @@ app.get('/', async (req, res) => {
           <a class="dp-home-card" href="/trasporti"><span class="ico">🚛</span>DP TRASPORTI<small>Ordini, viaggi, borderò, autisti</small></a>
           <a class="dp-home-card" href="/fatturazione"><span class="ico">🧾</span>FATTURAZIONE<small>Noleggio + trasporti da fatturare</small></a>
           <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>CLIENTI<small>Anagrafica unica • Noleggio • Trasporti • Officina</small></a>
+          <a class="dp-home-card" href="/scadenzario-incassi"><span class="ico">💶</span>SCADENZARIO INCASSI<small>Fatture da incassare • Solleciti email</small></a>
         </section>
       </div>
     `));
@@ -11849,6 +11986,9 @@ db.serialize(()=>{
   ['note_interne TEXT','note_cliente TEXT','data_carico TEXT','data_scarico TEXT','targa_bisarca TEXT'].forEach(c=>db.run(`ALTER TABLE trasporti_ordini ADD COLUMN ${c}`,()=>{}));
   ['ordine_gruppo TEXT','ordine_posizione INTEGER DEFAULT 1','ordine_totale_auto INTEGER DEFAULT 1'].forEach(c=>db.run(`ALTER TABLE trasporti_ordini ADD COLUMN ${c}`,()=>{}));
   db.run(`ALTER TABLE trasporti_fatture ADD COLUMN tipo TEXT DEFAULT 'ORDINARIA'`,()=>{});
+  db.run(`ALTER TABLE trasporti_fatture ADD COLUMN codice_pagamento TEXT`,()=>{});
+  db.run(`ALTER TABLE trasporti_fatture ADD COLUMN pagamento_descrizione TEXT`,()=>{});
+
   db.run(`UPDATE trasporti_fatture
           SET tipo='IMMEDIATA'
           WHERE COALESCE(tipo,'ORDINARIA')='ORDINARIA'
@@ -12991,12 +13131,11 @@ function dpTKmAlert(current,target){
 }
 function dpTPaymentField(nameOrValue='pagamento',maybeValue){
   const name=(maybeValue===undefined ? 'pagamento' : String(nameOrValue||'pagamento'));
-  const current=String(maybeValue===undefined
-    ? (nameOrValue==='pagamento'?'Bonifico vista fattura':nameOrValue)
-    : (maybeValue||'Bonifico vista fattura'));
-  const opts=['Bonifico vista fattura','Ri.Ba.','Bonifico 30 gg','Bonifico 60 gg','Bonifico 90 gg'];
+  const raw=String(maybeValue===undefined ? (nameOrValue==='pagamento'?'BOIMM':nameOrValue) : (maybeValue||'BOIMM'));
+  const current=dpPayCode(raw);
+  const opts=Object.entries(DP_PAYMENT_LABELS).filter(([k])=>k!=='COMP' || true);
   return `<select name="${esc(name)}" required style="width:100%;padding:13px;border:1px solid #bbb;border-radius:10px;font-size:16px;background:#fff">
-    ${opts.map(x=>`<option value="${esc(x)}"${x===current?' selected':''}>${esc(x)}</option>`).join('')}
+    ${opts.map(([code,label])=>`<option value="${esc(code)}"${code===current?' selected':''}>${esc(code)} - ${esc(label)}</option>`).join('')}
   </select>`;
 }
 
@@ -13451,8 +13590,10 @@ async function dpTCreateInvoiceFromIds(ids,{data_fattura,serie='T',numero,pagame
 
   await run('BEGIN');
   try{
-    const ins=await run(`INSERT INTO trasporti_fatture (anno,numero,serie,numero_display,data_fattura,cliente,cliente_id,imponibile,iva,totale,pagamento,note,stato,tipo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [anno,numero,serie,display,data,rows[0].cliente,cli?.id||null,imponibile,iva,totale,dpTClean(pagamento)||'Bonifico vista fattura',dpTClean(note),'PRONTA_FIC',immediata?'IMMEDIATA':'ORDINARIA']);
+    const payCode=dpPayCode(dpTClean(pagamento)||cli?.codice_pagamento||'BOIMM');
+    const payDesc=DP_PAYMENT_LABELS[payCode]||payCode;
+    const ins=await run(`INSERT INTO trasporti_fatture (anno,numero,serie,numero_display,data_fattura,cliente,cliente_id,imponibile,iva,totale,pagamento,codice_pagamento,pagamento_descrizione,note,stato,tipo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      [anno,numero,serie,display,data,rows[0].cliente,cli?.id||null,imponibile,iva,totale,payDesc,payCode,payDesc,dpTClean(note),'PRONTA_FIC',immediata?'IMMEDIATA':'ORDINARIA']);
     const fid=ins.lastID;
     let pos=0;
     for(const o of rows){
@@ -13461,6 +13602,8 @@ async function dpTCreateInvoiceFromIds(ids,{data_fattura,serie='T',numero,pagame
     }
     await run(`UPDATE trasporti_ordini SET stato='FATTURA_PRONTA',num_fattura=?,data_fattura=?,updated_at=CURRENT_TIMESTAMP WHERE id IN (${qs})`,[display,data,...ids]);
     await run('COMMIT');
+    await dpUpsertReceivables({modulo:'TRASPORTI',fattura_id:fid,numero_fattura:display,data_fattura:data,cliente_nome:rows[0].cliente,
+      cliente_email:cli?.email||'',codice_pagamento:payCode,pagamento:payDesc,totale});
     return fid;
   }catch(e){
     await run('ROLLBACK').catch(()=>{});
@@ -13474,11 +13617,13 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
   const rows=focusCliente?rowsAll.filter(o=>dpTClean(o.cliente).toUpperCase()===focusCliente.toUpperCase()):rowsAll;
   const history=await all(`SELECT * FROM trasporti_fatture ORDER BY data_fattura DESC,id DESC LIMIT 100`).catch(()=>[]);
   const next=await dpTNextInvoiceNumber(new Date().getFullYear(),'T');
+  const masterPayRows=await all(`SELECT ragione_sociale,codice_pagamento FROM dp_clienti_master WHERE COALESCE(codice_pagamento,'')<>''`).catch(()=>[]);
+  const clientPayMap={};for(const m of masterPayRows)clientPayMap[dpTClean(m.ragione_sociale).toUpperCase()]=m.codice_pagamento;
   const gruppi={};for(const o of rows){const k=dpTClean(o.cliente)||'SENZA CLIENTE';(gruppi[k]||(gruppi[k]=[])).push(o);}
   const clientBoxes=Object.entries(gruppi).map(([cliente,os],idx)=>{
     const impon=os.reduce((a,o)=>a+Number(o.prezzo||0),0),iva=os.reduce((a,o)=>a+Number(o.prezzo||0)*Number(o.iva||22)/100,0);
     const trs=os.map(o=>`<tr><td><input type="checkbox" name="ids" value="${o.id}" checked></td><td><a href="/trasporti/ordine/${o.id}"><b>${esc(o.modello)}</b><br>${esc(o.targa_telaio)}</a></td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>${esc(o.targa_bisarca||'')}<br><small>${esc(o.automezzo||'')}</small></td><td>${esc(dpTItDate(o.data_carico||''))}</td><td>${esc(dpTItDate(o.data_scarico||o.data_consegna||''))}</td><td>${esc(o.num_bolla||'')} ${o.data_bolla?'<br><small>'+esc(dpTItDate(o.data_bolla))+'</small>':''}</td><td>${esc(o.note_interne||'')}</td><td>${esc(o.note_cliente||o.note||'')}</td><td>€ ${euro(o.prezzo||0)}</td><td>${esc(String(o.iva||22))}%</td></tr>`).join('');
-    return `<form method="POST" action="/trasporti/fattura/crea"><div class="box" style="overflow:auto;border:2px solid #ddd"><h2>👤 ${esc(cliente)}</h2><p><b>${os.length} auto</b> • Imponibile € ${euro(impon)} • IVA € ${euro(iva)} • Totale € ${euro(impon+iva)}</p><table><tr><th>✓</th><th>Auto</th><th>Tratta</th><th>Bisarca</th><th>Carico</th><th>Scarico</th><th>DDT</th><th>Note interne</th><th>Note cliente</th><th>Imponibile</th><th>IVA</th></tr>${trs}</table><div class="grid" style="margin-top:12px"><div><label>Numero</label><input name="numero" type="number" min="1" value="${next+idx}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data fattura</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div><div><label>Pagamento</label>${dpTPaymentField()}</div></div><label>Note fattura</label><textarea name="note"></textarea><button>CREA FATTURA PER ${esc(cliente)}</button></div></form>`;
+    return `<form method="POST" action="/trasporti/fattura/crea"><div class="box" style="overflow:auto;border:2px solid #ddd"><h2>👤 ${esc(cliente)}</h2><p><b>${os.length} auto</b> • Imponibile € ${euro(impon)} • IVA € ${euro(iva)} • Totale € ${euro(impon+iva)}</p><table><tr><th>✓</th><th>Auto</th><th>Tratta</th><th>Bisarca</th><th>Carico</th><th>Scarico</th><th>DDT</th><th>Note interne</th><th>Note cliente</th><th>Imponibile</th><th>IVA</th></tr>${trs}</table><div class="grid" style="margin-top:12px"><div><label>Numero</label><input name="numero" type="number" min="1" value="${next+idx}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data fattura</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div><div><label>Pagamento</label>${dpTPaymentField(clientPayMap[dpTClean(cliente).toUpperCase()]||'BOIMM')}</div></div><label>Note fattura</label><textarea name="note"></textarea><button>CREA FATTURA PER ${esc(cliente)}</button></div></form>`;
   }).join('')||'<div class="box"><h3>Nessun trasporto da fatturare.</h3></div>';
   const histImm=history.filter(f=>String(f.tipo||'ORDINARIA').toUpperCase()==='IMMEDIATA');
   const histOrd=history.filter(f=>String(f.tipo||'ORDINARIA').toUpperCase()!=='IMMEDIATA');
@@ -13542,11 +13687,12 @@ app.get('/trasporti/fattura/immediata/:ordineId',async(req,res)=>{
   if(!o)return res.status(404).send('Ordine non trovato');
   if(String(o.num_fattura||'').trim() && String(o.num_fattura||'').trim()!=='0')return res.send(page('Già fatturato',`<div class="box"><h2>Ordine già inserito in fattura ${esc(o.num_fattura)}</h2><a class="btn" href="/trasporti/ordine/${o.id}">Torna</a></div>`));
   const next=await dpTNextInvoiceNumber(new Date().getFullYear(),'T');
+  const mc=await get(`SELECT codice_pagamento FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale))=UPPER(TRIM(?)) LIMIT 1`,[o.cliente]).catch(()=>null);
   res.send(page('Fattura immediata',`<div class="box"><h2>⚡ Fattura immediata</h2>
     <p><b>${esc(o.cliente)}</b><br>${esc(o.modello)} ${esc(o.targa_telaio)}<br>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}<br>€ ${euro(o.prezzo||0)} + IVA ${esc(String(o.iva||22))}%</p>
     <form method="POST" action="/trasporti/fattura/immediata/${o.id}">
       <div class="grid"><div><label>Numero</label><input type="number" name="numero" value="${next}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div></div>
-      <label>Pagamento</label>${dpTPaymentField()}
+      <label>Pagamento</label>${dpTPaymentField(mc?.codice_pagamento||'BOIMM')}
       <label>Note</label><textarea name="note"></textarea>
       <button>CREA FATTURA IMMEDIATA</button>
     </form><a class="btn btn2" href="/trasporti/ordine/${o.id}">Annulla</a></div>`));
@@ -13565,8 +13711,9 @@ app.get('/trasporti/fattura/:id([0-9]+)',async(req,res)=>{
   const f=await get(`SELECT * FROM trasporti_fatture WHERE id=?`,[req.params.id]).catch(()=>null);
   if(!f)return res.status(404).send('Fattura non trovata');
   const os=await all(`SELECT o.* FROM trasporti_fattura_ordini fo JOIN trasporti_ordini o ON o.id=fo.ordine_id WHERE fo.fattura_id=? ORDER BY fo.posizione,o.id`,[f.id]).catch(()=>[]);
+  const scad=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);
   const rows=os.map(o=>`<tr><td>${esc(o.num_bolla||'')}</td><td>${esc(o.modello)}<br>${esc(o.targa_telaio)}</td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>€ ${euro(o.prezzo||0)}</td><td>${esc(String(o.iva||22))}%</td></tr>`).join('');
-  res.send(page('Fattura '+f.numero_display,`<div class="box"><h2>🧾 Fattura ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Data ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p>
+  res.send(page('Fattura '+f.numero_display,`<div class="box"><h2>🧾 Fattura ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Data ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
     <form method="POST" action="/trasporti/fattura/${f.id}/pagamento" style="margin:12px 0;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><div style="min-width:280px"><label>Forma di pagamento</label>${dpTPaymentField(f.pagamento)}</div><button class="btn btn2">Salva pagamento</button></form>
     <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">✏️ MODIFICA FATTURA</a>`:''}
@@ -13810,8 +13957,9 @@ app.get('/trasporti/fattura/:id.pdf',async(req,res)=>{
       doc.rect(28,y,300,24).fill(RED);
       T('PAGAMENTO',40,y+7,180,9,'Helvetica-Bold','#fff');
 
-      T(f.pagamento||'Bonifico vista fattura',40,y+36,265,10,'Helvetica-Bold');
-      T('Modalita selezionata per questa fattura',40,y+55,265,7.4,'Helvetica','#555');
+      const payRows=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);
+      T(`${f.codice_pagamento||dpPayCode(f.pagamento)} - ${f.pagamento_descrizione||f.pagamento||''}`,40,y+34,265,9,'Helvetica-Bold');
+      let py=y+51; for(const r of payRows.slice(0,4)){ T(`${dpTItDate(r.data)}   EUR ${euro(r.importo)}`,40,py,265,7.3,'Helvetica','#333'); py+=13; }
 
       BOX(340,y,227,108);
       T('Imponibile',353,y+18,90,9);
@@ -13926,6 +14074,8 @@ db.run(`CREATE TABLE IF NOT EXISTS noleggio_fatture (
   iva REAL DEFAULT 0,
   totale REAL DEFAULT 0,
   pagamento TEXT DEFAULT 'Bonifico vista fattura',
+  codice_pagamento TEXT,
+  pagamento_descrizione TEXT,
   note TEXT,
   stato TEXT DEFAULT 'PRONTA_FIC',
   fic_id TEXT,
@@ -13981,7 +14131,7 @@ app.get('/noleggio/fattura/crea/:id',async(req,res)=>{
       <div><label>Numero</label><input type="number" name="numero" min="1" value="${next}" required></div>
       <div><label>Serie</label><input name="serie" value="N" required></div>
       <div><label>Data fattura</label><input type="date" name="data_fattura" value="${data}" required></div>
-      <div><label>Pagamento</label>${dpTPaymentField(p.fattura_metodo||p.pagamento_metodo||'Bonifico vista fattura')}</div>
+      <div><label>Pagamento</label>${dpTPaymentField(p.codice_pagamento||p.fattura_metodo||p.pagamento_metodo||'BOIMM')}</div>
     </div><label>Note</label><textarea name="note"></textarea><button>CREA FATTURA DP RENT</button></form>
     <a class="btn btn2" href="/fatture-da-fare">Annulla</a></div>`));
 });
@@ -13993,8 +14143,11 @@ app.post('/noleggio/fattura/crea/:id',async(req,res)=>{
     const data=req.body.data_fattura||new Date().toISOString().slice(0,10),anno=Number(data.slice(0,4))||new Date().getFullYear();
     const serie=String(req.body.serie||'N').trim().toUpperCase()||'N',numero=Number(req.body.numero)||await dpNNextInvoiceNumber(anno,serie),display=dpNFattNumero(numero,serie);
     const totale=dpNRentGross(p),imponibile=totale/1.22,iva=totale-imponibile,cliente=dpNClienteLabel(p);
-    const ins=await run(`INSERT INTO noleggio_fatture (anno,numero,serie,numero_display,data_fattura,prenotazione_id,cliente,cliente_id,imponibile,iva,totale,pagamento,note,stato) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[anno,numero,serie,display,data,p.id,cliente,p.cliente_id||null,imponibile,iva,totale,String(req.body.pagamento||'Bonifico vista fattura').trim(),String(req.body.note||'').trim(),'PRONTA_FIC']);
+    const payCode=dpPayCode(req.body.pagamento||p.codice_pagamento||'BOIMM'),payDesc=DP_PAYMENT_LABELS[payCode]||payCode;
+    const ins=await run(`INSERT INTO noleggio_fatture (anno,numero,serie,numero_display,data_fattura,prenotazione_id,cliente,cliente_id,imponibile,iva,totale,pagamento,codice_pagamento,pagamento_descrizione,note,stato) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[anno,numero,serie,display,data,p.id,cliente,p.cliente_id||null,imponibile,iva,totale,payDesc,payCode,payDesc,String(req.body.note||'').trim(),'PRONTA_FIC']);
     await run(`UPDATE prenotazioni SET fattura_stato='pronta_fic',fattura_numero=?,fattura_metodo=?,fattura_note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[display,String(req.body.pagamento||'Bonifico vista fattura').trim(),String(req.body.note||'').trim(),p.id]).catch(()=>{});
+    await dpUpsertReceivables({modulo:'NOLEGGIO',fattura_id:ins.lastID,numero_fattura:display,data_fattura:data,cliente_nome:cliente,
+      cliente_email:p.email||'',codice_pagamento:payCode,pagamento:payDesc,totale});
     res.redirect(`/noleggio/fattura/${ins.lastID}`);
   }catch(e){res.status(400).send(page('Errore fattura DP RENT',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/fatture-da-fare">Torna</a></div>`));}
 });
@@ -14002,7 +14155,8 @@ app.post('/noleggio/fattura/crea/:id',async(req,res)=>{
 app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(!f)return res.status(404).send('Fattura non trovata');
   const p=await dpNRentInvoiceData(f.prenotazione_id);
-  res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p>
+  const scad=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);
+  res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
     <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura e rimettere il noleggio da fatturare?')"><button class="btn" style="background:#8b0000">ELIMINA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
@@ -14041,7 +14195,7 @@ app.get('/noleggio/fattura/:id.pdf',async(req,res)=>{
     T(dpNClienteLabel(p),40,y+37,bw-24,10.5,'Helvetica-Bold');T(p.indirizzo_fatturazione||'',40,y+54,bw-24,8);T(`${p.cap_fatturazione||''} ${p.citta_fatturazione||''} ${p.provincia_fatturazione||''}`,40,y+68,bw-24,8);T(`P.IVA: ${p.partita_iva||''}`,40,y+84,bw-24,8);T(`C.F.: ${p.codice_fiscale||''}`,40,y+98,bw-24,8);T(`SDI: ${p.sdi||''}`,40,y+112,bw-24,8);T(`PEC: ${p.pec||''}`,40,y+126,bw-24,8);
     T(`Contratto: ${p.codice||codicePratica(p.id)}`,40+bw+gap,y+38,bw-24,8.3,'Helvetica-Bold');T(`Mezzo: ${[p.mezzo_marca,p.mezzo_modello].filter(Boolean).join(' ')}`,40+bw+gap,y+54,bw-24,8.3);T(`Targa: ${p.mezzo_targa||''}`,40+bw+gap,y+70,bw-24,8.3);T(`Dal: ${dpDateIt(p.data_inizio)} ${p.ora_inizio||''}`,40+bw+gap,y+86,bw-24,8.3);T(`Al: ${dpDateIt(p.data_fine)} ${p.ora_fine||''}`,40+bw+gap,y+102,bw-24,8.3);T(`Km inclusi/extra: ${p.km_inclusi||''} ${p.km_extra_rientro?'- Extra '+p.km_extra_rientro:''}`,40+bw+gap,y+118,bw-24,8.1);
     const ty=375;doc.rect(28,ty,539,25).fill(RED);T('DESCRIZIONE',40,ty+8,300,8,'Helvetica-Bold','#fff');T('IMPONIBILE',365,ty+8,78,8,'Helvetica-Bold','#fff','right');T('IVA',458,ty+8,42,8,'Helvetica-Bold','#fff','right');T('TOTALE',510,ty+8,47,8,'Helvetica-Bold','#fff','right');doc.rect(28,ty+25,539,52).stroke(LINE);T(`Noleggio ${[p.mezzo_marca,p.mezzo_modello,p.mezzo_targa].filter(Boolean).join(' ')}`,40,ty+33,300,8,'Helvetica-Bold');T(`${dpDateIt(p.data_inizio)} - ${dpDateIt(p.data_fine)}`,40,ty+49,300,7.4);T(`€ ${euro(f.imponibile)}`,365,ty+37,78,8,'Helvetica',BLACK,'right');T('22%',458,ty+37,42,8,'Helvetica',BLACK,'right');T(`€ ${euro(f.totale)}`,510,ty+37,47,8,'Helvetica-Bold',BLACK,'right');
-    const sy=520;BOX(28,sy,300,90);doc.rect(28,sy,300,24).fill(RED);T('PAGAMENTO',40,sy+7,180,9,'Helvetica-Bold','#fff');T(f.pagamento||'Bonifico vista fattura',40,sy+37,265,10,'Helvetica-Bold');T('Modalita selezionata per questa fattura',40,sy+56,265,7.4,'Helvetica','#555');BOX(340,sy,227,90);T('Imponibile',353,sy+18,90,9);T(`€ ${euro(f.imponibile)}`,456,sy+18,98,9,'Helvetica',BLACK,'right');T('IVA 22%',353,sy+42,90,9);T(`€ ${euro(f.iva)}`,456,sy+42,98,9,'Helvetica',BLACK,'right');doc.rect(340,sy+61,227,29).fill(PALE);doc.rect(466,sy+61,101,29).fill(RED);T('TOTALE',353,sy+70,110,9,'Helvetica-Bold');T(`€ ${euro(f.totale)}`,473,sy+68,85,11,'Helvetica-Bold','#fff','right');
+    const sy=520;BOX(28,sy,300,90);doc.rect(28,sy,300,24).fill(RED);T('PAGAMENTO',40,sy+7,180,9,'Helvetica-Bold','#fff');const payRows=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);T(`${f.codice_pagamento||dpPayCode(f.pagamento)} - ${f.pagamento_descrizione||f.pagamento||''}`,40,sy+34,265,8.8,'Helvetica-Bold');let py=sy+50;for(const r of payRows.slice(0,3)){T(`${dpTItDate(r.data)}   EUR ${euro(r.importo)}`,40,py,265,7.2,'Helvetica','#333');py+=12;}BOX(340,sy,227,90);T('Imponibile',353,sy+18,90,9);T(`€ ${euro(f.imponibile)}`,456,sy+18,98,9,'Helvetica',BLACK,'right');T('IVA 22%',353,sy+42,90,9);T(`€ ${euro(f.iva)}`,456,sy+42,98,9,'Helvetica',BLACK,'right');doc.rect(340,sy+61,227,29).fill(PALE);doc.rect(466,sy+61,101,29).fill(RED);T('TOTALE',353,sy+70,110,9,'Helvetica-Bold');T(`€ ${euro(f.totale)}`,473,sy+68,85,11,'Helvetica-Bold','#fff','right');
     BOX(28,625,300,78);BOX(340,625,227,78);T('COORDINATE BANCARIE',40,634,250,9,'Helvetica-Bold');T('Intestatario: Trasporti DP S.r.l.',40,653,265,7.6);T(`IBAN: ${typeof DP_BANK_IBAN!=='undefined'?DP_BANK_IBAN:''}`,40,668,265,7.6);T(`Causale: Fattura ${f.numero_display} del ${dpTItDate(f.data_fattura)}`,40,683,265,7.6);T('NOTE',352,634,190,9,'Helvetica-Bold');T(f.note||'',352,654,195,7.6);T('Grazie per la fiducia!',40,720,270,18,'Helvetica-Oblique',RED);doc.moveTo(40,743).lineTo(248,743).lineWidth(2).stroke(RED);
     const fy=775;doc.rect(0,fy,W,H-fy).fill(BLACK);doc.rect(0,fy,6,H-fy).fill(RED);doc.rect(W-78,fy,26,H-fy).fill('#149447');doc.rect(W-52,fy,26,H-fy).fill('#fff');doc.rect(W-26,fy,26,H-fy).fill('#e31b23');T('DP RENT',25,fy+17,100,7,'Helvetica-Bold','#fff','center');T('AFFIDABILITA',120,fy+17,105,6.5,'Helvetica-Bold','#fff','center');T('PUNTUALITA',220,fy+17,105,6.5,'Helvetica-Bold','#fff','center');T('0744 817108 - info@trasportidp.com',330,fy+14,165,6.4,'Helvetica-Bold','#fff','center');T('NOLEGGIO VEICOLI',330,fy+32,165,6.6,'Helvetica-Bold','#fff','center');doc.end();
   }catch(e){try{res.status(500).send(e.message);}catch(_){}}
@@ -14151,6 +14305,75 @@ app.get('/statistiche',async(req,res)=>{
       <p class="notice">I valori mostrano incasso/produzione. Il guadagno netto reale richiede anche i costi.</p></div>`));
   }catch(e){res.status(500).send(page('Errore statistiche',`<div class="box"><h2 class="bad">Errore statistiche</h2><pre>${esc(e.message)}</pre></div>`));}
 });
+
+
+app.get('/scadenzario-incassi',async(req,res)=>{
+  try{
+    await dpBackfillMainReceivables();
+    const stato=String(req.query.stato||'DA_INCASSARE'),oggi=new Date().toISOString().slice(0,10);
+    let where=stato==='TUTTE'?'1=1':'stato=?',params=stato==='TUTTE'?[]:[stato];
+    const rows=await all(`SELECT * FROM dp_scadenze_incassi WHERE ${where} ORDER BY CASE WHEN stato='DA_INCASSARE' THEN 0 ELSE 1 END,scadenza,cliente_nome`,params);
+    const aperte=rows.filter(x=>x.stato==='DA_INCASSARE'),scadute=aperte.filter(x=>x.scadenza<oggi);
+    const totale=aperte.reduce((a,x)=>a+Number(x.importo||0),0),totScad=scadute.reduce((a,x)=>a+Number(x.importo||0),0);
+    const trs=rows.map(x=>`<tr style="${x.stato==='DA_INCASSARE'&&x.scadenza<oggi?'background:#ffe5e5':''}">
+      <td><input type="checkbox" name="ids" value="${x.id}" ${x.stato==='DA_INCASSARE'?'checked':''}></td>
+      <td><b>${esc(x.modulo)}</b></td><td>${esc(x.numero_fattura||'')}</td><td>${esc(x.cliente_nome||'')}<br><small>${esc(x.cliente_email||'')}</small></td>
+      <td>${esc(dpTItDate(x.data_fattura))}</td><td><b>${esc(dpTItDate(x.scadenza))}</b></td><td>€ ${euro(x.importo)}</td>
+      <td>${esc(x.codice_pagamento||'')}<br><small>${esc(x.descrizione_pagamento||'')}</small></td><td>${esc(x.stato)}</td>
+      <td style="white-space:nowrap">${x.stato==='DA_INCASSARE'?`<form method="POST" action="/scadenzario-incassi/${x.id}/incassata" style="display:inline"><button class="btn dp-green">INCASSATA</button></form>
+      <form method="POST" action="/scadenzario-incassi/${x.id}/sollecito" style="display:inline"><button class="btn btn2">✉️ SOLLECITO</button></form>`:''}</td></tr>`).join('');
+    res.send(page('Scadenzario incassi',`<div class="box"><h2>💶 SCADENZARIO FATTURE DA INCASSARE</h2>
+      <p><b>Aperto:</b> € ${euro(totale)} &nbsp; <b>Scaduto:</b> € ${euro(totScad)} &nbsp; <b>Rate scadute:</b> ${scadute.length}</p>
+      <p><a class="btn" href="/scadenzario-incassi?stato=DA_INCASSARE">Da incassare</a><a class="btn btn2" href="/scadenzario-incassi?stato=INCASSATA">Incassate</a><a class="btn btn2" href="/scadenzario-incassi?stato=TUTTE">Tutte</a></p>
+      <form method="POST" action="/scadenzario-incassi/solleciti-massivi" onsubmit="return confirm('Inviare il sollecito email a tutte le scadenze selezionate e non incassate?')">
+      <button class="btn" style="background:#8b0000">✉️ INVIA SOLLECITI MASSIVI SELEZIONATI</button>
+      <div style="overflow:auto;margin-top:12px"><table><tr><th>✓</th><th>Modulo</th><th>Fattura</th><th>Cliente</th><th>Data</th><th>Scadenza</th><th>Importo</th><th>Pagamento</th><th>Stato</th><th></th></tr>${trs||'<tr><td colspan="10">Nessuna scadenza.</td></tr>'}</table></div></form></div>`));
+  }catch(e){res.status(500).send(page('Errore scadenzario',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}
+});
+async function dpSendPaymentReminder(row){
+  if(!row?.cliente_email) throw new Error('Email cliente mancante');
+  const base=dpV265BaseUrl();
+  const path=row.modulo==='TRASPORTI'?`/trasporti/fattura/${row.fattura_id}.pdf`:row.modulo==='NOLEGGIO'?`/noleggio/fattura/${row.fattura_id}.pdf`:`/service/fatture/${row.fattura_id}.pdf`;
+  const subj=`Sollecito pagamento fattura ${row.numero_fattura} - Trasporti DP`;
+  const body=`Buongiorno ${row.cliente_nome||''},
+
+dai nostri riscontri risulta ancora da saldare la fattura ${row.numero_fattura||''}.
+Scadenza: ${dpTItDate(row.scadenza)}
+Importo da saldare: EUR ${euro(row.importo)}
+
+Coordinate bancarie:
+Intestatario: ${DP_BANK_HOLDER}
+Banca: ${DP_BANK_NAME}
+IBAN: ${DP_BANK_IBAN}
+
+Copia fattura: ${base}${path}
+
+Se il pagamento e gia stato effettuato, La preghiamo di considerare questa comunicazione priva di effetto e, se possibile, di inviarci la contabile.
+
+Cordiali saluti
+Trasporti DP S.r.l.`;
+  await sendEmail(row.cliente_email,subj,body);
+  await run(`UPDATE dp_scadenze_incassi SET solleciti=COALESCE(solleciti,0)+1,ultimo_sollecito_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[row.id]);
+}
+app.post('/scadenzario-incassi/:id/incassata',async(req,res)=>{
+  await dpReceivablesEnsure();await run(`UPDATE dp_scadenze_incassi SET stato='INCASSATA',incassata_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[req.params.id]);res.redirect('/scadenzario-incassi');
+});
+app.post('/scadenzario-incassi/:id/sollecito',async(req,res)=>{
+  try{const row=await get(`SELECT * FROM dp_scadenze_incassi WHERE id=?`,[req.params.id]);if(!row)throw new Error('Scadenza non trovata');await dpSendPaymentReminder(row);res.redirect('/scadenzario-incassi');}
+  catch(e){res.status(400).send(page('Sollecito',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/scadenzario-incassi">Torna</a></div>`));}
+});
+app.post('/scadenzario-incassi/solleciti-massivi',async(req,res)=>{
+  try{
+    let ids=req.body.ids||[];if(!Array.isArray(ids))ids=[ids];ids=ids.map(Number).filter(Boolean);
+    if(!ids.length)throw new Error('Nessuna scadenza selezionata.');
+    const qs=ids.map(()=>'?').join(','),rows=await all(`SELECT * FROM dp_scadenze_incassi WHERE id IN (${qs}) AND stato='DA_INCASSARE'`,ids);
+    let ok=0,skip=0;
+    for(const row of rows){try{await dpSendPaymentReminder(row);ok++;}catch(_){skip++;}}
+    res.send(page('Solleciti inviati',`<div class="box"><h2>✉️ Solleciti completati</h2><p>Inviati: <b>${ok}</b> &nbsp; Non inviati: <b>${skip}</b></p><a class="btn" href="/scadenzario-incassi">Torna allo scadenzario</a></div>`));
+  }catch(e){res.status(400).send(page('Solleciti',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/scadenzario-incassi">Torna</a></div>`));}
+});
+setTimeout(()=>dpBackfillMainReceivables().catch(e=>console.log('V311 scadenzario:',e.message)),5000).unref?.();
+
 
 // DP SERVICE - officina integrata nello stesso DP Gestionale
 const dpServiceRouter = require('./dp_service_module');
@@ -15551,3 +15774,5 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V309 - CLIENTI unico: conteggio Trasporti dal master + redirect vecchia lista
 
 // DP GESTIONALE V310 - server invariato rispetto V309; fix nel modulo Service
+
+// DP GESTIONALE V311 - scadenze pagamento, IBAN PDF, scadenzario incassi, solleciti email massivi

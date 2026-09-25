@@ -201,6 +201,9 @@ async function initDb(){
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
   )`);
 
+  await run(`ALTER TABLE fatture_service ADD COLUMN codice_pagamento TEXT`).catch(()=>{});
+  await run(`ALTER TABLE fatture_service ADD COLUMN pagamento_descrizione TEXT`).catch(()=>{});
+
   await run(`CREATE TABLE IF NOT EXISTS preventivi_service (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     numero INTEGER NOT NULL,
@@ -235,6 +238,8 @@ async function initDb(){
     totale REAL DEFAULT 0,
     righe_json TEXT,
     pagamento TEXT DEFAULT 'Bonifico vista fattura',
+    codice_pagamento TEXT,
+    pagamento_descrizione TEXT,
     note TEXT,
     stato TEXT DEFAULT 'EMESSA',
     created_at TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -352,7 +357,9 @@ const DP_SERVICE_AZIENDA = {
   tel: '0744 817108',
   email: 'manutenzione@trasportidp.com',
   web: 'www.trasportidp.com',
-  iban: 'IT78Q0200814413000104798294'
+  iban: 'IT78Q0200814413000104798294',
+  banca: 'UniCredit',
+  bic: 'UNCRITM1J96'
 };
 
 function dpEuro(v){ return '€ ' + (Number(v)||0).toFixed(2); }
@@ -361,6 +368,60 @@ function dpItDate(v){
   const s=String(v).slice(0,10).split('-');
   return s.length===3 ? `${s[2]}/${s[1]}/${s[0]}` : String(v);
 }
+
+function dpServicePayLabel(code){
+  const x={BOIMM:'Bonifico vista fattura',BO30:'Bonifico 30 gg',BO3:'Bonifico 30 gg DF FM',BO6:'Bonifico 60 gg FM',BO9:'Bonifico 90 gg DF FM',
+  BO36:'Bonifico 30/60 gg',BOFM1:'Bonifico fine mese + 10 gg',RB3:'Ri.Ba. 30 gg DF FM',RB36:'Ri.Ba. 30/60 gg DF FM',RB6:'Ri.Ba. 60 gg DF FM',
+  RB9:'Ri.Ba. 90 gg DF FM',RB39:'Ri.Ba. 30/90 gg FM',RB4:'Ri.Ba. 30/60/90/120 gg',RB5:'Ri.Ba. 30/60/90/120/150 gg FM',
+  RB610:'Ri.Ba. 60 gg FM + 10',RB910:'Ri.Ba. 90 gg FM + 10',RBF10:'Ri.Ba. fine mese + 10 gg',RBFIN:'Ri.Ba. fine mese',
+  RID30:'Rimessa diretta 30 gg',RID60:'Rimessa diretta 60 gg',RID90:'Rimessa diretta 90 gg',RIDFM:'Rimessa diretta fine mese',
+  RD:'Rimessa diretta a vista',RD3:'Rimessa diretta 30 gg',RD6:'Rimessa diretta 60 gg',RD9:'Rimessa diretta 90 gg','CO+RB':'Contanti + Ri.Ba. 30 gg'};return x[code]||code||'Bonifico vista fattura';
+}
+function dpServicePayCode(v){const x=String(v||'').trim().toUpperCase();if(dpServicePayLabel(x)!==x||['BOIMM','RD'].includes(x))return x;const low=String(v||'').toLowerCase();if(low.includes('30/60'))return 'RB36';if(low.includes('bonifico 60'))return 'BO6';if(low.includes('bonifico 90'))return 'BO9';if(low.includes('bonifico 30'))return 'BO30';if(low.includes('vista'))return 'BOIMM';return x||'BOIMM';}
+function dpServiceAddDays(iso,n){const d=new Date(iso+'T12:00:00');d.setDate(d.getDate()+n);return d.toISOString().slice(0,10);}
+function dpServiceMonthEnd(iso,n=0){const d=new Date(iso+'T12:00:00');return new Date(d.getFullYear(),d.getMonth()+n+1,0,12).toISOString().slice(0,10);}
+function dpServiceSchedule(codeOrText,date,total){
+  const c=dpServicePayCode(codeOrText),fm=n=>dpServiceMonthEnd(date,n);let ds=[];
+  if(c==='COMP')return[];
+  if(['BOIMM','RD'].includes(c))ds=[date];
+  else if(['BO30','RID30','RD3'].includes(c))ds=[dpServiceAddDays(date,30)];
+  else if(['RID60','RD6'].includes(c))ds=[dpServiceAddDays(date,60)];
+  else if(['RID90','RD9'].includes(c))ds=[dpServiceAddDays(date,90)];
+  else if(['BO3','RB3'].includes(c))ds=[fm(1)];
+  else if(['BO6','RB6'].includes(c))ds=[fm(2)];
+  else if(['BO9','RB9'].includes(c))ds=[fm(3)];
+  else if(['BO36','RB36'].includes(c))ds=[fm(1),fm(2)];
+  else if(c==='RB39')ds=[fm(1),fm(3)];
+  else if(c==='RB4')ds=[fm(1),fm(2),fm(3),fm(4)];
+  else if(c==='RB5')ds=[fm(1),fm(2),fm(3),fm(4),fm(5)];
+  else if(['BOFM1','RBF10'].includes(c))ds=[dpServiceAddDays(fm(0),10)];
+  else if(['RBFIN','RIDFM'].includes(c))ds=[fm(0)];
+  else if(c==='RB610')ds=[dpServiceAddDays(fm(2),10)];
+  else if(c==='RB910')ds=[dpServiceAddDays(fm(3),10)];
+  else if(c==='CO+RB')ds=[date,fm(1)];
+  else ds=[date];
+  const t=Number(total||0),n=ds.length,base=Math.floor((t/n)*100)/100;let a=0;
+  return ds.map((d,i)=>{const imp=i===n-1?Math.round((t-a)*100)/100:base;a+=imp;return{numero:i+1,data:d,importo:imp,codice:c,descrizione:dpServicePayLabel(c)};});
+}
+async function dpServiceEnsureMainScad(){
+  await mainRun(`CREATE TABLE IF NOT EXISTS dp_scadenze_incassi(
+    id INTEGER PRIMARY KEY AUTOINCREMENT,modulo TEXT NOT NULL,fattura_id INTEGER NOT NULL,numero_fattura TEXT,data_fattura TEXT,
+    cliente_nome TEXT,cliente_email TEXT,codice_pagamento TEXT,descrizione_pagamento TEXT,rata_numero INTEGER DEFAULT 1,
+    scadenza TEXT,importo REAL DEFAULT 0,stato TEXT DEFAULT 'DA_INCASSARE',incassata_at TEXT,solleciti INTEGER DEFAULT 0,
+    ultimo_sollecito_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(modulo,fattura_id,rata_numero))`).catch(()=>{});
+}
+async function dpServiceUpsertScad(f,d){
+  await dpServiceEnsureMainScad();const code=dpServicePayCode(f.codice_pagamento||f.pagamento||d?.o?.codice_pagamento),rows=dpServiceSchedule(code,f.data,f.totale);
+  for(const r of rows) await mainRun(`INSERT INTO dp_scadenze_incassi(modulo,fattura_id,numero_fattura,data_fattura,cliente_nome,cliente_email,codice_pagamento,descrizione_pagamento,rata_numero,scadenza,importo)
+    VALUES('SERVICE',?,?,?,?,?,?,?,?,?,?) ON CONFLICT(modulo,fattura_id,rata_numero) DO UPDATE SET
+    numero_fattura=excluded.numero_fattura,data_fattura=excluded.data_fattura,cliente_nome=excluded.cliente_nome,cliente_email=excluded.cliente_email,
+    codice_pagamento=excluded.codice_pagamento,descrizione_pagamento=excluded.descrizione_pagamento,
+    scadenza=CASE WHEN dp_scadenze_incassi.stato='INCASSATA' THEN dp_scadenze_incassi.scadenza ELSE excluded.scadenza END,
+    importo=CASE WHEN dp_scadenze_incassi.stato='INCASSATA' THEN dp_scadenze_incassi.importo ELSE excluded.importo END,updated_at=CURRENT_TIMESTAMP`,
+    [f.id,`${f.numero}/S`,f.data,d?.o?.ragione_sociale||'',d?.o?.email||'',code,r.descrizione,r.numero,r.data,r.importo]).catch(()=>{});
+}
+
 function dpCalcRighe(righe){
   let imponibile=0, iva=0;
   for(const r of (righe||[])){
@@ -446,7 +507,7 @@ function dpServicePdfBuffer(tipo,numero,data,d,opts={}){
 
 async function dpServiceDocData(ordineId){
   const o=await get(`SELECT o.*,v.targa,v.marca,v.modello,v.versione,v.telaio,
-      c.ragione_sociale,c.piva,c.cf,c.indirizzo,c.citta,c.provincia,c.telefono,c.email,c.pec,c.sdi
+      c.ragione_sociale,c.piva,c.cf,c.indirizzo,c.citta,c.provincia,c.telefono,c.email,c.pec,c.sdi,c.codice_pagamento,c.codice_iva
     FROM ordini_lavoro o
     LEFT JOIN veicoli v ON v.id=o.veicolo_id
     LEFT JOIN clienti c ON c.id=o.cliente_id
@@ -571,9 +632,12 @@ function dpDrawServicePdf(doc, tipo, numeroLabel, dataLabel, d, extra={}){
   doc.rect(tx,y+54,235,38).fill('#d70b12');
   doc.fillColor('#fff').font('Helvetica-Bold').fontSize(11).text('TOTALE',tx+12,y+67); doc.fontSize(16).text(dpEuro(calc.totale),tx+105,y+63,{width:115,align:'right'});
   if(extra.pagamento){
-    doc.fillColor('#111').font('Helvetica-Bold').fontSize(8.5).text('PAGAMENTO',L,y+8);
-    doc.font('Helvetica').text(extra.pagamento,L,y+24,{width:tx-L-15});
-    doc.font('Helvetica-Bold').text('IBAN',L,y+44); doc.font('Helvetica').text(DP_SERVICE_AZIENDA.iban,L,y+59,{width:tx-L-15});
+    const pcode=dpServicePayCode(extra.codice_pagamento||extra.pagamento),ps=dpServiceSchedule(pcode,extra.data_fattura||new Date().toISOString().slice(0,10),calc.totale);
+    doc.fillColor('#111').font('Helvetica-Bold').fontSize(8.5).text('PAGAMENTO',L,y+5);
+    doc.font('Helvetica').fontSize(7.8).text(`${pcode} - ${dpServicePayLabel(pcode)}`,L,y+19,{width:tx-L-15});
+    let yy=y+32;for(const r of ps.slice(0,4)){doc.fontSize(7.4).text(`${dpItDate(r.data)}   EUR ${Number(r.importo).toFixed(2)}`,L,yy,{width:tx-L-15});yy+=11;}
+    doc.font('Helvetica-Bold').fontSize(7.6).text('IBAN',L,y+72); doc.font('Helvetica').text(DP_SERVICE_AZIENDA.iban,L+34,y+72,{width:tx-L-49});
+    doc.fontSize(7).text(`BIC/SWIFT ${DP_SERVICE_AZIENDA.bic}`,L,y+84,{width:tx-L-15});
   }else{
     doc.fillColor('#d70b12').font('Helvetica-BoldOblique').fontSize(15).text('La tua auto in buone mani.',L,y+30,{width:tx-L-15});
   }
@@ -1205,11 +1269,13 @@ router.post('/ordini/:id/fattura', async (req,res)=>{
     const anno=new Date().getFullYear();
     const nx=await get("SELECT COALESCE(MAX(numero),0)+1 n FROM fatture_service WHERE anno=? AND serie='S'",[anno]);
     const data=new Date().toISOString().slice(0,10);
-    const r=await run(`INSERT INTO fatture_service(numero,serie,anno,ordine_id,data,imponibile,iva,totale,righe_json,pagamento,note) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,[
-      nx.n,'S',anno,req.params.id,data,d.calc.imponibile,d.calc.iva,d.calc.totale,JSON.stringify(d.righe),'Bonifico vista fattura',d.o.note||''
+    const payCode=dpServicePayCode(d.o.codice_pagamento||'BOIMM'),payDesc=dpServicePayLabel(payCode);
+    const r=await run(`INSERT INTO fatture_service(numero,serie,anno,ordine_id,data,imponibile,iva,totale,righe_json,pagamento,codice_pagamento,pagamento_descrizione,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
+      nx.n,'S',anno,req.params.id,data,d.calc.imponibile,d.calc.iva,d.calc.totale,JSON.stringify(d.righe),payDesc,payCode,payDesc,d.o.note||''
     ]);
     await run('UPDATE ordini_lavoro SET fatturato=1 WHERE id=?',[req.params.id]);
     f=await get('SELECT * FROM fatture_service WHERE id=?',[r.lastID]);
+    await dpServiceUpsertScad(f,d);
   }
   res.redirect('/fatture/'+f.id);
 });
@@ -1303,8 +1369,9 @@ router.get('/fatture/:id([0-9]+)', async (req,res)=>{
   const f=await get('SELECT * FROM fatture_service WHERE id=?',[req.params.id]); if(!f) return res.status(404).send('Fattura non trovata');
   const d=await dpServiceDocData(f.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
   const ph=dpPhone(d.o.telefono); const pdfUrl=dpServiceUrl(req,`/fatture/${f.id}.pdf`);
+  const scad=dpServiceSchedule(f.codice_pagamento||f.pagamento,f.data,f.totale);
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo la fattura DP SERVICE n. ${f.numero}/S per la vettura ${d.o.targa||''}. Totale ${dpEuro(f.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.pagamento)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}<a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}<a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
 });
 
 
@@ -1313,7 +1380,7 @@ router.post('/fatture/:id/email', async (req,res)=>{
     const f=await get('SELECT * FROM fatture_service WHERE id=?',[req.params.id]); if(!f) throw new Error('Fattura non trovata');
     const d=await dpServiceDocData(f.ordine_id); if(!d || !d.o.email) throw new Error('Email cliente mancante');
     try{ const snap=JSON.parse(f.righe_json||'[]'); if(snap.length){d.righe=snap;d.calc=dpCalcRighe(snap);} }catch(_){}
-    const buf=await dpServicePdfBuffer('FATTURA',`N. ${f.numero}/S`,dpItDate(f.data),d,{pagamento:f.pagamento});
+    const buf=await dpServicePdfBuffer('FATTURA',`N. ${f.numero}/S`,dpItDate(f.data),d,{pagamento:f.pagamento,codice_pagamento:f.codice_pagamento,data_fattura:f.data});
     await dpServiceSendEmail(d.o.email,`Fattura DP SERVICE ${f.numero}/S`,
       `Buongiorno ${d.o.ragione_sociale||''},\nin allegato trova la fattura DP SERVICE ${f.numero}/S per ${d.o.targa||''}.\nTotale ${dpEuro(f.totale)}.`,
       [{filename:`Fattura_DP_SERVICE_${f.numero}_S.pdf`,content:buf,contentType:'application/pdf'}]);
@@ -1326,7 +1393,7 @@ router.get('/fatture/:id.pdf', async (req,res)=>{
   const d=await dpServiceDocData(f.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
   try{ const snap=JSON.parse(f.righe_json||'[]'); if(snap.length){d.righe=snap;d.calc=dpCalcRighe(snap);} }catch(e){}
   res.setHeader('Content-Type','application/pdf'); res.setHeader('Content-Disposition',`inline; filename="Fattura_DP_SERVICE_${f.numero}_S.pdf"`);
-  const doc=new PDFDocument({size:'A4',margin:0,bufferPages:true}); doc.pipe(res); dpDrawServicePdf(doc,'FATTURA',`N. ${f.numero}/S`,dpItDate(f.data),d,{pagamento:f.pagamento}); doc.end();
+  const doc=new PDFDocument({size:'A4',margin:0,bufferPages:true}); doc.pipe(res); dpDrawServicePdf(doc,'FATTURA',`N. ${f.numero}/S`,dpItDate(f.data),d,{pagamento:f.pagamento,codice_pagamento:f.codice_pagamento,data_fattura:f.data}); doc.end();
 });
 
 router.get('/ricambi', async (req,res)=>{
@@ -1523,6 +1590,15 @@ router.get('/ricerca', async (req,res)=>{
 const dpServiceReady = initDb().then(()=>dpServiceSeedListino());
 setTimeout(()=>dpServiceSyncMaster().catch(e=>console.log('DP SERVICE master sync startup:',e.message)),5000).unref?.();
 router.use(async (req,res,next)=>{ try{ await dpServiceReady; next(); }catch(e){ next(e); } });
+
+setTimeout(async()=>{
+  try{
+    await dpServiceEnsureMainScad();
+    const fsx=await all(`SELECT * FROM fatture_service ORDER BY id`).catch(()=>[]);
+    for(const f of fsx){const d=await dpServiceDocData(f.ordine_id).catch(()=>null);if(d)await dpServiceUpsertScad(f,d);}
+  }catch(e){console.log('V311 service scadenzario:',e.message);}
+},6500).unref?.();
+
 module.exports = router;
 
 // DP SERVICE V307 - CLIENTI MASTER CONDIVISI CON RENT/TRASPORTI
@@ -1532,3 +1608,5 @@ module.exports = router;
 // DP SERVICE V309 - Clienti apre archivio unico /clienti-azienda; nessuna sync all'apertura
 
 // DP SERVICE V310 - fix link/redirect archivio clienti master fuori da /service
+
+// DP SERVICE V311 - pagamento cliente, scadenze automatiche, IBAN/BIC in fattura, scadenzario centrale
