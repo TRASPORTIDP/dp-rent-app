@@ -13883,35 +13883,26 @@ app.get('/trasporti/fattura/:id.pdf',async(req,res)=>{
       T('Tipo:',378,179,42,8.5,'Helvetica-Bold');
       T(String(f.tipo||'ORDINARIA')==='IMMEDIATA'?'IMMEDIATA':'ORDINARIA',422,179,133,8.5,'Helvetica-Bold',RED);
 
-      // Cliente + trasporto
-      const gap=10,bw=(W-56-gap)/2,y=222;
-      doc.roundedRect(28,y,bw,24,5).fill(RED);
-      doc.roundedRect(28+bw+gap,y,bw,24,5).fill(RED);
-      T('CLIENTE / DESTINATARIO',40,y+7,bw-24,9,'Helvetica-Bold','#fff');
-      T('DATI TRASPORTO',40+bw+gap,y+7,bw-24,9,'Helvetica-Bold','#fff');
-      BOX(28,y+22,bw,108);
-      BOX(28+bw+gap,y+22,bw,108);
+      // Cliente / destinatario - V312: rimosso completamente il riquadro "Dati trasporto".
+      // Il DDT e i suoi riferimenti restano INVARIATI nelle righe della fattura e nei documenti DDT.
+      const y=222, fullW=W-56;
+      doc.roundedRect(28,y,fullW,24,5).fill(RED);
+      T('CLIENTE / DESTINATARIO',40,y+7,fullW-24,9,'Helvetica-Bold','#fff');
+      BOX(28,y+22,fullW,108);
 
-      T(f.cliente||'',40,y+37,bw-24,11,'Helvetica-Bold');
-      T(c?.indirizzo||'',40,y+54,bw-24,8.1);
-      T(`${c?.cap||''} ${c?.citta||''} ${c?.provincia||''}`,40,y+68,bw-24,8.1);
-      T(`P.IVA: ${c?.piva||''}`,40,y+84,bw-24,8.1);
-      T(`C.F.: ${c?.codice_fiscale||''}`,40,y+98,bw-24,8.1);
-      T(`SDI: ${c?.sdi||''}`,40,y+112,bw-24,8.1);
-      T(`PEC: ${c?.pec||''}`,40,y+126,bw-24,8.1);
+      // Colonna sinistra: anagrafica
+      T(f.cliente||'',40,y+37,285,11,'Helvetica-Bold');
+      T(c?.indirizzo||'',40,y+54,285,8.1);
+      T(`${c?.cap||''} ${c?.citta||''} ${c?.provincia||''}`,40,y+68,285,8.1);
+      T(`P.IVA: ${c?.piva||''}`,40,y+88,285,8.1);
+      T(`C.F.: ${c?.codice_fiscale||''}`,40,y+103,285,8.1);
 
-      const o=os[0]||{};
-      if(os.length===1){
-        T(`Ordine n.: ${o.id||''}`,40+bw+gap,y+38,bw-24,8.3,'Helvetica-Bold');
-        T(`Mezzo: ${o.modello||''}`,40+bw+gap,y+54,bw-24,8.3);
-        T(`Targa/Telaio: ${o.targa_telaio||''}`,40+bw+gap,y+70,bw-24,8.3);
-        T(`Ritiro: ${o.citta_carico||''}`,40+bw+gap,y+86,bw-24,8.3);
-        T(`Consegna: ${o.citta_scarico||''}`,40+bw+gap,y+102,bw-24,8.3);
-        T(`Data ordine: ${dpTItDate(o.data_ordine||o.data_ord||'')}`,40+bw+gap,y+118,bw-24,8.3);
-      }else{
-        T(`Trasporti in fattura: ${os.length}`,40+bw+gap,y+46,bw-24,10,'Helvetica-Bold');
-        T('Dettaglio completo nella tabella sottostante.',40+bw+gap,y+67,bw-24,8.2);
-      }
+      // Colonna destra: dati elettronici / contatti
+      T(`SDI: ${c?.sdi||''}`,340,y+40,205,8.1);
+      T(`PEC: ${c?.pec||''}`,340,y+57,205,8.1);
+      T(`Email: ${c?.email||''}`,340,y+74,205,8.1);
+      T(`Tel.: ${c?.telefono||''}`,340,y+91,205,8.1);
+
       return 365;
     }
 
@@ -15776,3 +15767,5 @@ console.log('DP RENT V265 FATTURE 48H: base V259 + PDF cliente senza Drive + col
 // DP GESTIONALE V310 - server invariato rispetto V309; fix nel modulo Service
 
 // DP GESTIONALE V311 - scadenze pagamento, IBAN PDF, scadenzario incassi, solleciti email massivi
+
+// DP GESTIONALE V312 - PDF fattura Trasporti: eliminato box Dati trasporto; DDT invariato
