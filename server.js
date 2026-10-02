@@ -2402,11 +2402,21 @@ function calcolaTotale(mezzo, data_inizio, data_fine, ora_inizio, ora_fine, km_p
   const kmPrev = Number(km_previsti || 0);
   const extraKm = kmGiorno > 0 && kmPrev > kmInclusiTot ? (kmPrev - kmInclusiTot) * EXTRA_KM : 0;
   const extra = extraOrario(ora_inizio) + extraOrario(ora_fine);
-  // V273: il prezzo giornaliero inserito e gia IVA compresa.
-  // Calcolo in centesimi per evitare errori di arrotondamento: totale = giorni x prezzo + eventuali extra.
-  const totaleCentesimi = Math.round(giorni * Math.round(prezzo * 100)) + Math.round(extra * 100) + Math.round(extraKm * 100);
+
+  // V317: il prezzo giornaliero del mezzo e IVA COMPRESA, mentre extra km e
+  // extra fuori orario sono configurati + IVA. Prima gli extra venivano sommati
+  // al totale come se fossero gia ivati: es. 60 + IVA restava 60 nel totale.
+  // Ora: base noleggio ivata + (extra netti * 1,22).
+  const baseIvataCentesimi = giorni * Math.round(prezzo * 100);
+  const extraNettoCentesimi = Math.round(extra * 100) + Math.round(extraKm * 100);
+  const extraIvatoCentesimi = Math.round(extraNettoCentesimi * (1 + IVA));
+  const totaleCentesimi = baseIvataCentesimi + extraIvatoCentesimi;
   const totale = totaleCentesimi / 100;
-  const imponibile = Math.round((totale / (1 + IVA)) * 100) / 100;
+
+  // Imponibile = imponibile della base (che nasce gia ivata) + extra netti.
+  const imponibileBaseCentesimi = Math.round(baseIvataCentesimi / (1 + IVA));
+  const imponibileCentesimi = imponibileBaseCentesimi + extraNettoCentesimi;
+  const imponibile = imponibileCentesimi / 100;
   const iva = Math.round((totale - imponibile) * 100) / 100;
   return { giorni, kmInclusiTot, extraKm, imponibile, iva, totale, extra_fuori_orario: extra };
 }
@@ -3298,12 +3308,29 @@ async function generaPdfContratto(id, opts = {}) {
   const giorni = Math.max(1, Number(p.giorni || (p.data_inizio && p.data_fine ? moment(p.data_fine).diff(moment(p.data_inizio), 'days') + 1 : 1) || 1));
   const kmGiorno = Number(p.km_inclusi || p.km_inclusi_giorno || kmCategoria(p.categoria || p.tipo) || 150);
   const kmInclusiTot = giorni * kmGiorno;
+  // V315: il PDF non si fida solo del campo extra_km salvato. Se una pratica
+  // precedente/WhatsApp lo ha lasciato a zero, lo ricava da km previsti - km inclusi.
+  const kmPrevistiPdf = dpMoneyNum(p.km_previsti || p.km_preventivo || 0);
+  const extraKmCalcolatoPdf = Math.max(0, kmPrevistiPdf - kmInclusiTot) * Number(EXTRA_KM || 0.20);
+  const extraKmPreventivoPdf = dpMoneyNum(p.extra_km) > 0 ? dpMoneyNum(p.extra_km) : dpMoneyNum(extraKmCalcolatoPdf);
+  const extraOrarioPdf = dpMoneyNum(p.extra_fuori_orario || 0);
   const kmPercorsi = (dpMoneyNum(p.km_rientro) > 0 && dpMoneyNum(p.km_uscita) > 0) ? Math.max(0, dpMoneyNum(p.km_rientro) - dpMoneyNum(p.km_uscita)) : 0;
   const kmExtraRientro = Math.max(0, Number(p.km_extra_rientro || 0));
   const extraRientroIvato = dpMoneyNum(p.supplemento_km_rientro || 0);
-  const baseTotale = dpMoneyNum(p.totale || 0);
-  const totaleFinale = p.totale_finale ? dpMoneyNum(p.totale_finale) : v188TotaleFinale(baseTotale, extraRientroIvato);
+  const baseTotaleSalvato = dpMoneyNum(p.totale || 0);
+  // V317: per i contratti automatici ricostruiamo il totale coerente con la regola
+  // commerciale: noleggio base IVA compresa, extra km/orario + IVA. Questo rende
+  // corretto anche il PDF di pratiche create con la vecchia formula.
+  const extraPreventiviNettiPdf = extraOrarioPdf + extraKmPreventivoPdf;
+  const extraPreventiviIvatiPdf = Math.round(extraPreventiviNettiPdf * (1 + IVA) * 100) / 100;
+  const imponibileSalvatoPdf = dpMoneyNum(p.imponibile || 0);
+  const ivaSalvataPdf = dpMoneyNum(p.iva || 0);
+  const baseIvataDaSalvatiPdf = Math.max(0, baseTotaleSalvato - extraPreventiviNettiPdf);
+  const baseIvataPdf = baseIvataDaSalvatiPdf > 0 ? baseIvataDaSalvatiPdf : baseTotaleSalvato;
+  const totaleAutomaticoPdf = Math.round((baseIvataPdf + extraPreventiviIvatiPdf) * 100) / 100;
   const tariffaManualeAttiva = String(p.prezzo_manual_enabled || '').toLowerCase() === 'si' || dpMoneyNum(p.prezzo_manual_totale) > 0;
+  const baseTotale = tariffaManualeAttiva ? baseTotaleSalvato : totaleAutomaticoPdf;
+  const totaleFinale = p.totale_finale ? dpMoneyNum(p.totale_finale) : v188TotaleFinale(baseTotale, extraRientroIvato);
   const indirizzoAz = safe(`${p.fatt_indirizzo || p.indirizzo_fatturazione || p.azienda_indirizzo || ''} ${p.fatt_cap || p.cap_fatturazione || p.azienda_cap || ''} ${p.fatt_citta || p.citta_fatturazione || p.azienda_citta || ''} ${p.fatt_provincia || p.provincia_fatturazione || p.azienda_provincia || ''}`);
   const pecSdi = safe(`${p.pec || ''}${p.pec && p.sdi ? ' | ' : ''}${p.sdi || ''}`);
   const cauzioneRichiestaPdf = String(p.cauzione_richiesta || 'si').toLowerCase() === 'si';
@@ -3348,11 +3375,18 @@ async function generaPdfContratto(id, opts = {}) {
     ['Targa', p.targa || ''], ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`)], ['Categoria', categoriaPdfLabel(p.categoria || p.tipo || '')], ['Giorni', String(giorni)], ['Km incl./prev.', `${kmInclusiTot} / ${safe(p.km_previsti || p.km_preventivo || '')}`], ['Km uscita/rientro', `${safe(p.km_uscita,'')} / ${safe(p.km_rientro,'')}`], ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/'], ['Orari check', `Uscita ${itTime(p.ora_inizio,'/')} / Rientro ${itTime(p.ora_fine,'/')}`]
   ], DARK);
   const econRows = [];
-  econRows.push(['Extra orario', `${euroTxt(p.extra_fuori_orario)} + IVA`]);
-  econRows.push(['Extra km preventivo', `${euroTxt(p.extra_km)} + IVA`]);
+  econRows.push(['Extra orario', `${euroTxt(extraOrarioPdf)} + IVA`]);
+  econRows.push(['Extra km preventivo', `${euroTxt(extraKmPreventivoPdf)} + IVA`]);
   econRows.push(['Extra km rientro', kmExtraRientro > 0 ? `${kmExtraRientro} km - ${euroTxt(extraRientroIvato)} IVA incl.` : '-']);
   if (tariffaManualeAttiva) econRows.push(['Tariffa manuale', `${euroTxt(p.prezzo_manual_totale || baseTotale)} IVA incl.`]);
-  else { econRows.push(['Imponibile', euroTxt(p.imponibile)]); econRows.push(['IVA 22%', euroTxt(p.iva)]); econRows.push(['Noleggio automatico', `${euroTxt(baseTotale)} IVA incl.`]); }
+  else {
+    const noleggioBasePdf = Math.max(0, baseIvataPdf);
+    const imponibilePdf = Math.round(((noleggioBasePdf / (1 + IVA)) + extraPreventiviNettiPdf) * 100) / 100;
+    const ivaPdf = Math.round((baseTotale - imponibilePdf) * 100) / 100;
+    econRows.push(['Imponibile', euroTxt(imponibilePdf)]);
+    econRows.push(['IVA 22%', euroTxt(ivaPdf)]);
+    econRows.push(['Noleggio base', `${euroTxt(noleggioBasePdf)} IVA incl.`]);
+  }
   // V313: la cauzione compare nel riepilogo SOLO se realmente ricevuta.
   // Sotto l'importo viene indicato chiaramente il metodo usato.
   if (cauzioneRicevutaPdf) econRows.push(['Cauzione ricevuta', `${euroTxt(cauzioneImportoPdf)} - ${cauzioneMetodoPdf}`]);
@@ -5883,7 +5917,13 @@ app.post('/prenota-admin', async (req, res) => {
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
     if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi">Vai ai mezzi</a></div>`));
     const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00');
-    if (occ) return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p><b>Nessun nuovo contratto è stato creato.</b></p><p>Il mezzo è già bloccato da: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><a class="btn" href="/planning">Vai al planning</a><a class="btn btn2" href="/nuova-prenotazione">Cambia date/mezzo</a></div>`));
+    if (occ) {
+      // Mantiene TUTTI i dati già inseriti: il cliente deve poter cambiare solo date/mezzo
+      // senza dover ricominciare il contratto da zero.
+      const prefillId = makeOcrId();
+      OCR_PREFILL[prefillId] = { ...b };
+      return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p><b>Nessun nuovo contratto è stato creato.</b></p><p>Il mezzo è già bloccato da: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><p class="notice">I dati del cliente e del contratto restano memorizzati. Premi <b>Cambia date/mezzo</b> e modifica solo quello che serve.</p><a class="btn" href="/planning">Vai al planning</a><a class="btn btn2" href="/nuova-prenotazione?ocr=${encodeURIComponent(prefillId)}">Cambia date/mezzo</a></div>`));
+    }
 
     salvaClienteStorico({
       nome: b.nome, cognome: b.cognome, telefono: b.telefono, email: b.email,
@@ -10774,7 +10814,13 @@ async function dpSaveWhatsAppQuote(session, from, profileName, status){
       giorni:calc.giorni || (data.start && data.end ? dpDays(data.start,data.end) : 1),
       km_inclusi:Number(mezzo.km_inclusi || kmCategoria(categoria) || 0),
       extra_fuori_orario:dpMoneyNum(calc.extra_fuori_orario || 0),
-      extra_km:dpMoneyNum(calc.extraKm || 0),
+      // V315: fallback indipendente dal contenuto della sessione. In questo modo
+      // l'extra km viene SEMPRE salvato anche se calc.extraKm non e presente.
+      extra_km:dpMoneyNum(
+        Number(calc.extraKm || 0) > 0
+          ? calc.extraKm
+          : Math.max(0, Number(kmPrevisti || 0) - Number(calc.kmInclusiTot || ((calc.giorni || 1) * Number(mezzo.km_inclusi || kmCategoria(categoria) || 150)))) * Number(EXTRA_KM || 0.20)
+      ),
       imponibile:calc.imponibile || 0, iva:calc.iva || 0, totale:calc.totale || 0,
       stato:status || 'attesa_si_no', tipo_record:'preventivo_whatsapp', note:'Creato/aggiornato automaticamente dal bot WhatsApp - cliente in attesa risposta SI/NO'
     };
