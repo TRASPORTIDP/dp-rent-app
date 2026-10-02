@@ -2350,6 +2350,27 @@ function kmCategoria(cat) {
   if (cat === 'ESCAVATORE' || cat === 'SEMOVENTE') return 0;
   return 150;
 }
+// V314: etichetta categoria leggibile nei documenti cliente/PDF.
+// Le chiavi tecniche restano in DB per non rompere filtri e compatibilita.
+function categoriaPdfLabel(cat) {
+  const k = String(cat || '').trim().toUpperCase();
+  const map = {
+    'AUTO_4_POSTI':'Auto 4 posti',
+    '4_POSTI':'Auto 4 posti',
+    '7_POSTI':'Auto / SUV 7 posti',
+    'PULMINO_8_POSTI':'Pulmino 8 posti',
+    '8_POSTI':'Pulmino 8 posti',
+    '9_POSTI':'Pulmino 9 posti',
+    'PULMINO':'Pulmino 9 posti',
+    'FURGONE':'Furgone cargo/merci',
+    'AUTO_DACIA':'Auto economica',
+    'AUTO_GOLF':'Auto categoria Golf',
+    'ESCAVATORE':'Escavatore',
+    'SEMOVENTE':'Piattaforma / semovente'
+  };
+  if (map[k]) return map[k];
+  return String(cat || '').replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
 function codicePratica(id) {
   return `DPR-${moment().format('YYYYMMDD')}-${String(id).padStart(4, '0')}`;
 }
@@ -3324,7 +3345,7 @@ async function generaPdfContratto(id, opts = {}) {
 
   const y2 = y;
   const l2 = box(M, y2, COL, 'VEICOLO E NOLEGGIO', [
-    ['Targa', p.targa || ''], ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`)], ['Categoria', p.categoria || ''], ['Giorni', String(giorni)], ['Km incl./prev.', `${kmInclusiTot} / ${safe(p.km_previsti || p.km_preventivo || '')}`], ['Km uscita/rientro', `${safe(p.km_uscita,'')} / ${safe(p.km_rientro,'')}`], ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/'], ['Orari check', `Uscita ${itTime(p.ora_inizio,'/')} / Rientro ${itTime(p.ora_fine,'/')}`]
+    ['Targa', p.targa || ''], ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`)], ['Categoria', categoriaPdfLabel(p.categoria || p.tipo || '')], ['Giorni', String(giorni)], ['Km incl./prev.', `${kmInclusiTot} / ${safe(p.km_previsti || p.km_preventivo || '')}`], ['Km uscita/rientro', `${safe(p.km_uscita,'')} / ${safe(p.km_rientro,'')}`], ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/'], ['Orari check', `Uscita ${itTime(p.ora_inizio,'/')} / Rientro ${itTime(p.ora_fine,'/')}`]
   ], DARK);
   const econRows = [];
   econRows.push(['Extra orario', `${euroTxt(p.extra_fuori_orario)} + IVA`]);
@@ -10746,18 +10767,26 @@ async function dpSaveWhatsAppQuote(session, from, profileName, status){
       categoria, tipo:data.cat?.label || '', mezzo_id:mezzo.id || null,
       targa:mezzo.targa || '', marca:mezzo.marca || '', modello:mezzo.modello || '',
       data_inizio:startIso, data_fine:endIso, ora_inizio:'08:30', ora_fine:'18:00', km_previsti:kmPrevisti,
-      giorni:calc.giorni || (data.start && data.end ? dpDays(data.start,data.end) : 1), imponibile:calc.imponibile || 0, iva:calc.iva || 0, totale:calc.totale || 0,
+      // V314 FIX: il preventivo WhatsApp salvava il totale corretto ma NON il dettaglio
+      // extra km/orario. Il PDF quindi mostrava "Extra km preventivo €0,00" anche
+      // quando i km previsti superavano quelli inclusi. Salviamo gli stessi valori
+      // usati da calcolaTotale(), cosi dettaglio e totale restano coerenti.
+      giorni:calc.giorni || (data.start && data.end ? dpDays(data.start,data.end) : 1),
+      km_inclusi:Number(mezzo.km_inclusi || kmCategoria(categoria) || 0),
+      extra_fuori_orario:dpMoneyNum(calc.extra_fuori_orario || 0),
+      extra_km:dpMoneyNum(calc.extraKm || 0),
+      imponibile:calc.imponibile || 0, iva:calc.iva || 0, totale:calc.totale || 0,
       stato:status || 'attesa_si_no', tipo_record:'preventivo_whatsapp', note:'Creato/aggiornato automaticamente dal bot WhatsApp - cliente in attesa risposta SI/NO'
     };
 
     if(existing && existing.id){
       await run(`UPDATE prenotazioni SET
         nome=?, cognome=?, telefono=?, email=?, categoria=?, tipo=?, mezzo_id=?, targa=?, marca=?, modello=?,
-        data_inizio=?, data_fine=?, ora_inizio=?, ora_fine=?, km_previsti=?, giorni=?, imponibile=?, iva=?, totale=?,
+        data_inizio=?, data_fine=?, ora_inizio=?, ora_fine=?, km_previsti=?, giorni=?, km_inclusi=?, extra_fuori_orario=?, extra_km=?, imponibile=?, iva=?, totale=?,
         stato=?, tipo_record=?, note=COALESCE(note,'') || ?
         WHERE id=?`, [
         payload.nome, payload.cognome, payload.telefono, payload.email, payload.categoria, payload.tipo, payload.mezzo_id, payload.targa, payload.marca, payload.modello,
-        payload.data_inizio, payload.data_fine, payload.ora_inizio, payload.ora_fine, payload.km_previsti, payload.giorni, payload.imponibile, payload.iva, payload.totale,
+        payload.data_inizio, payload.data_fine, payload.ora_inizio, payload.ora_fine, payload.km_previsti, payload.giorni, payload.km_inclusi, payload.extra_fuori_orario, payload.extra_km, payload.imponibile, payload.iva, payload.totale,
         payload.stato, payload.tipo_record, '\nAggiornato preventivo WhatsApp senza duplicare', existing.id
       ]);
       session.data.prenotazione_id = existing.id;
