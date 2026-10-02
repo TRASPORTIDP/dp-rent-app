@@ -4848,7 +4848,7 @@ app.post('/logo', multer({
 app.get('/admin/migra-db-v44', (req, res) => {
   try {
     runV44DbMigration();
-    res.send(page('Migrazione DB V44', '<div class="box"><h2>Migrazione DB V44 eseguita</h2><p>Ora riprova Import Excel.</p><a class="btn" href="/import-excel">Torna import</a><a class="btn btn2" href="/mezzi">Mezzi</a></div>'));
+    res.send(page('Migrazione DB V44', '<div class="box"><h2>Migrazione DB V44 eseguita</h2><p>Ora riprova Import Excel.</p><a class="btn" href="/import-excel">Torna import</a><a class="btn btn2" href="/mezzi-web">Mezzi</a></div>'));
   } catch(e) {
     res.status(500).send('Errore migrazione: ' + e.message);
   }
@@ -4891,7 +4891,7 @@ app.post('/import-excel', importUploadV48.single('file'), async (req, res) => {
           <p><b>Inseriti:</b> ${inserted}</p>
           <p><b>Aggiornati:</b> ${updated}</p>
           <p><b>Saltati:</b> ${skipped}</p>
-          <a class="btn" href="/mezzi">Vai ai mezzi</a>
+          <a class="btn" href="/mezzi-web">Vai ai mezzi</a>
           <a class="btn btn2" href="/import-excel">Nuovo import</a>
         </div>`));
       } catch (e) {
@@ -5915,7 +5915,7 @@ app.post('/prenota-admin', async (req, res) => {
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(page('Errore date', `<div class="box"><h2 class="bad">${esc(erroreDate)}</h2><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
-    if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi">Vai ai mezzi</a></div>`));
+    if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi-web">Vai ai mezzi</a></div>`));
     const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00');
     if (occ) {
       // Mantiene TUTTI i dati già inseriti: il cliente deve poter cambiare solo date/mezzo
@@ -9211,6 +9211,11 @@ app.get('/test-drive', async (req, res) => {
 });
 
 app.get('/mezzi', async (req,res)=> {
+  // V318: /mezzi aperto dal gestionale deve mostrare la pagina mezzi, non il JSON grezzo.
+  // Manteniamo comunque la risposta JSON per eventuali chiamate API che la richiedono esplicitamente.
+  const accept = String(req.get('accept') || '').toLowerCase();
+  const wantsHtml = accept.includes('text/html');
+  if (wantsHtml) return res.redirect('/mezzi-web');
   const rows = await all(`SELECT * FROM mezzi`);
   res.json(rows);
 });
@@ -9642,7 +9647,7 @@ app.get('/admin/fix-tutto', (req, res) => {
       <h2 class="ok">FIX TUTTO V63 OK</h2>
       <p>Database aggiornato: mezzi, prenotazioni, clienti, allegati.</p>
       <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
-      <a class="btn btn2" href="/mezzi">Mezzi</a>
+      <a class="btn btn2" href="/mezzi-web">Mezzi</a>
     </div>`));
   });
 });
@@ -10013,7 +10018,7 @@ app.get('/admin/fix-tutto-v62',(req,res)=>{
     const pren={tipo_cliente:'TEXT',codice_fiscale:'TEXT',partita_iva:'TEXT',ragione_sociale:'TEXT',pec:'TEXT',codice_sdi:'TEXT',indirizzo:'TEXT',citta:'TEXT',cap:'TEXT',provincia:'TEXT',data_nascita:'TEXT',luogo_nascita:'TEXT',documento_tipo:'TEXT',documento_numero:'TEXT',documento_scadenza:'TEXT',patente_numero:'TEXT',patente_scadenza:'TEXT',conducente2_nome:'TEXT',conducente2_cognome:'TEXT',conducente2_patente:'TEXT',targa:'TEXT',marca:'TEXT',modello:'TEXT',ora_inizio:'TEXT',ora_fine:'TEXT',giorni:'INTEGER',km_previsti:'TEXT',cauzione:'REAL',cauzione_richiesta:'TEXT',cauzione_ricevuta:'TEXT',cauzione_importo:'REAL',cauzione_metodo:'TEXT',cauzione_restituita:'TEXT',cauzione_note:'TEXT',tipo_record:'TEXT',note:'TEXT',pdf_path:'TEXT',pdf_drive_link:'TEXT',firma_path:'TEXT',drive_folder_id:'TEXT',drive_folder_link:'TEXT',cargos_stato:'TEXT',cargos_transactionid:'TEXT',cargos_last_error:'TEXT'};
     const mez={uid:'TEXT',cilindrata:'TEXT',alimentazione:'TEXT',anno:'TEXT',colore:'TEXT',posti:'TEXT',km:'TEXT',km_attuali:'TEXT',telaio:'TEXT',categoria:'TEXT',cauzione:'REAL',prezzo_giorno:'REAL',km_inclusi:'REAL',gps:'TEXT',blocco_motore:'TEXT',codice_tipo:'TEXT',note:'TEXT'};
     const allg={mezzo_id:'INTEGER',originalname:'TEXT',mimetype:'TEXT',size:'INTEGER',drive_file_id:'TEXT',drive_web_link:'TEXT'};
-    let left=3; const done=()=>{if(--left===0)res.send(page('FIX V63 OK',`<div class="box"><h2 class="ok">FIX TUTTO V63 OK</h2><a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a><a class="btn btn2" href="/mezzi">Mezzi</a></div>`));};
+    let left=3; const done=()=>{if(--left===0)res.send(page('FIX V63 OK',`<div class="box"><h2 class="ok">FIX TUTTO V63 OK</h2><a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a><a class="btn btn2" href="/mezzi-web">Mezzi</a></div>`));};
     v62FixTable('prenotazioni',pren,done); v62FixTable('mezzi',mez,done); v62FixTable('allegati',allg,done);
   });
 });
@@ -10028,10 +10033,10 @@ app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=pr
 app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=?`,[req.params.id]);res.redirect(`/prenotazione/${req.params.id}`);});
 
 app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="AUTO_4_POSTI">Auto 4 posti</option><option value="furgone">Furgone</option><option value="PULMINO_8_POSTI">Pulmino 8 posti</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi/giorno<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo">Attivo</option><option value="officina">Officina/Fermo</option></select></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
-app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||'attivo');await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.note)]);res.redirect('/mezzi');});
+app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||'attivo');await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.note)]);res.redirect('/mezzi-web');});
 app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km attuali<input name="km" value="${esc(m.km_attuali||m.km)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi/giorno<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo" ${!v180StatoMezzoOff(m)?'selected':''}>Attivo / disponibile</option><option value="officina" ${v180StatoMezzoOff(m)?'selected':''}>Officina / fermo</option></select></label></div><label>Motivo fermo/officina</label><textarea name="fermo_motivo">${esc(m.fermo_motivo||'')}</textarea><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi/${m.id}/officina">Fermo/officina veloce</a><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
-app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||b.stato||'attivo');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi');});
-app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi');});
+app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||b.stato||'attivo');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi-web');});
+app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi-web');});
 
 
 app.get('/admin/fix-tutto-v63',(req,res)=>{
@@ -10084,7 +10089,7 @@ app.get('/admin/gestione-v63',(req,res)=>{
     <a class="btn" href="/nuova-prenotazione">Nuovo contratto</a>
     <a class="btn btn2" href="/preventivo/nuovo">Nuovo preventivo</a>
     <a class="btn btn2" href="/mezzi/nuovo">Nuovo mezzo</a>
-    <a class="btn btn2" href="/mezzi">Lista mezzi</a>
+    <a class="btn btn2" href="/mezzi-web">Lista mezzi</a>
     <a class="btn btn2" href="/storico">Storico</a>
     <a class="btn btn2" href="/admin/fix-tutto-v63">Fix DB</a>
   </div>`));
@@ -11814,7 +11819,7 @@ async function v233EnsureMezziAggiunti() {
 app.get('/admin/aggiungi-mezzi-v233', async (req,res)=>{
   try {
     const out = await v233EnsureMezziAggiunti();
-    res.send(page('Mezzi aggiunti V234', `<div class="box"><h2 class="ok">Mezzi aggiunti/aggiornati</h2><pre>${esc(JSON.stringify(out,null,2))}</pre><a class="btn" href="/mezzi">Apri mezzi</a><a class="btn btn2" href="/planning">Apri planning</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+    res.send(page('Mezzi aggiunti V234', `<div class="box"><h2 class="ok">Mezzi aggiunti/aggiornati</h2><pre>${esc(JSON.stringify(out,null,2))}</pre><a class="btn" href="/mezzi-web">Apri mezzi</a><a class="btn btn2" href="/planning">Apri planning</a><a class="btn btn2" href="/">Dashboard</a></div>`));
   } catch(e) {
     res.status(500).send(page('Errore mezzi V234', `<div class="box"><h2 class="bad">Errore aggiunta mezzi</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/">Dashboard</a></div>`));
   }
