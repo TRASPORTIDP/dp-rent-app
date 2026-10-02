@@ -5879,7 +5879,13 @@ app.get('/nuova-prenotazione', async (req, res) => {
   const ocrData = OCR_PREFILL[req.query.ocr] || {};
   req.query = Object.assign({}, ocrData, req.query || {});
 
-  const mezzi = await all(`SELECT * FROM mezzi ORDER BY categoria,targa`);
+  // V319: nelle nuove prenotazioni mostra solo mezzi realmente prenotabili.
+  // I mezzi venduti/fuori servizio restano nello storico e nella gestione mezzi,
+  // ma non devono piu comparire nel menu a tendina dei nuovi contratti.
+  const mezzi = await all(`SELECT * FROM mezzi
+    WHERE LOWER(TRIM(COALESCE(stato,'attivo'))) NOT IN ('venduto','fuori servizio','fuori_servizio','eliminato','inattivo')
+      AND LOWER(TRIM(COALESCE(stato_operativo,'attivo'))) NOT IN ('venduto','fuori servizio','fuori_servizio','eliminato','inattivo')
+    ORDER BY categoria,targa`);
   res.send(page('Nuova prenotazione', `<h2>Nuova prenotazione / contratto</h2>
       <div class="box" style="border:2px solid #0b6b2d">
         <h3>1) Prima carica/scatta documento o patente</h3>
@@ -5916,6 +5922,14 @@ app.post('/prenota-admin', async (req, res) => {
     if (erroreDate) return res.send(page('Errore date', `<div class="box"><h2 class="bad">${esc(erroreDate)}</h2><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
     if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi-web">Vai ai mezzi</a></div>`));
+    const statoMezzo = String(mezzo.stato || 'attivo').trim().toLowerCase();
+    const statoOperativoMezzo = String(mezzo.stato_operativo || 'attivo').trim().toLowerCase();
+    const statiNonPrenotabili = new Set(['venduto','fuori servizio','fuori_servizio','eliminato','inattivo']);
+    if (statiNonPrenotabili.has(statoMezzo) || statiNonPrenotabili.has(statoOperativoMezzo)) {
+      const prefillId = makeOcrId();
+      OCR_PREFILL[prefillId] = { ...b, mezzo_id: '' };
+      return res.send(page('Mezzo non prenotabile', `<div class="box"><h2 class="bad">Mezzo non disponibile per il noleggio</h2><p>Il mezzo <b>${esc(mezzo.targa || '')} - ${esc(descrizionePubblica(mezzo))}</b> risulta <b>${esc(mezzo.stato || mezzo.stato_operativo || 'non disponibile')}</b> e non puo essere usato per un nuovo contratto.</p><p class="notice">I dati inseriti restano memorizzati. Scegli soltanto un altro mezzo.</p><a class="btn btn2" href="/nuova-prenotazione?ocr=${encodeURIComponent(prefillId)}">Scegli altro mezzo</a></div>`));
+    }
     const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00');
     if (occ) {
       // Mantiene TUTTI i dati già inseriti: il cliente deve poter cambiare solo date/mezzo
@@ -10772,7 +10786,14 @@ function dpVehicleMatchesCat(m, catInfo){
 async function dpFindAvailableVehicle(catInfo, startIso, endIso){
   let mezzi = [];
   try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore select mezzi:', e.message); }
-  mezzi = (mezzi || []).filter(m => dpVehicleMatchesCat(m, catInfo));
+  // V319: anche il preventivo WhatsApp deve ignorare i mezzi venduti/fuori servizio.
+  mezzi = (mezzi || []).filter(m => {
+    const st = String(m.stato || 'attivo').trim().toLowerCase();
+    const so = String(m.stato_operativo || 'attivo').trim().toLowerCase();
+    return !['venduto','fuori servizio','fuori_servizio','eliminato','inattivo'].includes(st)
+      && !['venduto','fuori servizio','fuori_servizio','eliminato','inattivo'].includes(so)
+      && dpVehicleMatchesCat(m, catInfo);
+  });
   for(const m of mezzi){
     try{
       const occ = await queryDisponibilita(m.id, startIso, endIso, '08:30', '18:00');
