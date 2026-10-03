@@ -2402,21 +2402,11 @@ function calcolaTotale(mezzo, data_inizio, data_fine, ora_inizio, ora_fine, km_p
   const kmPrev = Number(km_previsti || 0);
   const extraKm = kmGiorno > 0 && kmPrev > kmInclusiTot ? (kmPrev - kmInclusiTot) * EXTRA_KM : 0;
   const extra = extraOrario(ora_inizio) + extraOrario(ora_fine);
-
-  // V317: il prezzo giornaliero del mezzo e IVA COMPRESA, mentre extra km e
-  // extra fuori orario sono configurati + IVA. Prima gli extra venivano sommati
-  // al totale come se fossero gia ivati: es. 60 + IVA restava 60 nel totale.
-  // Ora: base noleggio ivata + (extra netti * 1,22).
-  const baseIvataCentesimi = giorni * Math.round(prezzo * 100);
-  const extraNettoCentesimi = Math.round(extra * 100) + Math.round(extraKm * 100);
-  const extraIvatoCentesimi = Math.round(extraNettoCentesimi * (1 + IVA));
-  const totaleCentesimi = baseIvataCentesimi + extraIvatoCentesimi;
+  // V273: il prezzo giornaliero inserito e gia IVA compresa.
+  // Calcolo in centesimi per evitare errori di arrotondamento: totale = giorni x prezzo + eventuali extra.
+  const totaleCentesimi = Math.round(giorni * Math.round(prezzo * 100)) + Math.round(extra * 100) + Math.round(extraKm * 100);
   const totale = totaleCentesimi / 100;
-
-  // Imponibile = imponibile della base (che nasce gia ivata) + extra netti.
-  const imponibileBaseCentesimi = Math.round(baseIvataCentesimi / (1 + IVA));
-  const imponibileCentesimi = imponibileBaseCentesimi + extraNettoCentesimi;
-  const imponibile = imponibileCentesimi / 100;
+  const imponibile = Math.round((totale / (1 + IVA)) * 100) / 100;
   const iva = Math.round((totale - imponibile) * 100) / 100;
   return { giorni, kmInclusiTot, extraKm, imponibile, iva, totale, extra_fuori_orario: extra };
 }
@@ -3308,29 +3298,12 @@ async function generaPdfContratto(id, opts = {}) {
   const giorni = Math.max(1, Number(p.giorni || (p.data_inizio && p.data_fine ? moment(p.data_fine).diff(moment(p.data_inizio), 'days') + 1 : 1) || 1));
   const kmGiorno = Number(p.km_inclusi || p.km_inclusi_giorno || kmCategoria(p.categoria || p.tipo) || 150);
   const kmInclusiTot = giorni * kmGiorno;
-  // V315: il PDF non si fida solo del campo extra_km salvato. Se una pratica
-  // precedente/WhatsApp lo ha lasciato a zero, lo ricava da km previsti - km inclusi.
-  const kmPrevistiPdf = dpMoneyNum(p.km_previsti || p.km_preventivo || 0);
-  const extraKmCalcolatoPdf = Math.max(0, kmPrevistiPdf - kmInclusiTot) * Number(EXTRA_KM || 0.20);
-  const extraKmPreventivoPdf = dpMoneyNum(p.extra_km) > 0 ? dpMoneyNum(p.extra_km) : dpMoneyNum(extraKmCalcolatoPdf);
-  const extraOrarioPdf = dpMoneyNum(p.extra_fuori_orario || 0);
   const kmPercorsi = (dpMoneyNum(p.km_rientro) > 0 && dpMoneyNum(p.km_uscita) > 0) ? Math.max(0, dpMoneyNum(p.km_rientro) - dpMoneyNum(p.km_uscita)) : 0;
   const kmExtraRientro = Math.max(0, Number(p.km_extra_rientro || 0));
   const extraRientroIvato = dpMoneyNum(p.supplemento_km_rientro || 0);
-  const baseTotaleSalvato = dpMoneyNum(p.totale || 0);
-  // V317: per i contratti automatici ricostruiamo il totale coerente con la regola
-  // commerciale: noleggio base IVA compresa, extra km/orario + IVA. Questo rende
-  // corretto anche il PDF di pratiche create con la vecchia formula.
-  const extraPreventiviNettiPdf = extraOrarioPdf + extraKmPreventivoPdf;
-  const extraPreventiviIvatiPdf = Math.round(extraPreventiviNettiPdf * (1 + IVA) * 100) / 100;
-  const imponibileSalvatoPdf = dpMoneyNum(p.imponibile || 0);
-  const ivaSalvataPdf = dpMoneyNum(p.iva || 0);
-  const baseIvataDaSalvatiPdf = Math.max(0, baseTotaleSalvato - extraPreventiviNettiPdf);
-  const baseIvataPdf = baseIvataDaSalvatiPdf > 0 ? baseIvataDaSalvatiPdf : baseTotaleSalvato;
-  const totaleAutomaticoPdf = Math.round((baseIvataPdf + extraPreventiviIvatiPdf) * 100) / 100;
-  const tariffaManualeAttiva = String(p.prezzo_manual_enabled || '').toLowerCase() === 'si' || dpMoneyNum(p.prezzo_manual_totale) > 0;
-  const baseTotale = tariffaManualeAttiva ? baseTotaleSalvato : totaleAutomaticoPdf;
+  const baseTotale = dpMoneyNum(p.totale || 0);
   const totaleFinale = p.totale_finale ? dpMoneyNum(p.totale_finale) : v188TotaleFinale(baseTotale, extraRientroIvato);
+  const tariffaManualeAttiva = String(p.prezzo_manual_enabled || '').toLowerCase() === 'si' || dpMoneyNum(p.prezzo_manual_totale) > 0;
   const indirizzoAz = safe(`${p.fatt_indirizzo || p.indirizzo_fatturazione || p.azienda_indirizzo || ''} ${p.fatt_cap || p.cap_fatturazione || p.azienda_cap || ''} ${p.fatt_citta || p.citta_fatturazione || p.azienda_citta || ''} ${p.fatt_provincia || p.provincia_fatturazione || p.azienda_provincia || ''}`);
   const pecSdi = safe(`${p.pec || ''}${p.pec && p.sdi ? ' | ' : ''}${p.sdi || ''}`);
   const cauzioneRichiestaPdf = String(p.cauzione_richiesta || 'si').toLowerCase() === 'si';
@@ -3375,18 +3348,11 @@ async function generaPdfContratto(id, opts = {}) {
     ['Targa', p.targa || ''], ['Mezzo', p.descrizione_pubblica || safe(`${p.marca || ''} ${p.modello || ''}`)], ['Categoria', categoriaPdfLabel(p.categoria || p.tipo || '')], ['Giorni', String(giorni)], ['Km incl./prev.', `${kmInclusiTot} / ${safe(p.km_previsti || p.km_preventivo || '')}`], ['Km uscita/rientro', `${safe(p.km_uscita,'')} / ${safe(p.km_rientro,'')}`], ['Km percorsi', kmPercorsi ? String(kmPercorsi) : '/'], ['Orari check', `Uscita ${itTime(p.ora_inizio,'/')} / Rientro ${itTime(p.ora_fine,'/')}`]
   ], DARK);
   const econRows = [];
-  econRows.push(['Extra orario', `${euroTxt(extraOrarioPdf)} + IVA`]);
-  econRows.push(['Extra km preventivo', `${euroTxt(extraKmPreventivoPdf)} + IVA`]);
+  econRows.push(['Extra orario', `${euroTxt(p.extra_fuori_orario)} + IVA`]);
+  econRows.push(['Extra km preventivo', `${euroTxt(p.extra_km)} + IVA`]);
   econRows.push(['Extra km rientro', kmExtraRientro > 0 ? `${kmExtraRientro} km - ${euroTxt(extraRientroIvato)} IVA incl.` : '-']);
   if (tariffaManualeAttiva) econRows.push(['Tariffa manuale', `${euroTxt(p.prezzo_manual_totale || baseTotale)} IVA incl.`]);
-  else {
-    const noleggioBasePdf = Math.max(0, baseIvataPdf);
-    const imponibilePdf = Math.round(((noleggioBasePdf / (1 + IVA)) + extraPreventiviNettiPdf) * 100) / 100;
-    const ivaPdf = Math.round((baseTotale - imponibilePdf) * 100) / 100;
-    econRows.push(['Imponibile', euroTxt(imponibilePdf)]);
-    econRows.push(['IVA 22%', euroTxt(ivaPdf)]);
-    econRows.push(['Noleggio base', `${euroTxt(noleggioBasePdf)} IVA incl.`]);
-  }
+  else { econRows.push(['Imponibile', euroTxt(p.imponibile)]); econRows.push(['IVA 22%', euroTxt(p.iva)]); econRows.push(['Noleggio automatico', `${euroTxt(baseTotale)} IVA incl.`]); }
   // V313: la cauzione compare nel riepilogo SOLO se realmente ricevuta.
   // Sotto l'importo viene indicato chiaramente il metodo usato.
   if (cauzioneRicevutaPdf) econRows.push(['Cauzione ricevuta', `${euroTxt(cauzioneImportoPdf)} - ${cauzioneMetodoPdf}`]);
@@ -4848,7 +4814,7 @@ app.post('/logo', multer({
 app.get('/admin/migra-db-v44', (req, res) => {
   try {
     runV44DbMigration();
-    res.send(page('Migrazione DB V44', '<div class="box"><h2>Migrazione DB V44 eseguita</h2><p>Ora riprova Import Excel.</p><a class="btn" href="/import-excel">Torna import</a><a class="btn btn2" href="/mezzi-web">Mezzi</a></div>'));
+    res.send(page('Migrazione DB V44', '<div class="box"><h2>Migrazione DB V44 eseguita</h2><p>Ora riprova Import Excel.</p><a class="btn" href="/import-excel">Torna import</a><a class="btn btn2" href="/mezzi">Mezzi</a></div>'));
   } catch(e) {
     res.status(500).send('Errore migrazione: ' + e.message);
   }
@@ -4891,7 +4857,7 @@ app.post('/import-excel', importUploadV48.single('file'), async (req, res) => {
           <p><b>Inseriti:</b> ${inserted}</p>
           <p><b>Aggiornati:</b> ${updated}</p>
           <p><b>Saltati:</b> ${skipped}</p>
-          <a class="btn" href="/mezzi-web">Vai ai mezzi</a>
+          <a class="btn" href="/mezzi">Vai ai mezzi</a>
           <a class="btn btn2" href="/import-excel">Nuovo import</a>
         </div>`));
       } catch (e) {
@@ -5879,13 +5845,7 @@ app.get('/nuova-prenotazione', async (req, res) => {
   const ocrData = OCR_PREFILL[req.query.ocr] || {};
   req.query = Object.assign({}, ocrData, req.query || {});
 
-  // V319: nelle nuove prenotazioni mostra solo mezzi realmente prenotabili.
-  // I mezzi venduti/fuori servizio restano nello storico e nella gestione mezzi,
-  // ma non devono piu comparire nel menu a tendina dei nuovi contratti.
-  const mezzi = await all(`SELECT * FROM mezzi
-    WHERE LOWER(TRIM(COALESCE(stato,'attivo'))) NOT IN ('venduto','fuori servizio','fuori_servizio','eliminato','inattivo')
-      AND LOWER(TRIM(COALESCE(stato_operativo,'attivo'))) NOT IN ('venduto','fuori servizio','fuori_servizio','eliminato','inattivo')
-    ORDER BY categoria,targa`);
+  const mezzi = await all(`SELECT * FROM mezzi ORDER BY categoria,targa`);
   res.send(page('Nuova prenotazione', `<h2>Nuova prenotazione / contratto</h2>
       <div class="box" style="border:2px solid #0b6b2d">
         <h3>1) Prima carica/scatta documento o patente</h3>
@@ -5921,23 +5881,9 @@ app.post('/prenota-admin', async (req, res) => {
     const erroreDate = validDateRange(b.data_inizio, b.data_fine);
     if (erroreDate) return res.send(page('Errore date', `<div class="box"><h2 class="bad">${esc(erroreDate)}</h2><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
-    if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi-web">Vai ai mezzi</a></div>`));
-    const statoMezzo = String(mezzo.stato || 'attivo').trim().toLowerCase();
-    const statoOperativoMezzo = String(mezzo.stato_operativo || 'attivo').trim().toLowerCase();
-    const statiNonPrenotabili = new Set(['venduto','fuori servizio','fuori_servizio','eliminato','inattivo']);
-    if (statiNonPrenotabili.has(statoMezzo) || statiNonPrenotabili.has(statoOperativoMezzo)) {
-      const prefillId = makeOcrId();
-      OCR_PREFILL[prefillId] = { ...b, mezzo_id: '' };
-      return res.send(page('Mezzo non prenotabile', `<div class="box"><h2 class="bad">Mezzo non disponibile per il noleggio</h2><p>Il mezzo <b>${esc(mezzo.targa || '')} - ${esc(descrizionePubblica(mezzo))}</b> risulta <b>${esc(mezzo.stato || mezzo.stato_operativo || 'non disponibile')}</b> e non puo essere usato per un nuovo contratto.</p><p class="notice">I dati inseriti restano memorizzati. Scegli soltanto un altro mezzo.</p><a class="btn btn2" href="/nuova-prenotazione?ocr=${encodeURIComponent(prefillId)}">Scegli altro mezzo</a></div>`));
-    }
+    if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi">Vai ai mezzi</a></div>`));
     const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00');
-    if (occ) {
-      // Mantiene TUTTI i dati già inseriti: il cliente deve poter cambiare solo date/mezzo
-      // senza dover ricominciare il contratto da zero.
-      const prefillId = makeOcrId();
-      OCR_PREFILL[prefillId] = { ...b };
-      return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p><b>Nessun nuovo contratto è stato creato.</b></p><p>Il mezzo è già bloccato da: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><p class="notice">I dati del cliente e del contratto restano memorizzati. Premi <b>Cambia date/mezzo</b> e modifica solo quello che serve.</p><a class="btn" href="/planning">Vai al planning</a><a class="btn btn2" href="/nuova-prenotazione?ocr=${encodeURIComponent(prefillId)}">Cambia date/mezzo</a></div>`));
-    }
+    if (occ) return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p><b>Nessun nuovo contratto è stato creato.</b></p><p>Il mezzo è già bloccato da: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><a class="btn" href="/planning">Vai al planning</a><a class="btn btn2" href="/nuova-prenotazione">Cambia date/mezzo</a></div>`));
 
     salvaClienteStorico({
       nome: b.nome, cognome: b.cognome, telefono: b.telefono, email: b.email,
@@ -7701,7 +7647,7 @@ app.get('/planning', async (req, res) => {
   let start;
   if (vista === 'giorno') start = rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone();
   else if (vista === 'settimana') start = (rawData ? moment(rawData, 'YYYY-MM-DD', true) : oggi.clone()).startOf('isoWeek');
-  else start = rawMese ? moment(rawMese + '-01', 'YYYY-MM-DD', true) : oggi.clone().startOf('month');
+  else start = rawData ? moment(rawData, 'YYYY-MM-DD', true).startOf('month') : (rawMese ? moment(rawMese + '-01', 'YYYY-MM-DD', true) : oggi.clone().startOf('month'));
   if (!start.isValid()) start = oggi.clone();
   let endDate = vista === 'giorno' ? start.clone() : (vista === 'settimana' ? start.clone().add(6,'days') : start.clone().endOf('month'));
   if (rawAl) {
@@ -7791,7 +7737,7 @@ app.get('/planning', async (req, res) => {
     </div>
     <form class="box pl-filter-form" method="GET" action="/planning">
       <input type="hidden" name="manual" value="1">
-      <input type="hidden" name="mese" value="${esc(meseIt)}">
+      <input type="hidden" name="mese" value="${esc(mese)}">
       <label style="font-weight:900">Dal <input type="date" name="dal" value="${esc(start.format('YYYY-MM-DD'))}"></label>
       <label style="font-weight:900">Al <input type="date" name="al" value="${esc(endDate.format('YYYY-MM-DD'))}"></label>
       <select name="categoria">${catOptions}</select>
@@ -9225,11 +9171,6 @@ app.get('/test-drive', async (req, res) => {
 });
 
 app.get('/mezzi', async (req,res)=> {
-  // V318: /mezzi aperto dal gestionale deve mostrare la pagina mezzi, non il JSON grezzo.
-  // Manteniamo comunque la risposta JSON per eventuali chiamate API che la richiedono esplicitamente.
-  const accept = String(req.get('accept') || '').toLowerCase();
-  const wantsHtml = accept.includes('text/html');
-  if (wantsHtml) return res.redirect('/mezzi-web');
   const rows = await all(`SELECT * FROM mezzi`);
   res.json(rows);
 });
@@ -9661,7 +9602,7 @@ app.get('/admin/fix-tutto', (req, res) => {
       <h2 class="ok">FIX TUTTO V63 OK</h2>
       <p>Database aggiornato: mezzi, prenotazioni, clienti, allegati.</p>
       <a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a>
-      <a class="btn btn2" href="/mezzi-web">Mezzi</a>
+      <a class="btn btn2" href="/mezzi">Mezzi</a>
     </div>`));
   });
 });
@@ -10032,7 +9973,7 @@ app.get('/admin/fix-tutto-v62',(req,res)=>{
     const pren={tipo_cliente:'TEXT',codice_fiscale:'TEXT',partita_iva:'TEXT',ragione_sociale:'TEXT',pec:'TEXT',codice_sdi:'TEXT',indirizzo:'TEXT',citta:'TEXT',cap:'TEXT',provincia:'TEXT',data_nascita:'TEXT',luogo_nascita:'TEXT',documento_tipo:'TEXT',documento_numero:'TEXT',documento_scadenza:'TEXT',patente_numero:'TEXT',patente_scadenza:'TEXT',conducente2_nome:'TEXT',conducente2_cognome:'TEXT',conducente2_patente:'TEXT',targa:'TEXT',marca:'TEXT',modello:'TEXT',ora_inizio:'TEXT',ora_fine:'TEXT',giorni:'INTEGER',km_previsti:'TEXT',cauzione:'REAL',cauzione_richiesta:'TEXT',cauzione_ricevuta:'TEXT',cauzione_importo:'REAL',cauzione_metodo:'TEXT',cauzione_restituita:'TEXT',cauzione_note:'TEXT',tipo_record:'TEXT',note:'TEXT',pdf_path:'TEXT',pdf_drive_link:'TEXT',firma_path:'TEXT',drive_folder_id:'TEXT',drive_folder_link:'TEXT',cargos_stato:'TEXT',cargos_transactionid:'TEXT',cargos_last_error:'TEXT'};
     const mez={uid:'TEXT',cilindrata:'TEXT',alimentazione:'TEXT',anno:'TEXT',colore:'TEXT',posti:'TEXT',km:'TEXT',km_attuali:'TEXT',telaio:'TEXT',categoria:'TEXT',cauzione:'REAL',prezzo_giorno:'REAL',km_inclusi:'REAL',gps:'TEXT',blocco_motore:'TEXT',codice_tipo:'TEXT',note:'TEXT'};
     const allg={mezzo_id:'INTEGER',originalname:'TEXT',mimetype:'TEXT',size:'INTEGER',drive_file_id:'TEXT',drive_web_link:'TEXT'};
-    let left=3; const done=()=>{if(--left===0)res.send(page('FIX V63 OK',`<div class="box"><h2 class="ok">FIX TUTTO V63 OK</h2><a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a><a class="btn btn2" href="/mezzi-web">Mezzi</a></div>`));};
+    let left=3; const done=()=>{if(--left===0)res.send(page('FIX V63 OK',`<div class="box"><h2 class="ok">FIX TUTTO V63 OK</h2><a class="btn" href="/nuova-prenotazione">Nuova prenotazione</a><a class="btn btn2" href="/mezzi">Mezzi</a></div>`));};
     v62FixTable('prenotazioni',pren,done); v62FixTable('mezzi',mez,done); v62FixTable('allegati',allg,done);
   });
 });
@@ -10047,10 +9988,10 @@ app.get('/preventivo/nuovo',(req,res)=>res.redirect('/nuova-prenotazione?tipo=pr
 app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDATE prenotazioni SET stato='contratto', tipo_record='contratto' WHERE id=?`,[req.params.id]);res.redirect(`/prenotazione/${req.params.id}`);});
 
 app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="AUTO_4_POSTI">Auto 4 posti</option><option value="furgone">Furgone</option><option value="PULMINO_8_POSTI">Pulmino 8 posti</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi/giorno<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo">Attivo</option><option value="officina">Officina/Fermo</option></select></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
-app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||'attivo');await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.note)]);res.redirect('/mezzi-web');});
+app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||'attivo');await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.note)]);res.redirect('/mezzi');});
 app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km attuali<input name="km" value="${esc(m.km_attuali||m.km)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi/giorno<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo" ${!v180StatoMezzoOff(m)?'selected':''}>Attivo / disponibile</option><option value="officina" ${v180StatoMezzoOff(m)?'selected':''}>Officina / fermo</option></select></label></div><label>Motivo fermo/officina</label><textarea name="fermo_motivo">${esc(m.fermo_motivo||'')}</textarea><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi/${m.id}/officina">Fermo/officina veloce</a><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
-app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||b.stato||'attivo');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi-web');});
-app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi-web');});
+app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||b.stato||'attivo');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi');});
+app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi');});
 
 
 app.get('/admin/fix-tutto-v63',(req,res)=>{
@@ -10103,7 +10044,7 @@ app.get('/admin/gestione-v63',(req,res)=>{
     <a class="btn" href="/nuova-prenotazione">Nuovo contratto</a>
     <a class="btn btn2" href="/preventivo/nuovo">Nuovo preventivo</a>
     <a class="btn btn2" href="/mezzi/nuovo">Nuovo mezzo</a>
-    <a class="btn btn2" href="/mezzi-web">Lista mezzi</a>
+    <a class="btn btn2" href="/mezzi">Lista mezzi</a>
     <a class="btn btn2" href="/storico">Storico</a>
     <a class="btn btn2" href="/admin/fix-tutto-v63">Fix DB</a>
   </div>`));
@@ -10786,14 +10727,7 @@ function dpVehicleMatchesCat(m, catInfo){
 async function dpFindAvailableVehicle(catInfo, startIso, endIso){
   let mezzi = [];
   try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore select mezzi:', e.message); }
-  // V319: anche il preventivo WhatsApp deve ignorare i mezzi venduti/fuori servizio.
-  mezzi = (mezzi || []).filter(m => {
-    const st = String(m.stato || 'attivo').trim().toLowerCase();
-    const so = String(m.stato_operativo || 'attivo').trim().toLowerCase();
-    return !['venduto','fuori servizio','fuori_servizio','eliminato','inattivo'].includes(st)
-      && !['venduto','fuori servizio','fuori_servizio','eliminato','inattivo'].includes(so)
-      && dpVehicleMatchesCat(m, catInfo);
-  });
+  mezzi = (mezzi || []).filter(m => dpVehicleMatchesCat(m, catInfo));
   for(const m of mezzi){
     try{
       const occ = await queryDisponibilita(m.id, startIso, endIso, '08:30', '18:00');
@@ -10840,13 +10774,7 @@ async function dpSaveWhatsAppQuote(session, from, profileName, status){
       giorni:calc.giorni || (data.start && data.end ? dpDays(data.start,data.end) : 1),
       km_inclusi:Number(mezzo.km_inclusi || kmCategoria(categoria) || 0),
       extra_fuori_orario:dpMoneyNum(calc.extra_fuori_orario || 0),
-      // V315: fallback indipendente dal contenuto della sessione. In questo modo
-      // l'extra km viene SEMPRE salvato anche se calc.extraKm non e presente.
-      extra_km:dpMoneyNum(
-        Number(calc.extraKm || 0) > 0
-          ? calc.extraKm
-          : Math.max(0, Number(kmPrevisti || 0) - Number(calc.kmInclusiTot || ((calc.giorni || 1) * Number(mezzo.km_inclusi || kmCategoria(categoria) || 150)))) * Number(EXTRA_KM || 0.20)
-      ),
+      extra_km:dpMoneyNum(calc.extraKm || 0),
       imponibile:calc.imponibile || 0, iva:calc.iva || 0, totale:calc.totale || 0,
       stato:status || 'attesa_si_no', tipo_record:'preventivo_whatsapp', note:'Creato/aggiornato automaticamente dal bot WhatsApp - cliente in attesa risposta SI/NO'
     };
@@ -11840,7 +11768,7 @@ async function v233EnsureMezziAggiunti() {
 app.get('/admin/aggiungi-mezzi-v233', async (req,res)=>{
   try {
     const out = await v233EnsureMezziAggiunti();
-    res.send(page('Mezzi aggiunti V234', `<div class="box"><h2 class="ok">Mezzi aggiunti/aggiornati</h2><pre>${esc(JSON.stringify(out,null,2))}</pre><a class="btn" href="/mezzi-web">Apri mezzi</a><a class="btn btn2" href="/planning">Apri planning</a><a class="btn btn2" href="/">Dashboard</a></div>`));
+    res.send(page('Mezzi aggiunti V234', `<div class="box"><h2 class="ok">Mezzi aggiunti/aggiornati</h2><pre>${esc(JSON.stringify(out,null,2))}</pre><a class="btn" href="/mezzi">Apri mezzi</a><a class="btn btn2" href="/planning">Apri planning</a><a class="btn btn2" href="/">Dashboard</a></div>`));
   } catch(e) {
     res.status(500).send(page('Errore mezzi V234', `<div class="box"><h2 class="bad">Errore aggiunta mezzi</h2><pre>${esc(e.stack || e.message)}</pre><a class="btn" href="/">Dashboard</a></div>`));
   }
