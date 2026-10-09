@@ -4748,7 +4748,7 @@ app.get('/noleggio', async (req, res) => {
           <a class="dp-home-card" href="/statistiche?modulo=noleggio"><span class="ico">📊</span>Statistiche<small>Incassi per giorno / mese / anno</small></a>
           <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>Clienti aziendali<small>Anagrafica condivisa con Trasporti e Officina</small></a>
           <a class="dp-home-card" href="/chiusura-aziendale"><span class="ico">🌴</span>Chiusura aziendale<small>ON/OFF manuale: blocca sito e WhatsApp</small></a>
-          <a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
+          <a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
         </section>
         <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0}</p>
       </div>
@@ -13782,7 +13782,7 @@ app.get('/trasporti/fattura/:id([0-9]+)',async(req,res)=>{
   const rows=os.map(o=>`<tr><td>${esc(o.num_bolla||'')}</td><td>${esc(o.modello)}<br>${esc(o.targa_telaio)}</td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>€ ${euro(o.prezzo||0)}</td><td>${esc(String(o.iva||22))}%</td></tr>`).join('');
   res.send(page('Fattura '+f.numero_display,`<div class="box"><h2>🧾 Fattura ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Data ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
     <form method="POST" action="/trasporti/fattura/${f.id}/pagamento" style="margin:12px 0;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><div style="min-width:280px"><label>Forma di pagamento</label>${dpTPaymentField(f.pagamento)}</div><button class="btn btn2">Salva pagamento</button></form>
-    <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a>
+    <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">✏️ MODIFICA FATTURA</a>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che questa fattura è stata emessa/inviata in Fatture in Cloud?')"><button class="btn dp-green">☁️ SEGNA INVIATA FATTURE IN CLOUD</button></form>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Annullare questa fattura interna e rimettere gli ordini da fatturare?')"><button class="btn btn2">Annulla fattura interna</button></form>`:''}
@@ -14215,7 +14215,7 @@ app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const p=await dpNRentInvoiceData(f.prenotazione_id);
   const scad=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);
   res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
-    <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a>
+    <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura e rimettere il noleggio da fatturare?')"><button class="btn" style="background:#8b0000">ELIMINA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
 });
@@ -14436,6 +14436,116 @@ setTimeout(()=>dpBackfillMainReceivables().catch(e=>console.log('V311 scadenzari
 // DP SERVICE - officina integrata nello stesso DP Gestionale
 const dpServiceRouter = require('./dp_service_module');
 app.use('/service', dpServiceRouter);
+
+
+// ===============================================================
+// V306 - REGISTRO NOTE DI CREDITO DP (FATEL: integrazione futura)
+// ===============================================================
+// Nessun invio SdI automatico: le note sono bozze/interne fino alla trasmissione esterna.
+const dpNCModules = Object.freeze({NOLEGGIO:'noleggio_fatture',TRASPORTI:'trasporti_fatture'});
+const dpNCAllModules=['NOLEGGIO','TRASPORTI','OFFICINA','VENDITA','GENERALE'];
+const dpNCCents = v => Math.round(Number(v||0)*100);
+const dpNCEuro = cents => (cents/100).toLocaleString('it-IT',{minimumFractionDigits:2,maximumFractionDigits:2});
+async function dpNCEnsure(){
+ await run(`CREATE TABLE IF NOT EXISTS dp_note_credito (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, settore TEXT NOT NULL,
+ fattura_origine_id INTEGER, fattura_origine_numero TEXT NOT NULL,
+ fattura_origine_data TEXT, cliente TEXT NOT NULL,
+ anno INTEGER, numero INTEGER, serie TEXT, numero_display TEXT,
+ data_documento TEXT NOT NULL, causale TEXT NOT NULL,
+ imponibile REAL NOT NULL, iva REAL NOT NULL, totale REAL NOT NULL,
+ stato TEXT NOT NULL DEFAULT 'BOZZA', tipo_documento TEXT NOT NULL DEFAULT 'TD04',
+ trasmissione_riferimento TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+ updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+ UNIQUE(anno,serie,numero), CHECK(imponibile>=0 AND iva>=0 AND totale>0)
+ )`);
+ await run(`CREATE INDEX IF NOT EXISTS idx_dp_nc_orig ON dp_note_credito(settore,fattura_origine_id)`);
+}
+function dpNCOriginURL(settore,id){return settore==='NOLEGGIO'?`/noleggio/fattura/${id}`:settore==='TRASPORTI'?`/trasporti/fattura/${id}`:'/fatturazione';}
+async function dpNCOrigin(settore,id){
+ if(!dpNCModules[settore]) return null;
+ if(!/^\d+$/.test(String(id||'')))return null;
+ return get(`SELECT * FROM ${dpNCModules[settore]} WHERE id=?`,[Number(id)]);
+}
+async function dpNCCredited(settore,id,exceptId=0){
+ const r=await get(`SELECT COALESCE(SUM(imponibile),0) imp,COALESCE(SUM(iva),0) iva,COALESCE(SUM(totale),0) total FROM dp_note_credito WHERE settore=? AND fattura_origine_id=? AND stato<>'ANNULLATA' AND id<>?`,[settore,id,exceptId]);
+ return {imp:dpNCCents(r?.imp),iva:dpNCCents(r?.iva),total:dpNCCents(r?.total)};
+}
+function dpNCPageError(res,e){res.status(400).send(page('Note di credito - errore',`<div class="box"><h2>Operazione non eseguita</h2><p>${esc(e.message||e)}</p><a class="btn btn2" href="/note-credito">Torna alle note di credito</a></div>`));}
+app.get('/note-credito',async(req,res)=>{
+ try{
+ await dpNCEnsure();
+ const settore=String(req.query.settore||'').toUpperCase();
+ const rows=await all(`SELECT * FROM dp_note_credito ${dpNCAllModules.includes(settore)?'WHERE settore=?':''} ORDER BY id DESC LIMIT 500`,dpNCAllModules.includes(settore)?[settore]:[]);
+ const table=rows.map(n=>`<tr><td><a href="/note-credito/${n.id}">${esc(n.numero_display||'BOZZA #'+n.id)}</a></td><td>${esc(n.settore)}</td><td>${esc(n.cliente)}</td><td>${esc(n.fattura_origine_numero)}</td><td>${esc(n.data_documento)}</td><td>€ ${dpNCEuro(dpNCCents(n.totale))}</td><td>${esc(n.stato)}</td></tr>`).join('')||'<tr><td colspan="7">Nessuna nota di credito</td></tr>';
+ res.send(page('Note di credito',`<div class="box"><h2>🧾 Note di credito - tutti i settori</h2><p>Registro unico. I documenti sono predisposti per l’esportazione elettronica TD04; nessun invio a FATEL è attivo.</p><form method="GET"><label>Settore</label><select name="settore"><option value="">Tutti</option>${dpNCAllModules.map(x=>`<option ${settore===x?'selected':''}>${x}</option>`).join('')}</select><button>Filtra</button></form><a class="btn" href="/note-credito/nuova">+ Nuova nota di credito</a> <a class="btn btn2" href="/fatturazione">Fatturazione</a></div><div class="box" style="overflow:auto"><table><tr><th>Numero</th><th>Settore</th><th>Cliente</th><th>Fattura riferimento</th><th>Data</th><th>Importo</th><th>Stato</th></tr>${table}</table></div>`));
+ }catch(e){dpNCPageError(res,e);}
+});
+app.get('/note-credito/nuova',async(req,res)=>{
+ try{
+ await dpNCEnsure();
+ const settore=String(req.query.settore||'NOLEGGIO').toUpperCase();
+ const id=Number(req.query.fattura_id||0);
+ let f=await dpNCOrigin(settore,id);
+ const options=dpNCAllModules.map(x=>`<option value="${x}" ${settore===x?'selected':''}>${x}</option>`).join('');
+ const credited=f?await dpNCCredited(settore,f.id):{total:0};
+ res.send(page('Nuova nota di credito',`<div class="box"><h2>➕ Crea nota di credito TD04</h2><p><b>La nota nasce come BOZZA.</b> L'emissione definitiva assegna il numero, ma non trasmette allo SdI.</p><form method="GET" action="/note-credito/nuova"><label>Settore</label><select name="settore">${options}</select><label>ID fattura nella APP (per Noleggio / Trasporti)</label><input name="fattura_id" type="number" value="${id||''}"><button class="btn btn2">Carica fattura</button></form></div>
+ <div class="box"><form method="POST" action="/note-credito/crea"><input type="hidden" name="settore" value="${esc(settore)}"><input type="hidden" name="fattura_id" value="${f?f.id:''}"><div class="grid"><div><label>Fattura di riferimento</label><input name="fattura_numero" value="${esc(f?.numero_display||'')}" ${f?'readonly':''} required></div><div><label>Data fattura originaria</label><input type="date" name="fattura_data" value="${esc(f?.data_fattura||'')}"></div><div><label>Cliente</label><input name="cliente" value="${esc(f?.cliente||'')}" ${f?'readonly':''} required></div><div><label>Data nota</label><input type="date" name="data_documento" value="${new Date().toISOString().slice(0,10)}" required></div></div>
+ ${f?`<p>Fattura originaria: € ${dpNCEuro(dpNCCents(f.totale))}; già stornati: € ${dpNCEuro(credited.total)}; residuo massimo: <b>€ ${dpNCEuro(Math.max(0,dpNCCents(f.totale)-credited.total))}</b></p>`:'<p>Per Officina, Vendita e Generale compilare il riferimento della fattura originale; il collegamento automatico sarà completato quando saranno disponibili i rispettivi moduli fatture.</p>'}
+ <label>Motivo della rettifica</label><textarea name="causale" required placeholder="Descrivere il motivo dello storno"></textarea><div class="grid"><div><label>Imponibile da stornare €</label><input type="number" name="imponibile" min="0" step="0.01" required></div><div><label>IVA da stornare € (indicare l'importo effettivo, anche per aliquote diverse)</label><input type="number" name="iva" min="0" step="0.01" value="0" required></div></div><p>L'importo totale sarà la somma di imponibile e IVA. Per le note parziali verificare la ripartizione per aliquota.</p><button>Crea BOZZA nota di credito</button> <a class="btn btn2" href="/note-credito">Annulla</a></form></div>`));
+ }catch(e){dpNCPageError(res,e);}
+});
+app.post('/note-credito/crea',async(req,res)=>{
+ try{
+ await dpNCEnsure();const b=req.body||{};
+ const settore=String(b.settore||'').toUpperCase();if(!dpNCAllModules.includes(settore))throw Error('Settore non valido');
+ const id=Number(b.fattura_id||0);const f=await dpNCOrigin(settore,id);
+ if(dpNCModules[settore]&&!f)throw Error('Per questo settore occorre selezionare una fattura esistente');
+ const cliente=String(f?.cliente||b.cliente||'').trim();const num=String(f?.numero_display||b.fattura_numero||'').trim();
+ const causale=String(b.causale||'').trim();const dt=String(b.data_documento||'');
+ if(!cliente||!num||!causale||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(dt))throw Error('Compilare cliente, fattura, causale e data');
+ const imp=dpNCCents(b.imponibile),iva=dpNCCents(b.iva),total=imp+iva;
+ if(!Number.isSafeInteger(imp)||!Number.isSafeInteger(iva)||imp<0||iva<0||total<=0)throw Error('Importi non validi');
+ if(f){const credited=await dpNCCredited(settore,id);if(imp+credited.imp>dpNCCents(f.imponibile)||iva+credited.iva>dpNCCents(f.iva)||total+credited.total>dpNCCents(f.totale))throw Error('Nota superiore al residuo disponibile della fattura');}
+ const r=await run(`INSERT INTO dp_note_credito(settore,fattura_origine_id,fattura_origine_numero,fattura_origine_data,cliente,data_documento,causale,imponibile,iva,totale) VALUES(?,?,?,?,?,?,?,?,?,?)`,[settore,f?.id||null,num,f?.data_fattura||String(b.fattura_data||''),cliente,dt,causale,imp/100,iva/100,total/100]);
+ res.redirect(`/note-credito/${r.lastID}`);
+ }catch(e){dpNCPageError(res,e);}
+});
+app.get('/note-credito/:id([0-9]+)',async(req,res)=>{
+ try{await dpNCEnsure();const n=await get(`SELECT * FROM dp_note_credito WHERE id=?`,[req.params.id]);if(!n)return res.status(404).send('Nota non trovata');
+ res.send(page('Nota di credito '+(n.numero_display||n.id),`<div class="box"><h2>🧾 Nota di credito ${esc(n.numero_display||'BOZZA #'+n.id)}</h2><p>Settore: ${esc(n.settore)} • Stato: <b>${esc(n.stato)}</b><br>Cliente: ${esc(n.cliente)}<br>Data: ${esc(n.data_documento)}<br>Fattura rettificata: ${esc(n.fattura_origine_numero)} del ${esc(n.fattura_origine_data||'')} ${n.fattura_origine_id?`<a href="${dpNCOriginURL(n.settore,n.fattura_origine_id)}">Apri fattura</a>`:''}</p><p>Motivazione: ${esc(n.causale)}</p><p>Imponibile: € ${dpNCEuro(dpNCCents(n.imponibile))}<br>IVA: € ${dpNCEuro(dpNCCents(n.iva))}<br><b>Totale credito: € ${dpNCEuro(dpNCCents(n.totale))}</b></p>
+ <a class="btn" target="_blank" href="/note-credito/${n.id}.pdf">📄 PDF</a> <a class="btn btn2" href="/note-credito">Registro</a>
+ ${n.stato==='BOZZA'?`<form method="POST" action="/note-credito/${n.id}/emetti" onsubmit="return confirm('Confermi emissione interna e assegnazione numero? Non viene inviato nulla allo SdI.')"><label>Serie note di credito</label><input name="serie" value="NC" maxlength="12" pattern="[A-Za-z0-9]+" required><button>Conferma emissione interna</button></form><form method="POST" action="/note-credito/${n.id}/elimina" onsubmit="return confirm('Eliminare la bozza?')"><button class="btn btn2">Elimina bozza</button></form>`:''}
+ ${n.stato==='EMESSA'?`<form method="POST" action="/note-credito/${n.id}/segna-trasmessa" onsubmit="return confirm('Confermi la trasmissione ESTERNA già avvenuta?')"><label>Riferimento invio esterno / protocollo</label><input name="riferimento" required><button>Segna trasmessa esternamente</button></form>`:''}
+ <p><small>L'integrazione con FATEL non è ancora attiva. Questo PDF non sostituisce il file XML elettronico richiesto per la trasmissione fiscale.</small></p></div>`));
+ }catch(e){dpNCPageError(res,e);}
+});
+app.post('/note-credito/:id/elimina',async(req,res)=>{try{await dpNCEnsure();await run(`DELETE FROM dp_note_credito WHERE id=? AND stato='BOZZA'`,[req.params.id]);res.redirect('/note-credito');}catch(e){dpNCPageError(res,e);}});
+app.post('/note-credito/:id/emetti',async(req,res)=>{
+ try{await dpNCEnsure();const n=await get(`SELECT * FROM dp_note_credito WHERE id=?`,[req.params.id]);if(!n||n.stato!=='BOZZA')throw Error('Bozza non disponibile');
+ const serie=String(req.body.serie||'NC').toUpperCase().trim();if(!/^[A-Z0-9]{1,12}$/.test(serie))throw Error('Serie non valida');
+ const anno=Number(n.data_documento.slice(0,4));let issued=false;
+ // Indice UNIQUE impedisce doppia numerazione anche con richieste simultanee.
+ for(let attempt=0;attempt<5&&!issued;attempt++){
+ const m=await get(`SELECT COALESCE(MAX(numero),0)+1 AS next FROM dp_note_credito WHERE anno=? AND serie=?`,[anno,serie]);const numero=Number(m.next);
+ try{const r=await run(`UPDATE dp_note_credito SET anno=?,numero=?,serie=?,numero_display=?,stato='EMESSA',updated_at=CURRENT_TIMESTAMP WHERE id=? AND stato='BOZZA'`,[anno,numero,serie,`${numero}/${serie}`,n.id]);issued=!!r.changes;}catch(e){if(!String(e.message).includes('UNIQUE'))throw e;}
+ }
+ if(!issued)throw Error('Impossibile assegnare numero: riprovare');res.redirect(`/note-credito/${n.id}`);
+ }catch(e){dpNCPageError(res,e);}
+});
+app.post('/note-credito/:id/segna-trasmessa',async(req,res)=>{
+ try{await dpNCEnsure();const ref=String(req.body.riferimento||'').trim();if(!ref)throw Error('Inserire riferimento di trasmissione');await run(`UPDATE dp_note_credito SET stato='TRASMESSA_ESTERNA',trasmissione_riferimento=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND stato='EMESSA'`,[ref,req.params.id]);res.redirect(`/note-credito/${req.params.id}`);}catch(e){dpNCPageError(res,e);}
+});
+app.get('/note-credito/:id.pdf',async(req,res)=>{
+ try{await dpNCEnsure();const n=await get(`SELECT * FROM dp_note_credito WHERE id=?`,[req.params.id]);if(!n)return res.status(404).send('Non trovata');
+ const doc=new PDFDocument({size:'A4',margin:45});res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`inline; filename="NOTA_CREDITO_${n.id}.pdf"`);doc.pipe(res);
+ doc.fontSize(19).text('TRASPORTI DP S.R.L.').moveDown(.2).fontSize(10).text('Via Tuderte 466 - Narni (TR)').text('P.IVA 01385450554').moveDown(1);
+ doc.fontSize(16).text('NOTA DI CREDITO - TD04').fontSize(10).text(`Numero: ${n.numero_display||'BOZZA (non emessa)'}`).text(`Data: ${n.data_documento}`).text(`Settore: ${n.settore}`).moveDown();
+ doc.fontSize(11).text(`Cliente: ${n.cliente}`).text(`Riferita alla fattura: ${n.fattura_origine_numero} del ${n.fattura_origine_data||'data non indicata'}`).moveDown().text(`Causale: ${n.causale}`).moveDown();
+ doc.text(`Imponibile stornato: EUR ${dpNCEuro(dpNCCents(n.imponibile))}`).text(`IVA stornata: EUR ${dpNCEuro(dpNCCents(n.iva))}`).font('Helvetica-Bold').text(`TOTALE NOTA DI CREDITO: EUR ${dpNCEuro(dpNCCents(n.totale))}`).font('Helvetica').moveDown(2);
+ doc.fontSize(9).text('Stato interno: '+n.stato).text('Documento di cortesia. La validita fiscale della nota elettronica dipende dalla trasmissione tramite SdI.');doc.end();
+ }catch(e){if(!res.headersSent)dpNCPageError(res,e);else res.end();}
+});
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log('DP RENT APP V237 stabile ENOENT porta ' + PORT);
