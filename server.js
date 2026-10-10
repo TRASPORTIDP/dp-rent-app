@@ -13705,6 +13705,7 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
     <td style="white-space:nowrap">
       <a class="btn" href="/trasporti/fattura/${f.id}">APRI</a>
       <a class="btn btn2" target="_blank" href="/trasporti/fattura/${f.id}.pdf?v=301">PDF</a>
+      <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">NOTA DI CREDITO</a>
       ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">MODIFICA</a>
       <form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura interna e rimettere gli ordini disponibili?')">
         <button class="btn" style="background:#8b0000">ELIMINA</button>
@@ -14490,7 +14491,11 @@ app.get('/note-credito/nuova',async(req,res)=>{
  const f=await dpNCOrigin(settore,id);
  const options=dpNCAllModules.map(x=>`<option value="${x}" ${settore===x?'selected':''}>${x}</option>`).join('');
  const linked=!!dpNCModules[settore];
- const invoices=linked?await all(`SELECT id,numero_display,data_fattura,cliente,totale FROM ${dpNCModules[settore]} ORDER BY data_fattura DESC,id DESC LIMIT 500`):[];
+ // Stessa tabella e stesso ordinamento utilizzati nella pagina Fatturazione Trasporti.
+ // Non filtrare per stato: anche PRONTA_FIC deve essere disponibile per la rettifica.
+ const invoices=linked?await all(`SELECT id,numero_display,data_fattura,cliente,imponibile,iva,totale,stato FROM ${dpNCModules[settore]} ORDER BY data_fattura DESC,id DESC LIMIT 500`):[];
+ // Mantieni visibile la fattura richiesta anche se oltre le 500 più recenti.
+ if(f&&!invoices.some(x=>Number(x.id)===Number(f.id))) invoices.unshift(f);
  const choices=invoices.map(x=>`<option value="${x.id}" ${f&&Number(f.id)===Number(x.id)?'selected':''}>${esc(x.numero_display||'#'+x.id)} — ${esc(x.cliente||'Cliente')} — ${esc(x.data_fattura||'')} — € ${dpNCEuro(dpNCCents(x.totale))}</option>`).join('');
  const credited=f?await dpNCCredited(settore,f.id):{imp:0,iva:0,total:0};
  const availImp=f?Math.max(0,dpNCCents(f.imponibile)-credited.imp):0;
@@ -14499,7 +14504,7 @@ app.get('/note-credito/nuova',async(req,res)=>{
  const selectedValid=!!f&&availTotal>0;
  res.send(page('Nuova nota di credito',`<div class="box"><h2>➕ Crea nota di credito TD04</h2><p><b>La nota nasce come BOZZA.</b> L'emissione definitiva assegna il numero, ma non trasmette allo SdI.</p>
  <form method="GET" action="/note-credito/nuova"><label>Settore</label><select name="settore" id="nc-settore" onchange="this.form.fattura_id.value='';this.form.submit()">${options}</select>
- ${linked?`<label>Seleziona una fattura esistente (${invoices.length} più recenti)</label><select name="fattura_id" required onchange="if(this.value)this.form.submit()"><option value="">— Scegli fattura —</option>${choices}</select><button class="btn btn2">Carica fattura</button>${!invoices.length?'<p>Nessuna fattura disponibile in questo settore.</p>':''}`:'<p>Per questo settore inserisci manualmente i riferimenti della fattura originale.</p><input type="hidden" name="fattura_id" value="">'}</form></div>
+ ${linked?`<label>Seleziona una fattura esistente (${invoices.length} più recenti)</label><select name="fattura_id" required onchange="if(this.value)this.form.submit()"><option value="">— Scegli fattura —</option>${choices}</select><button class="btn btn2">Carica fattura</button>${!invoices.length?'<p>Nessuna fattura presente nella tabella del settore selezionato.</p>':`<p><small>Oppure apri direttamente: ${invoices.slice(0,20).map(x=>`<a href="/note-credito/nuova?settore=${settore}&fattura_id=${x.id}">${esc(x.numero_display||'#'+x.id)}</a>`).join(' · ')}</small></p>`}`:'<p>Per questo settore inserisci manualmente i riferimenti della fattura originale.</p><input type="hidden" name="fattura_id" value="">'}</form></div>
  <div class="box">${linked&&!f?'<p><b>Seleziona una fattura dall’elenco per compilare automaticamente i dati.</b></p>':linked&&!selectedValid?'<p><b>La fattura è già stata interamente stornata oppure non presenta un residuo disponibile.</b></p>':''}
  <form method="POST" action="/note-credito/crea"><input type="hidden" name="settore" value="${esc(settore)}"><input type="hidden" name="fattura_id" value="${f?f.id:''}">
  <div class="grid"><div><label>Fattura di riferimento</label><input name="fattura_numero" value="${esc(f?.numero_display||'')}" ${f?'readonly':''} required></div><div><label>Data fattura originaria</label><input type="date" name="fattura_data" value="${esc(f?.data_fattura||'')}"></div><div><label>Cliente</label><input name="cliente" value="${esc(f?.cliente||'')}" ${f?'readonly':''} required></div><div><label>Data nota</label><input type="date" name="data_documento" value="${new Date().toISOString().slice(0,10)}" required></div></div>
