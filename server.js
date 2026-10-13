@@ -3054,6 +3054,10 @@ async function generaPdfContratto(id, opts = {}) {
     WHERE p.id = ?
   `, [id]);
   if (!p) throw new Error('Contratto non trovato');
+  // V314: mai emettere un contratto senza lettura odometro in uscita. Zero ammesso.
+  if (p.km_uscita === null || p.km_uscita === undefined || String(p.km_uscita).trim() === '' || !/^\d+$/.test(String(p.km_uscita).trim())) {
+    throw new Error('Inserire obbligatoriamente i KM in uscita prima di generare il contratto.');
+  }
 
   const file = path.join(contractsDir, pdfFileNameForContract(p));
   const doc = new PDFDocument({ margin: 0, size: 'A4', bufferPages: true, autoFirstPage: true });
@@ -13783,7 +13787,7 @@ app.get('/trasporti/fattura/:id([0-9]+)',async(req,res)=>{
   const rows=os.map(o=>`<tr><td>${esc(o.num_bolla||'')}</td><td>${esc(o.modello)}<br>${esc(o.targa_telaio)}</td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>€ ${euro(o.prezzo||0)}</td><td>${esc(String(o.iva||22))}%</td></tr>`).join('');
   res.send(page('Fattura '+f.numero_display,`<div class="box"><h2>🧾 Fattura ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Data ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
     <form method="POST" action="/trasporti/fattura/${f.id}/pagamento" style="margin:12px 0;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><div style="min-width:280px"><label>Forma di pagamento</label>${dpTPaymentField(f.pagamento)}</div><button class="btn btn2">Salva pagamento</button></form>
-    <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
+    <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/trasporti/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">✏️ MODIFICA FATTURA</a>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che questa fattura è stata emessa/inviata in Fatture in Cloud?')"><button class="btn dp-green">☁️ SEGNA INVIATA FATTURE IN CLOUD</button></form>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Annullare questa fattura interna e rimettere gli ordini da fatturare?')"><button class="btn btn2">Annulla fattura interna</button></form>`:''}
@@ -14216,7 +14220,7 @@ app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const p=await dpNRentInvoiceData(f.prenotazione_id);
   const scad=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);
   res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
-    <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
+    <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/noleggio/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura e rimettere il noleggio da fatturare?')"><button class="btn" style="background:#8b0000">ELIMINA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
 });
@@ -14567,6 +14571,77 @@ app.get('/note-credito/:id.pdf',async(req,res)=>{
  doc.text(`Imponibile stornato: EUR ${dpNCEuro(dpNCCents(n.imponibile))}`).text(`IVA stornata: EUR ${dpNCEuro(dpNCCents(n.iva))}`).font('Helvetica-Bold').text(`TOTALE NOTA DI CREDITO: EUR ${dpNCEuro(dpNCCents(n.totale))}`).font('Helvetica').moveDown(2);
  doc.fontSize(9).text('Stato interno: '+n.stato).text('Documento di cortesia. La validita fiscale della nota elettronica dipende dalla trasmissione tramite SdI.');doc.end();
  }catch(e){if(!res.headersSent)dpNCPageError(res,e);else res.end();}
+});
+
+
+// V314 - Export controllato FatturaPA via Google Drive; nessun invio diretto allo SdI.
+function dpXmlV314(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
+function dpTagV314(k,v){return `<${k}>${dpXmlV314(v)}</${k}>`;}
+function dpValV314(v){return String(v==null?'':v).trim();}
+function dpMoneyV314(v){return Number(v).toFixed(2);}
+function dpRequireV314(v,label){if(!dpValV314(v))throw new Error('Dato fiscale mancante: '+label);return dpValV314(v);}
+function dpDateV314(v){const d=dpValV314(v).slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(d))throw new Error('Data fattura non valida');return d;}
+async function dpMakeInvoiceXmlV314(tipo,id){
+ const tab=tipo==='noleggio'?'noleggio_fatture':tipo==='trasporti'?'trasporti_fatture':null;
+ if(!tab)throw new Error('Settore XML non supportato');
+ const f=await get(`SELECT * FROM ${tab} WHERE id=?`,[id]);if(!f)throw new Error('Fattura non trovata');
+ // Non esportare documenti annullati o senza importi coerenti.
+ if(/ANNULLAT/i.test(String(f.stato||'')))throw new Error('Fattura annullata');
+ const imponibile=Number(f.imponibile),iva=Number(f.iva),totale=Number(f.totale);
+ if(![imponibile,iva,totale].every(Number.isFinite)||imponibile<=0||iva<0||Math.abs(imponibile+iva-totale)>.02)throw new Error('Totali fattura non coerenti: controllare imponibile, IVA e totale');
+ const aliquota=Math.round(iva/imponibile*10000)/100;
+ if(Math.abs(iva-imponibile*aliquota/100)>.02)throw new Error('Aliquota IVA non ricostruibile: verificare righe e arrotondamenti');
+ if(aliquota===0)throw new Error('IVA zero: indicare prima la corretta Natura IVA (N1-N7). Export sospeso.');
+ const vat=dpRequireV314(process.env.DP_XML_PIVA,'DP_XML_PIVA (partita IVA emittente)').replace(/^IT/i,'');
+ if(!/^\d{11}$/.test(vat))throw new Error('DP_XML_PIVA deve avere 11 cifre');
+ const denom=dpRequireV314(process.env.DP_XML_RAGIONE_SOCIALE,'DP_XML_RAGIONE_SOCIALE');
+ const ind=dpRequireV314(process.env.DP_XML_INDIRIZZO,'DP_XML_INDIRIZZO');
+ const cap=dpRequireV314(process.env.DP_XML_CAP,'DP_XML_CAP');
+ const comune=dpRequireV314(process.env.DP_XML_COMUNE,'DP_XML_COMUNE');
+ const prov=dpRequireV314(process.env.DP_XML_PROVINCIA,'DP_XML_PROVINCIA');
+ const regime=dpValV314(process.env.DP_XML_REGIME)||'RF01';
+ const cliente= f.cliente_id ? await get('SELECT * FROM clienti WHERE id=?',[f.cliente_id]).catch(()=>null) : null;
+ if(!cliente)throw new Error('Cliente non collegato ad anagrafica completa: associare il cliente alla fattura');
+ const cVat=dpValV314(cliente.piva||cliente.partita_iva).replace(/^IT/i,'').replace(/\s/g,'');
+ const cCf=dpValV314(cliente.codice_fiscale||cliente.cf).toUpperCase();
+ if(!/^\d{11}$/.test(cVat)&&!(/^[A-Z0-9]{11,16}$/.test(cCf)))throw new Error('Cliente senza P.IVA o codice fiscale valido');
+ const cName=dpRequireV314(cliente.ragione_sociale||cliente.azienda||[cliente.nome,cliente.cognome].filter(Boolean).join(' ')||f.cliente,'ragione sociale/nome cliente');
+ const cInd=dpRequireV314(cliente.indirizzo||cliente.indirizzo_fatturazione,'indirizzo cliente');
+ const cCap=dpRequireV314(cliente.cap||cliente.cap_fatturazione,'CAP cliente');
+ const cComune=dpRequireV314(cliente.citta||cliente.citta_fatturazione,'comune cliente');
+ const cProv=dpValV314(cliente.provincia||cliente.provincia_fatturazione);
+ const paese=dpValV314(cliente.nazione||cliente.paese||'IT').toUpperCase();
+ const dest=dpValV314(cliente.sdi||cliente.codice_sdi)||'0000000';
+ if(!/^[A-Z0-9]{7}$/.test(dest.toUpperCase()))throw new Error('Codice destinatario cliente deve essere di 7 caratteri');
+ const pec=dpValV314(cliente.pec);
+ const progressivo=String(tipo==='noleggio'?'N':'T')+String(f.id).padStart(5,'0');
+ const n=dpRequireV314(f.numero_display||f.numero,'numero fattura');
+ const data=dpDateV314(f.data_fattura);
+ // Prezzi aggregati: una riga riepilogativa; con aliquote diverse serve modello righe dedicato.
+ const label=tipo==='noleggio'?'Servizi di noleggio':'Servizi di trasporto';
+ const azienda=`<DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdFiscaleIVA><Anagrafica>${dpTagV314('Denominazione',denom)}</Anagrafica>${dpTagV314('RegimeFiscale',regime)}</DatiAnagrafici><Sede>${dpTagV314('Indirizzo',ind)}${dpTagV314('CAP',cap)}${dpTagV314('Comune',comune)}${dpTagV314('Provincia',prov)}<Nazione>IT</Nazione></Sede>`;
+ const cId=`${/^\d{11}$/.test(cVat)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',cVat)}</IdFiscaleIVA>`:''}${cCf?dpTagV314('CodiceFiscale',cCf):''}`;
+ const client=`<DatiAnagrafici>${cId}<Anagrafica>${dpTagV314('Denominazione',cName)}</Anagrafica></DatiAnagrafici><Sede>${dpTagV314('Indirizzo',cInd)}${dpTagV314('CAP',cCap)}${dpTagV314('Comune',cComune)}${cProv&&paese==='IT'?dpTagV314('Provincia',cProv):''}${dpTagV314('Nazione',paese)}</Sede>`;
+ const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',progressivo)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${azienda}</CedentePrestatore><CessionarioCommittente>${client}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',n)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DettaglioLinee><NumeroLinea>1</NumeroLinea>${dpTagV314('Descrizione',label)}<Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imponibile))}${dpTagV314('PrezzoTotale',dpMoneyV314(imponibile))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee><DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imponibile))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo></DatiBeniServizi></FatturaElettronicaBody></p:FatturaElettronica>`;
+ return {f,xml,filename:`IT${vat}_${progressivo}.xml`};
+}
+app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
+ try{
+  const {f,xml,filename}=await dpMakeInvoiceXmlV314(req.params.tipo,req.params.id);
+  await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
+  const existing=await get('SELECT * FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[req.params.tipo,f.id]);
+  if(existing)return res.status(409).send(page('XML già esportato',`<div class="box"><h2>XML già esportato</h2><p>File: ${esc(existing.file_name)}. Per evitare doppie importazioni non viene creato un secondo XML.</p><a href="/fatturazione" class="btn">Torna</a></div>`));
+  if(!process.env.DRIVE_WEBAPP_URL||!process.env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('Configura DRIVE_WEBAPP_URL e GOOGLE_DRIVE_FOLDER_ID su Render per salvare gli XML in Google Drive');
+  const crypto=require('crypto');
+  const tempFile=path.join(require('os').tmpdir(),`dp_xml_${crypto.randomBytes(12).toString('hex')}.xml`);
+  try{
+   fs.writeFileSync(tempFile,xml,'utf8');
+   const result=await uploadFileToDrive(tempFile,filename,'application/xml','DP FATTURAZIONE XML/'+String(f.anno||new Date().getFullYear()));
+   if(!result)throw new Error('Caricamento Google Drive non confermato');
+   await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[req.params.tipo,f.id,result.id||'',filename]);
+   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
+  }finally{try{fs.unlinkSync(tempFile);}catch(_){}}
+ }catch(e){res.status(400).send(page('Export XML non riuscito',`<div class="box"><h2>XML non esportato</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione">Torna</a></div>`));}
 });
 
 app.listen(PORT, '0.0.0.0', () => {
