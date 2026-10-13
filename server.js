@@ -14600,8 +14600,27 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const comune=dpRequireV314(process.env.DP_XML_COMUNE,'DP_XML_COMUNE');
  const prov=dpRequireV314(process.env.DP_XML_PROVINCIA,'DP_XML_PROVINCIA');
  const regime=dpValV314(process.env.DP_XML_REGIME)||'RF01';
- const cliente= f.cliente_id ? await get('SELECT * FROM clienti WHERE id=?',[f.cliente_id]).catch(()=>null) : null;
- if(!cliente)throw new Error('Cliente non collegato ad anagrafica completa: associare il cliente alla fattura');
+ // V315: ogni settore usa la sua anagrafica; l'archivio condiviso è la fonte aggiornata.
+ let cliente=null;
+ if(tipo==='trasporti'){
+  if(f.cliente_id){
+   cliente=await get('SELECT * FROM dp_clienti_master WHERE trasporto_cliente_id=?',[f.cliente_id]).catch(()=>null);
+   if(!cliente)cliente=await get('SELECT * FROM trasporti_clienti WHERE id=?',[f.cliente_id]).catch(()=>null);
+  }
+ }else if(f.cliente_id){
+  cliente=await get('SELECT * FROM dp_clienti_master WHERE rent_cliente_id=?',[f.cliente_id]).catch(()=>null);
+  if(!cliente)cliente=await get('SELECT * FROM clienti WHERE id=?',[f.cliente_id]).catch(()=>null);
+ }
+ // Per fatture storiche prive di associazione o con archivio non sincronizzato,
+ // usare solo una corrispondenza UNIVOCA della ragione sociale nell'archivio condiviso.
+ const invoiceName=dpValV314(f.cliente).toUpperCase();
+ if(invoiceName){
+  const matches=await all('SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale))=? LIMIT 2',[invoiceName]).catch(()=>[]);
+  if(matches.length===1)cliente=matches[0];
+  else if(matches.length>1 && !cliente)throw new Error('Più anagrafiche condivise con lo stesso nome: associare il cliente alla fattura');
+ }
+ if(cliente && invoiceName && dpValV314(cliente.ragione_sociale||cliente.azienda||[cliente.nome,cliente.cognome].filter(Boolean).join(' ')).toUpperCase()!==invoiceName)throw new Error('Il cliente collegato non corrisponde all’intestatario della fattura');
+ if(!cliente)throw new Error('Cliente non trovato nelle anagrafiche: associare il cliente alla fattura');
  const cVat=dpValV314(cliente.piva||cliente.partita_iva).replace(/^IT/i,'').replace(/\s/g,'');
  const cCf=dpValV314(cliente.codice_fiscale||cliente.cf).toUpperCase();
  if(!/^\d{11}$/.test(cVat)&&!(/^[A-Z0-9]{11,16}$/.test(cCf)))throw new Error('Cliente senza P.IVA o codice fiscale valido');
