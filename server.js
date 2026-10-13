@@ -108,6 +108,7 @@ function v63ContractButtons(p){
     <div class="dp-actions contract-main-actions">
       <a class="btn dp-danger" href="/prenotazione/${id}/modifica">✏️ Modifica</a>
       ${converti}
+      ${converti ? '' : `<a class="btn dp-primary" href="/noleggio/fattura/crea/${encodeURIComponent(id)}">🧾 CREA / APRI FATTURA DP RENT</a>`}
       <a class="btn dp-dark" href="/firma/${id}">✍️ Firma sul dispositivo</a>
       <a class="btn dp-green" href="/firma-whatsapp/${id}">📲 Invia firma WhatsApp</a>
       <a class="btn dp-green" href="/contratto/${id}/invia-whatsapp">📤 Invia contratto WhatsApp</a>
