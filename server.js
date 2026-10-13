@@ -14147,6 +14147,18 @@ db.run(`CREATE TABLE IF NOT EXISTS noleggio_fatture (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   UNIQUE(anno,numero,serie)
 )`);
+// V317 - migrazione non distruttiva fatture noleggio già esistenti.
+// CREATE TABLE IF NOT EXISTS non aggiunge le colonne alle tabelle create dalle vecchie versioni.
+// Gli ALTER sono accodati dopo il CREATE sulla stessa connessione SQLite.
+[
+  ['anno','INTEGER'],['numero','INTEGER'],['serie',"TEXT DEFAULT 'N'"],
+  ['numero_display','TEXT'],['data_fattura','TEXT'],['prenotazione_id','INTEGER'],
+  ['cliente','TEXT'],['cliente_id','INTEGER'],['imponibile','REAL DEFAULT 0'],
+  ['iva','REAL DEFAULT 0'],['totale','REAL DEFAULT 0'],
+  ['pagamento','TEXT'],['codice_pagamento','TEXT'],
+  ['pagamento_descrizione','TEXT'],['note','TEXT'],['stato','TEXT'],
+  ['fic_id','TEXT'],['created_at','TEXT'],['updated_at','TEXT']
+].forEach(([col,tipo]) => addColumn('noleggio_fatture',col,tipo));
 
 function dpNFattNumero(numero,serie='N'){
   return `${Number(numero)||0}/${String(serie||'N').trim().toUpperCase()||'N'}`;
