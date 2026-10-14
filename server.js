@@ -14308,10 +14308,52 @@ app.post('/admin/pulisci-fatture-test',async(req,res)=>{
   }catch(e){await run('ROLLBACK').catch(()=>{});res.status(500).send(page('Errore pulizia',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}
 });
 
+// V321: registro informativo e simulazione selezione massiva (nessuna trasmissione).
+app.get('/fatturazione/invii',async(req,res)=>{
+ try{
+  const [rent,tr,credit,exports]=await Promise.all([
+   all(`SELECT id,numero_display,cliente,data_fattura,totale,stato,'noleggio' AS settore FROM noleggio_fatture ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
+   all(`SELECT id,numero_display,cliente,data_fattura,totale,stato,'trasporti' AS settore FROM trasporti_fatture ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
+   all(`SELECT id,numero_display,cliente,data_documento AS data_fattura,totale,stato,'credito' AS settore FROM dp_note_credito ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
+   all(`SELECT tipo,fattura_id,file_name,exported_at FROM dp_xml_exports`).catch(()=>[])
+  ]);
+  const exported=new Set(exports.map(x=>String(x.tipo)+':'+x.fattura_id));
+  const src=[...rent,...tr,...credit].sort((a,b)=>String(b.data_fattura||'').localeCompare(String(a.data_fattura||''))||b.id-a.id);
+  const qSet=new Set(['noleggio','trasporti','credito']);
+  const sector=String(req.query.settore||'').toLowerCase();
+  const needle=String(req.query.cerca||'').trim().toLowerCase();
+  const filtered=src.filter(x=>(!qSet.has(sector)||x.settore===sector)&&(!needle||String(x.cliente||'').toLowerCase().includes(needle)||String(x.numero_display||'').toLowerCase().includes(needle)));
+  function state(x){
+   if(/ANNULLAT|BOZZA/i.test(String(x.stato||'')))return 'Non pronta';
+   if(x.settore==='credito')return 'Da verificare TD04';
+   if(exported.has(x.settore+':'+x.id))return 'XML su Drive';
+   if(/INVIATA_FIC/i.test(String(x.stato||'')))return 'Stato esterno da verificare';
+   return 'Da verificare XML';
+  }
+  const c={totale:filtered.length,da_verificare:0,drive:0,esterno:0,nonpronte:0,consegnate:0};
+  for(const x of filtered){let t=state(x);if(t==='XML su Drive')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta')c.nonpronte++;else c.da_verificare++;}
+  const visible=filtered.slice(0,300);
+  const rows=visible.map(x=>{
+   const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
+   const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:`/note-credito/${x.id}`;
+   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${esc(st)}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
+  }).join('');
+  res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Invio massivo fatture — preparazione Fatel</h2><p><b>SOLO PROVA:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
+    <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
+    <form method="get"><label>Settore</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
+    <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Selezionabili solo quelle in attesa del controllo XML.</p>
+    <button class="btn btn2" type="button" id="inv-all">Seleziona disponibili</button> <button class="btn btn2" type="button" id="inv-clear">Deseleziona</button> <button class="btn" type="button" id="inv-demo">🧪 Simula preparazione massiva (0)</button>
+    <p id="inv-msg" role="status" aria-live="polite"></p><a class="btn btn2" href="/fatturazione">Torna a fatturazione</a></div>
+    <div class="box" style="overflow-x:auto"><table><tr><th>✓</th><th>Numero</th><th>Settore</th><th>Cliente</th><th>Data</th><th>Totale</th><th>Stato</th><th>Verifica</th></tr>${rows.join('')||'<tr><td colspan="8">Nessuna fattura trovata</td></tr>'}</table></div>
+    <script>(function(){const boxes=Array.from(document.querySelectorAll('.inv-select:not(:disabled)'));const btn=document.getElementById('inv-demo');const msg=document.getElementById('inv-msg');function update(){btn.textContent='🧪 Simula preparazione massiva ('+boxes.filter(x=>x.checked).length+')';}boxes.forEach(x=>x.addEventListener('change',update));document.getElementById('inv-all').onclick=()=>{boxes.forEach(x=>x.checked=true);update();};document.getElementById('inv-clear').onclick=()=>{boxes.forEach(x=>x.checked=false);update();msg.textContent='';};btn.onclick=()=>{const checked=boxes.filter(x=>x.checked);msg.textContent=checked.length?'SIMULAZIONE: '+checked.length+' documento/i selezionati. Nessun XML generato o inviato. Domani collegheremo l’API Fatel e gli esiti SdI.':'Seleziona almeno una fattura.';};update();})();</script>`));
+ }catch(e){res.status(500).send(page('Invii non disponibili',`<div class="box"><h2>Registro non disponibile</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione">Torna</a></div>`));}
+});
+
 app.get('/fatturazione', async(req,res)=>{
   const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
   const tr=await get(`SELECT COUNT(*) tot,COALESCE(SUM(prezzo),0) totale FROM trasporti_ordini WHERE stato IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0,totale:0}));
-  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Trasporti serie T - Noleggio serie N</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico di tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/fatturazione/tipi-documento-test">🧪 Prova tipi documento</a> <a class="btn btn2" href="/admin/pulisci-fatture-test">🧹 Pulizia fatture di prova</a></div></div>`));
+  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Trasporti serie T - Noleggio serie N</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico di tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/fatturazione/invii">📤 Registro invii massivi (demo)</a> <a class="btn btn2" href="/fatturazione/tipi-documento-test">🧪 Prova tipi documento</a> <a class="btn btn2" href="/admin/pulisci-fatture-test">🧹 Pulizia fatture di prova</a></div></div>`));
 });
 
 console.log('DP GESTIONALE V279: anagrafiche autisti complete + mezzi modificabili persistenti');
