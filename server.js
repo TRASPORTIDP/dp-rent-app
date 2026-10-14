@@ -3055,10 +3055,7 @@ async function generaPdfContratto(id, opts = {}) {
     WHERE p.id = ?
   `, [id]);
   if (!p) throw new Error('Contratto non trovato');
-  // V314: mai emettere un contratto senza lettura odometro in uscita. Zero ammesso.
-  if (p.km_uscita === null || p.km_uscita === undefined || String(p.km_uscita).trim() === '' || !/^\d+$/.test(String(p.km_uscita).trim())) {
-    throw new Error('Inserire obbligatoriamente i KM in uscita prima di generare il contratto.');
-  }
+  // V318: KM uscita opzionali nella preparazione del contratto. Si registrano al check-out.
 
   const file = path.join(contractsDir, pdfFileNameForContract(p));
   const doc = new PDFDocument({ margin: 0, size: 'A4', bufferPages: true, autoFirstPage: true });
@@ -6659,7 +6656,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
   .contract-main-actions .btn{width:100%!important;}
 }
 
-</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p><p style="font-size:14px;opacity:.9">Presa visione Privacy e accettazione delle Condizioni registrate.</p></div><div class="box"><h2 class="ok">Dati ricevuti</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>Ora scegli il metodo di pagamento per completare la richiesta.</p><p><b>Totale noleggio:</b> € ${euro(calc.totale)}</p><div style="margin-top:18px"><a class="btn" href="/cliente/nexi/${result.lastID}">💳 Nexi (carta)</a><a class="btn" style="background:#333;margin-left:8px" href="/cliente/bonifico/${result.lastID}">🏦 Bonifico bancario</a></div><p style="margin-top:16px;color:#555">La prenotazione sarà confermata dopo verifica del pagamento da parte dello staff DP RENT.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" style="background:#555" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a></div></div><script id="DP-V274-BUTTON">
+</style></head><body><div class="hero"><h1>DP RENT</h1><p>Dati ricevuti correttamente.</p><p style="font-size:14px;opacity:.9">Presa visione Privacy e accettazione delle Condizioni registrate.</p></div><div class="box"><h2 class="ok">Dati ricevuti</h2><p>Codice pratica:</p><p class="code">${esc(cod)}</p><p>Ora scegli il metodo di pagamento per completare la richiesta.</p><p><b>Totale noleggio:</b> € ${euro(calc.totale)}</p><div style="margin-top:18px"><a class="btn" href="/cliente/nexi/${result.lastID}">💳 Nexi (carta)</a><a class="btn" style="background:#333;margin-left:8px" href="/cliente/bonifico/${result.lastID}">🏦 Bonifico bancario</a></div><p style="margin-top:16px;color:#555">La prenotazione sarà confermata dopo verifica del pagamento da parte dello staff DP RENT. Il contratto verrà preparato e inviato dal personale DP RENT al ritiro del mezzo, dopo la verifica dei dati e dei chilometri in uscita.</p><p>Foto ricevute: <b>${files.length}</b></p><div style="margin-top:18px"><a class="btn" style="background:#555" href="/prenotazione/${result.lastID}/calendario.ics">📅 Aggiungi al calendario iPhone/Android</a></div></div><script id="DP-V274-BUTTON">
 document.addEventListener('DOMContentLoaded',function(){
  var m=location.pathname.match(/^\/trasporti\/viaggio\/(\d+)\/?$/);
  if(!m || document.getElementById('dpV274Edit')) return;
@@ -8620,21 +8617,34 @@ app.get('/firma/:id', (req, res) => {
         if (r.ok) {
           try { const j = await r.json(); location.href = j.redirect || '/contratto/${req.params.id}/firmato'; }
           catch(e) { location.href = '/contratto/${req.params.id}/firmato'; }
-        } else alert('Errore salvataggio firma');
+        } else {
+          const dettaglio = (await r.text().catch(() => '')).slice(0, 240);
+          alert('Errore salvataggio firma' + (dettaglio ? ': ' + dettaglio : ' (HTTP ' + r.status + ')'));
+        }
       }
     </script>
   `));
 });
 app.post('/firma/:id', async (req, res) => {
   try {
-    const data = req.body.firma;
-    if (!data) return res.status(400).send('Firma mancante');
+    const data = String(req.body?.firma || '');
+    if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(data)) return res.status(400).send('Firma mancante o formato non valido');
+    const previous = await get(`SELECT firma_path, stato FROM prenotazioni WHERE id=?`, [req.params.id]);
+    if (!previous) return res.status(404).send('Contratto non trovato');
     const base64 = data.split(',')[1];
     const file = path.join(firmeDir, `firma_${req.params.id}.png`);
+    const oldImage = fs.existsSync(file) ? fs.readFileSync(file) : null;
     fs.writeFileSync(file, base64, 'base64');
-    await run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id]);
-    await generaPdfContratto(req.params.id, { forceDrive: true, skipDrive: true });
-    try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('V164 sync Drive dopo firma POST warning:', e.message); }
+    try {
+      await run(`UPDATE prenotazioni SET firma_path=?, stato='firmato' WHERE id=?`, [file, req.params.id]);
+      await generaPdfContratto(req.params.id, { forceDrive: true, skipDrive: true });
+    } catch (e) {
+      await run(`UPDATE prenotazioni SET firma_path=?, stato=? WHERE id=?`, [previous.firma_path, previous.stato, req.params.id]).catch(()=>{});
+      try { if(oldImage) fs.writeFileSync(file, oldImage); else fs.unlinkSync(file); } catch (_) {}
+      throw e;
+    }
+    // L'archiviazione remota non deve invalidare una firma già salvata e un PDF già generato.
+    try { await syncContrattoDriveV63(req.params.id); } catch(e) { console.log('V318 sync Drive dopo firma warning:', e.message); }
     res.json({ ok:true, redirect:'/contratto/' + req.params.id + '/firmato' });
   } catch (e) {
     res.status(500).send(e.message);
