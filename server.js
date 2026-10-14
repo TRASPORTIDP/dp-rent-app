@@ -14311,7 +14311,7 @@ app.post('/admin/pulisci-fatture-test',async(req,res)=>{
 app.get('/fatturazione', async(req,res)=>{
   const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
   const tr=await get(`SELECT COUNT(*) tot,COALESCE(SUM(prezzo),0) totale FROM trasporti_ordini WHERE stato IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0,totale:0}));
-  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Trasporti serie T - Noleggio serie N</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico di tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/admin/pulisci-fatture-test">🧹 Pulizia fatture di prova</a></div></div>`));
+  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Trasporti serie T - Noleggio serie N</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico di tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/fatturazione/tipi-documento-test">🧪 Prova tipi documento</a> <a class="btn btn2" href="/admin/pulisci-fatture-test">🧹 Pulizia fatture di prova</a></div></div>`));
 });
 
 console.log('DP GESTIONALE V279: anagrafiche autisti complete + mezzi modificabili persistenti');
@@ -14684,6 +14684,25 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
    res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
   }finally{try{fs.unlinkSync(tempFile);}catch(_){}}
  }catch(e){res.status(400).send(page('Export XML non riuscito',`<div class="box"><h2>XML non esportato</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione">Torna</a></div>`));}
+});
+
+// V319 PROVA DOCUMENTI: pagina puramente dimostrativa, nessuna scrittura e nessun XML.
+app.get('/fatturazione/tipi-documento-test',(req,res)=>{
+ const types=[
+ ['TD01','Fattura','Fattura ordinaria; verificare dati cliente, righe e IVA.'],
+ ['TD02','Acconto/anticipo su fattura','Collegare correttamente acconto e successiva fattura.'],
+ ['TD03','Acconto/anticipo su parcella','Solo quando fiscalmente applicabile.'],
+ ['TD04','Nota di credito','Collegare il documento rettificato quando previsto.'],
+ ['TD05','Nota di debito','Gestire la rettifica in aumento.'],
+ ['TD06','Parcella','Solo quando fiscalmente applicabile.'],
+ ['TD24','Fattura differita art. 21 c.4 lett. a','Servono i documenti di origine previsti.'],
+ ['TD25','Fattura differita art. 21 c.4 lett. b','Da utilizzare solo per le operazioni ammesse.'],
+ ['TD26','Cessione beni ammortizzabili / passaggi interni','Controllare il corretto trattamento fiscale.'],
+ ['TD27','Autoconsumo / cessioni gratuite senza rivalsa','Controllare il corretto trattamento fiscale.']
+ ];
+ const options=types.map(([code,label])=>`<option value="${code}">${code} - ${esc(label)}</option>`).join('');
+ const notes=JSON.stringify(Object.fromEntries(types.map(([code,,note])=>[code,note]))).replace(/</g,'\\u003c');
+ res.send(page('Prova tipi documento',`<div class="box"><h2>🧪 PROVA TIPI DOCUMENTO XML</h2><p><b>Modalità test:</b> nessuna fattura creata, nessun numero assegnato, nessun XML generato o trasmesso.</p><label for="dp-td-test">Tipo documento</label><select id="dp-td-test" style="width:100%;max-width:650px">${options}</select><p id="dp-td-desc" class="notice"></p><p>Per tutti i tipi: richiedere dati anagrafici e di fattura necessari; eventuali omissioni vengono segnalate prima dell'emissione. Le regole specifiche e il formato XML vanno implementati e validati prima dell'uso effettivo.</p><a class="btn btn2" href="/fatturazione">← Fatturazione</a></div><script>(function(){const notes=${notes};const el=document.getElementById('dp-td-test');const out=document.getElementById('dp-td-desc');function update(){out.textContent=notes[el.value]||'';}el.addEventListener('change',update);update();})();</script>`));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
