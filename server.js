@@ -4750,7 +4750,7 @@ app.get('/noleggio', async (req, res) => {
           <a class="dp-home-card" href="/statistiche?modulo=noleggio"><span class="ico">📊</span>Statistiche<small>Incassi per giorno / mese / anno</small></a>
           <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>Clienti aziendali<small>Anagrafica condivisa con Trasporti e Officina</small></a>
           <a class="dp-home-card" href="/chiusura-aziendale"><span class="ico">🌴</span>Chiusura aziendale<small>ON/OFF manuale: blocca sito e WhatsApp</small></a>
-          <a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
+          <a class="dp-home-card" href="/service/fatture"><span class="ico">🔧</span>Fatture DP SERVICE<small>${serviceCount} fatture serie S</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
         </section>
         <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0}</p>
       </div>
@@ -14308,24 +14308,45 @@ app.post('/admin/pulisci-fatture-test',async(req,res)=>{
   }catch(e){await run('ROLLBACK').catch(()=>{});res.status(500).send(page('Errore pulizia',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}
 });
 
+// V324: lettura fatture SERVICE in sola lettura dal DB indipendente.
+function dpReadServiceInvoices(){
+ return new Promise((resolve,reject)=>{
+  const servicePath=path.join(DATA_DIR,'dp_service.sqlite');
+  if(!fs.existsSync(servicePath))return resolve([]);
+  const conn=new sqlite3.Database(servicePath,sqlite3.OPEN_READONLY,err=>{
+   if(err)return reject(err);
+   conn.all(`SELECT f.id,CAST(f.numero AS TEXT)||'/'||COALESCE(f.serie,'S') AS numero_display,
+      COALESCE(c.ragione_sociale,'') AS cliente,f.data AS data_fattura,
+      f.totale,f.stato,'service' AS settore
+      FROM fatture_service f LEFT JOIN ordini_lavoro o ON o.id=f.ordine_id
+      LEFT JOIN clienti c ON c.id=o.cliente_id
+      ORDER BY f.id DESC LIMIT 5000`,[],(e,rows)=>{
+      conn.close(); if(e)reject(e);else resolve(rows||[]);
+   });
+  });
+ });
+}
+
 // V321: registro informativo e simulazione selezione massiva (nessuna trasmissione).
 app.get('/fatturazione/invii',async(req,res)=>{
  try{
-  const [rent,tr,credit,exports]=await Promise.all([
+  const [rent,tr,credit,exports,service]=await Promise.all([
    all(`SELECT id,numero_display,cliente,data_fattura,totale,stato,'noleggio' AS settore FROM noleggio_fatture ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
    all(`SELECT id,numero_display,cliente,data_fattura,totale,stato,'trasporti' AS settore FROM trasporti_fatture ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
    all(`SELECT id,numero_display,cliente,data_documento AS data_fattura,totale,stato,'credito' AS settore FROM dp_note_credito ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
-   all(`SELECT tipo,fattura_id,file_name,exported_at FROM dp_xml_exports`).catch(()=>[])
+   all(`SELECT tipo,fattura_id,file_name,exported_at FROM dp_xml_exports`).catch(()=>[]),
+   dpReadServiceInvoices()
   ]);
   const exported=new Set(exports.map(x=>String(x.tipo)+':'+x.fattura_id));
-  const src=[...rent,...tr,...credit].sort((a,b)=>String(b.data_fattura||'').localeCompare(String(a.data_fattura||''))||b.id-a.id);
-  const qSet=new Set(['noleggio','trasporti','credito']);
+  const src=[...rent,...tr,...credit,...service].sort((a,b)=>String(b.data_fattura||'').localeCompare(String(a.data_fattura||''))||b.id-a.id);
+  const qSet=new Set(['noleggio','trasporti','credito','service']);
   const sector=String(req.query.settore||'').toLowerCase();
   const needle=String(req.query.cerca||'').trim().toLowerCase();
   const filtered=src.filter(x=>(!qSet.has(sector)||x.settore===sector)&&(!needle||String(x.cliente||'').toLowerCase().includes(needle)||String(x.numero_display||'').toLowerCase().includes(needle)));
   function state(x){
    if(/ANNULLAT|BOZZA/i.test(String(x.stato||'')))return 'Non pronta';
    if(x.settore==='credito')return 'Da verificare TD04';
+   if(x.settore==='service')return 'XML SERVICE da integrare';
    if(exported.has(x.settore+':'+x.id))return 'XML su Drive';
    if(/INVIATA_FIC/i.test(String(x.stato||'')))return 'Stato esterno da verificare';
    return 'Da verificare XML';
@@ -14335,14 +14356,14 @@ app.get('/fatturazione/invii',async(req,res)=>{
   const visible=filtered.slice(0,300);
   const rows=visible.map(x=>{
    const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
-   const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:`/note-credito/${x.id}`;
+   const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/service/fatture/${x.id}`:`/note-credito/${x.id}`;
    return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${esc(st)}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
   }).join('');
   res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Invio disattivato:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
     <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
     <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
-    <form method="get"><label>Settore</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
-    <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Selezionabili solo quelle in attesa del controllo XML.</p>
+    <form method="get"><label>Settore</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
+    <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Le fatture SERVICE sono visibili ma non selezionabili per invio finché non sarà validato il loro XML.</p>
     <button class="btn btn2" type="button" id="inv-all">Seleziona disponibili</button> <button class="btn btn2" type="button" id="inv-clear">Deseleziona</button> <button class="btn" type="button" id="inv-demo">🧪 Simula preparazione massiva (0)</button>
     <p id="inv-msg" role="status" aria-live="polite"></p><a class="btn btn2" href="/fatturazione">Torna a fatturazione</a></div>
     <div class="box" style="overflow-x:auto"><table><tr><th>✓</th><th>Numero</th><th>Settore</th><th>Cliente</th><th>Data</th><th>Totale</th><th>Stato</th><th>Verifica</th></tr>${rows||'<tr><td colspan="8">Nessuna fattura trovata</td></tr>'}</table></div>
@@ -14352,8 +14373,9 @@ app.get('/fatturazione/invii',async(req,res)=>{
 
 app.get('/fatturazione', async(req,res)=>{
   const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
+  const serviceCount=(await dpReadServiceInvoices().catch(()=>[])).length;
   const tr=await get(`SELECT COUNT(*) tot,COALESCE(SUM(prezzo),0) totale FROM trasporti_ordini WHERE stato IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0,totale:0}));
-  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Trasporti serie T - Noleggio serie N</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico di tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/fatturazione/invii">📤 Registro fatture elettroniche</a></div></div>`));
+  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Noleggio N · Trasporti T · Officina S</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico di tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/fatturazione/invii">📤 Registro fatture elettroniche</a></div></div>`));
 });
 
 console.log('DP GESTIONALE V279: anagrafiche autisti complete + mezzi modificabili persistenti');
