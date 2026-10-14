@@ -13798,7 +13798,7 @@ app.get('/trasporti/fattura/:id([0-9]+)',async(req,res)=>{
   const rows=os.map(o=>`<tr><td>${esc(o.num_bolla||'')}</td><td>${esc(o.modello)}<br>${esc(o.targa_telaio)}</td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>€ ${euro(o.prezzo||0)}</td><td>${esc(String(o.iva||22))}%</td></tr>`).join('');
   res.send(page('Fattura '+f.numero_display,`<div class="box"><h2>🧾 Fattura ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Data ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
     <form method="POST" action="/trasporti/fattura/${f.id}/pagamento" style="margin:12px 0;display:flex;gap:10px;align-items:end;flex-wrap:wrap"><div style="min-width:280px"><label>Forma di pagamento</label>${dpTPaymentField(f.pagamento)}</div><button class="btn btn2">Salva pagamento</button></form>
-    <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/trasporti/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
+    <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/trasporti/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">✏️ MODIFICA FATTURA</a>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che questa fattura è stata emessa/inviata in Fatture in Cloud?')"><button class="btn dp-green">☁️ SEGNA INVIATA FATTURE IN CLOUD</button></form>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Annullare questa fattura interna e rimettere gli ordini da fatturare?')"><button class="btn btn2">Annulla fattura interna</button></form>`:''}
@@ -14243,7 +14243,7 @@ app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const p=await dpNRentInvoiceData(f.prenotazione_id);
   const scad=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);
   res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
-    <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/noleggio/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
+    <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/noleggio/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura e rimettere il noleggio da fatturare?')"><button class="btn" style="background:#8b0000">ELIMINA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
 });
@@ -14615,6 +14615,7 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const aliquota=Math.round(iva/imponibile*10000)/100;
  if(Math.abs(iva-imponibile*aliquota/100)>.02)throw new Error('Aliquota IVA non ricostruibile: verificare righe e arrotondamenti');
  if(aliquota===0)throw new Error('IVA zero: indicare prima la corretta Natura IVA (N1-N7). Export sospeso.');
+ if(![4,5,10,22].includes(aliquota))throw new Error('Aliquota non supportata dal modello XML a riga unica: verificare dettaglio IVA.');
  const vat=dpRequireV314(process.env.DP_XML_PIVA,'DP_XML_PIVA (partita IVA emittente)').replace(/^IT/i,'');
  if(!/^\d{11}$/.test(vat))throw new Error('DP_XML_PIVA deve avere 11 cifre');
  const denom=dpRequireV314(process.env.DP_XML_RAGIONE_SOCIALE,'DP_XML_RAGIONE_SOCIALE');
@@ -14667,6 +14668,40 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',progressivo)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${azienda}</CedentePrestatore><CessionarioCommittente>${client}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',n)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DettaglioLinee><NumeroLinea>1</NumeroLinea>${dpTagV314('Descrizione',label)}<Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imponibile))}${dpTagV314('PrezzoTotale',dpMoneyV314(imponibile))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee><DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imponibile))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo></DatiBeniServizi></FatturaElettronicaBody></p:FatturaElettronica>`;
  return {f,xml,filename:`IT${vat}_${progressivo}.xml`};
 }
+
+// V320: controllo fiscale di anteprima prima di qualsiasi esportazione XML.
+// Non scrive su database, non carica su Drive, non assegna numerazioni.
+app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
+  const tipo=req.params.tipo, id=req.params.id;
+  const back=tipo==='noleggio'?'/noleggio/fatture':'/trasporti/fatture';
+  if(!['noleggio','trasporti'].includes(tipo))
+    return res.status(400).send(page('Controllo XML',`<div class="box"><h2>Settore non supportato</h2></div>`));
+  try{
+    const {f,xml,filename}=await dpMakeInvoiceXmlV314(tipo,id);
+    const xmlType=(xml.match(/<TipoDocumento>([^<]+)<\/TipoDocumento>/)||[])[1]||'';
+    if(xmlType!=='TD01') throw new Error('Tipo documento non supportato da questo generatore.');
+    // This check is diagnostic, not a full SdI XSD validation.
+    const saved=await get('SELECT file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]).catch(()=>null);
+    res.send(page('Anteprima XML',`<div class="box">
+      <h2>🔎 Controllo preliminare XML per Fatel</h2>
+      <p><b>Cliente:</b> ${esc(f.cliente||'')}</p>
+      <p><b>Fattura:</b> ${esc(f.numero_display||f.numero||'')}</p>
+      <p><b>Tipo documento:</b> ${esc(xmlType)} — Fattura ordinaria</p>
+      <p><b>File previsto:</b> ${esc(filename)}</p>
+      <p>✅ Controlli anagrafici e aritmetici di base superati.</p>
+      <p><b>Attenzione:</b> non è ancora una validazione ufficiale XSD/SdI. Verificare
+      righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
+      ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}</p>`:
+      `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML su Drive</a>`}
+      <a class="btn" href="${back}">Torna alle fatture</a></div>`));
+  }catch(e){
+    res.status(400).send(page('Controllo XML',`<div class="box">
+      <h2>⛔ XML non pronto</h2><p>${esc(e.message)}</p>
+      <p>Nessuna fattura o anagrafica è stata modificata.</p>
+      <a class="btn btn2" href="${back}">Torna alle fatture</a></div>`));
+  }
+});
+
 app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
  try{
   const {f,xml,filename}=await dpMakeInvoiceXmlV314(req.params.tipo,req.params.id);
