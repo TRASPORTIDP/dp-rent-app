@@ -14375,7 +14375,18 @@ app.get('/fatturazione', async(req,res)=>{
   const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
   const serviceCount=(await dpReadServiceInvoices().catch(()=>[])).length;
   const tr=await get(`SELECT COUNT(*) tot,COALESCE(SUM(prezzo),0) totale FROM trasporti_ordini WHERE stato IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0,totale:0}));
-  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Coda unica amministrativa - Noleggio N · Trasporti T · Officina S</p></section><section class="dp-home-grid"><a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>${rent.tot||0} noleggi da fatturare</small></a><a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture Trasporti<small>${tr.tot||0} trasporti • € ${euro(tr.totale||0)}</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico di tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a></section><div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/fatturazione/invii">📤 Registro fatture elettroniche</a></div></div>`));
+  res.send(page('Fatturazione DP',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURAZIONE DP</h2><p>Gestione fatture · Noleggio N · Officina S · Trasporti T</p></section>
+    <section class="dp-home-grid" aria-label="Fatture per settore">
+      <a class="dp-home-card primary" href="/fatture-da-fare"><span class="ico">🚙</span>Fatture DP RENT<small>Serie N · ${rent.tot||0} noleggi da fatturare</small></a>
+      <a class="dp-home-card" href="/service/fatture"><span class="ico">🔧</span>Fatture DP SERVICE<small>Serie S · ${serviceCount} fatture registrate</small></a>
+      <a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture TRASPORTI<small>Serie T · ${tr.tot||0} trasporti da fatturare</small></a>
+      <a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Tutti i settori</small></a>
+    </section>
+    <section style="margin-top:22px" aria-label="Registro elettronico unico">
+      <a href="/fatturazione/invii" style="display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;min-height:125px;padding:24px;border-radius:26px;background:linear-gradient(125deg,#111820,#25374d);color:white;text-align:center;text-decoration:none;box-shadow:0 8px 0 #b00000,0 14px 30px rgba(0,0,0,.18)"><span style="font-size:45px" aria-hidden="true">📤</span><span style="font-size:clamp(22px,3vw,32px);font-weight:1000;line-height:1.2">REGISTRO FATTURE ELETTRONICHE<span style="display:block;margin-top:8px;font-size:15px;font-weight:700;color:#e1e7f0">Tutti i settori · Contatori · Controllo XML · Preparazione invii</span></span></a>
+      <p style="text-align:center;margin-top:14px;color:#535b65">Invio reale Fatel/SdI non ancora attivo: il registro è disponibile per le verifiche.</p>
+    </section>
+    <div style="text-align:center;margin-top:18px"><a class="btn btn2" href="/">🏠 Torna a DP Gestionale</a></div></div>`));
 });
 
 console.log('DP GESTIONALE V279: anagrafiche autisti complete + mezzi modificabili persistenti');
