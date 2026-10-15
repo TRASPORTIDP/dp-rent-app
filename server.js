@@ -14371,6 +14371,71 @@ app.get('/fatturazione/invii',async(req,res)=>{
  }catch(e){res.status(500).send(page('Invii non disponibili',`<div class="box"><h2>Registro non disponibile</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione">Torna</a></div>`));}
 });
 
+
+// V326 - Bozze fatture libere: nessuna numerazione fiscale o invio XML.
+async function dpFreeEnsure(){
+ await run(`CREATE TABLE IF NOT EXISTS dp_fatture_libere_bozze (
+ id INTEGER PRIMARY KEY AUTOINCREMENT,cliente TEXT NOT NULL,cliente_id INTEGER,
+ tipo_documento TEXT NOT NULL DEFAULT 'TD01',settore TEXT NOT NULL DEFAULT 'AUTO',
+ data_documento TEXT NOT NULL,descrizione TEXT NOT NULL,quantita REAL NOT NULL DEFAULT 1,
+ prezzo_unitario REAL NOT NULL DEFAULT 0,aliquota_iva REAL NOT NULL DEFAULT 22,
+ imponibile REAL NOT NULL DEFAULT 0,imposta REAL NOT NULL DEFAULT 0,totale REAL NOT NULL DEFAULT 0,
+ riferimento TEXT,note TEXT,stato TEXT NOT NULL DEFAULT 'BOZZA',created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
+}
+function dpFreeFormV326(f={},error=''){
+ const val=(k,d='')=>esc(f[k]===undefined?d:f[k]);
+ const selected=(k,v,d='')=>String(f[k]===undefined?d:f[k])===v?'selected':'';
+ return `<div class="box"><h2>🧾 Fattura libera / vendita mezzi — BOZZA</h2>
+ <p>Questa funzione salva una <b>bozza amministrativa</b>, senza emettere documenti fiscali, assegnare numerazioni o inviare XML a Fatel.</p>
+ ${error?`<p class="bad">${esc(error)}</p>`:''}
+ <form method="post" action="/fatturazione/libere/nuova">
+ <label>Cliente (ragione sociale o nome completo)</label><input name="cliente" value="${val('cliente')}" required maxlength="180">
+ <label>Tipo documento (solo classificazione della bozza)</label><select name="tipo_documento">
+ ${[['TD01','Fattura immediata'],['TD02','Acconto'],['TD04','Nota credito'],['TD05','Nota debito'],['TD24','Differita'],['TD25','Differita speciale'],['TD26','Beni ammortizzabili']].map(([c,n])=>`<option value="${c}" ${selected('tipo_documento',c,'TD01')}>${c} — ${n}</option>`).join('')}</select>
+ <label>Settore</label><select name="settore">${[['AUTO','DP AUTO / vendita mezzi'],['RENT','Noleggio'],['SERVICE','Officina'],['TRASPORTI','Trasporti'],['ALTRO','Altro']].map(([c,n])=>`<option value="${c}" ${selected('settore',c,'AUTO')}>${n}</option>`).join('')}</select>
+ <label>Data documento (bozza)</label><input name="data_documento" type="date" value="${val('data_documento',new Date().toISOString().slice(0,10))}" required>
+ <label>Descrizione libera (es. Marca, modello, targa, telaio)</label><textarea name="descrizione" required maxlength="1500" rows="4">${val('descrizione')}</textarea>
+ <label>Riferimento documentale (eventuale DDT/contratto/ordine)</label><input name="riferimento" value="${val('riferimento')}" maxlength="250">
+ <label>Quantità</label><input type="number" name="quantita" min="0.01" step="0.01" value="${val('quantita','1')}" required>
+ <label>Prezzo unitario imponibile (€)</label><input type="number" name="prezzo_unitario" min="0" step="0.01" value="${val('prezzo_unitario','0')}" required>
+ <label>Aliquota IVA di simulazione (non valida il regime fiscale)</label><select name="aliquota_iva">${['22','10','5','4','0'].map(c=>`<option ${selected('aliquota_iva',c,'22')} value="${c}">${c}%</option>`).join('')}</select>
+ <p><small><b>IVA 0%:</b> per margine, esenzioni e natura IVA occorre verificare il trattamento fiscale; questa bozza non genera XML.</small></p>
+ <label>Note interne</label><textarea name="note" rows="2">${val('note')}</textarea>
+ <p><button class="btn" type="submit">💾 Salva bozza (senza emettere)</button> <a class="btn btn2" href="/fatturazione/libere">Registro bozze libere</a></p></form></div>`;
+}
+app.get('/fatturazione/libere',async(req,res)=>{
+ try{await dpFreeEnsure();const rows=await all('SELECT * FROM dp_fatture_libere_bozze ORDER BY id DESC LIMIT 300');
+ res.send(page('Fatture libere',`<div class="box"><h2>🧾 Registro fatture libere — bozze</h2><p>Le bozze non hanno numerazione fiscale e non sono incluse nell'invio massivo.</p><a class="btn" href="/fatturazione/libere/nuova">＋ Nuova fattura libera</a> <a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div><div class="box" style="overflow-x:auto"><table><tr><th>ID bozza</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Totale indicativo</th><th>Stato</th></tr>${rows.map(r=>`<tr><td>${r.id}</td><td>${esc(r.data_documento)}</td><td>${esc(r.cliente)}</td><td>${esc(r.settore)}</td><td>${esc(r.tipo_documento)}</td><td>€ ${euro(r.totale)}</td><td>BOZZA</td></tr>`).join('')||'<tr><td colspan="7">Nessuna bozza</td></tr>'}</table></div>`));
+ }catch(e){res.status(500).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
+});
+app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattura libera',dpFreeFormV326()));});
+app.post('/fatturazione/libere/nuova',async(req,res)=>{
+ const b=req.body||{};
+ try{
+  await dpFreeEnsure(); const cliente=String(b.cliente||'').trim(),descrizione=String(b.descrizione||'').trim();
+  const tipo=String(b.tipo_documento||'TD01'),settore=String(b.settore||'AUTO'),data=String(b.data_documento||'');
+  const quantita=Number(b.quantita),prezzo=Number(b.prezzo_unitario),aliquota=Number(b.aliquota_iva);
+  if(!cliente||cliente.length>180||!descrizione||descrizione.length>1500)throw new Error('Compilare cliente e descrizione');
+  if(!['TD01','TD02','TD04','TD05','TD24','TD25','TD26'].includes(tipo)||!['AUTO','RENT','SERVICE','TRASPORTI','ALTRO'].includes(settore))throw new Error('Tipo o settore non supportato');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(data)||Number.isNaN(Date.parse(data)))throw new Error('Data non valida');
+  if(!Number.isFinite(quantita)||quantita<=0||!Number.isFinite(prezzo)||prezzo<0||![0,4,5,10,22].includes(aliquota))throw new Error('Quantità, prezzo o aliquota non validi');
+  const imponibile=Math.round(quantita*prezzo*100)/100,imposta=Math.round(imponibile*aliquota)/100,totale=Math.round((imponibile+imposta)*100)/100;
+  await run(`INSERT INTO dp_fatture_libere_bozze(cliente,tipo_documento,settore,data_documento,descrizione,quantita,prezzo_unitario,aliquota_iva,imponibile,imposta,totale,riferimento,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,[cliente,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000)]);
+  res.redirect('/fatturazione/libere');
+ }catch(e){res.status(400).send(page('Bozza non salvata',dpFreeFormV326(b,e.message)));}
+});
+app.get('/fatturazione/drive-fatel',(req,res)=>{
+ const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
+ const folder=String(process.env.DP_FATEL_DRIVE_SUBFOLDER||'DP FATTURAZIONE XML - TEST');
+ res.send(page('Cartella Fatel',`<div class="box"><h2>📁 Cartella XML per Fatel</h2>
+ <p><b>Modalità configurata:</b> ${esc(mode)} · <b>Sottocartella Google Drive:</b> ${esc(folder)}</p>
+ <p>Google Drive configurato: <b>${process.env.DRIVE_WEBAPP_URL&&process.env.GOOGLE_DRIVE_FOLDER_ID?'SÌ':'NO'}</b></p>
+ <p><b>Attenzione:</b> il deposito su Google Drive non conferma il prelievo Fatel e non rappresenta l'invio SdI.</p>
+ <p>La cartella viene creata al primo caricamento XML tramite l'integrazione esistente, se supportato dal connettore.</p>
+ <p>Per abilitare la cartella effettivamente monitorata da Fatel occorre prima verificare con Zucchetti percorso, permessi e modalità di importazione.</p>
+ <a class="btn btn2" href="/fatturazione">Torna alla fatturazione</a></div>`));
+});
+
 app.get('/fatturazione', async(req,res)=>{
   const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
   const serviceCount=(await dpReadServiceInvoices().catch(()=>[])).length;
@@ -14381,6 +14446,10 @@ app.get('/fatturazione', async(req,res)=>{
       <a class="dp-home-card" href="/service/fatture"><span class="ico">🔧</span>Fatture DP SERVICE<small>Serie S · ${serviceCount} fatture registrate</small></a>
       <a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">🚛</span>Fatture TRASPORTI<small>Serie T · ${tr.tot||0} trasporti da fatturare</small></a>
       <a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Tutti i settori</small></a>
+    </section>
+    <section style="display:flex;gap:14px;flex-wrap:wrap;margin-top:18px">
+       <a class="btn" href="/fatturazione/libere">🧾 FATTURE LIBERE / VENDITA MEZZI</a>
+       <a class="btn btn2" href="/fatturazione/drive-fatel">📁 CARTELLA XML FATEL</a>
     </section>
     <section style="margin-top:22px" aria-label="Registro elettronico unico">
       <a href="/fatturazione/invii" style="display:flex;align-items:center;justify-content:center;gap:18px;flex-wrap:wrap;min-height:125px;padding:24px;border-radius:26px;background:linear-gradient(125deg,#111820,#25374d);color:white;text-align:center;text-decoration:none;box-shadow:0 8px 0 #b00000,0 14px 30px rgba(0,0,0,.18)"><span style="font-size:45px" aria-hidden="true">📤</span><span style="font-size:clamp(22px,3vw,32px);font-weight:1000;line-height:1.2">REGISTRO FATTURE ELETTRONICHE<span style="display:block;margin-top:8px;font-size:15px;font-weight:700;color:#e1e7f0">Tutti i settori · Contatori · Controllo XML · Preparazione invii</span></span></a>
@@ -14788,10 +14857,14 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
   const tempFile=path.join(require('os').tmpdir(),`dp_xml_${crypto.randomBytes(12).toString('hex')}.xml`);
   try{
    fs.writeFileSync(tempFile,xml,'utf8');
-   const result=await uploadFileToDrive(tempFile,filename,'application/xml','DP FATTURAZIONE XML/'+String(f.anno||new Date().getFullYear()));
+   const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
+   if(mode!=='TEST'&&mode!=='READY')throw new Error('DP_FATEL_DRIVE_MODE non valido (TEST/READY)');
+   const folder=String(process.env.DP_FATEL_DRIVE_SUBFOLDER||(mode==='READY'?'DP FATTURAZIONE XML - DA INVIARE':'DP FATTURAZIONE XML - TEST'));
+   if(!folder||folder.includes('..')||folder.includes('/')||folder.includes('\\'))throw new Error('Sottocartella Fatel non valida');
+   const result=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
    if(!result)throw new Error('Caricamento Google Drive non confermato');
    await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[req.params.tipo,f.id,result.id||'',filename]);
-   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
+   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Deposito Google Drive: ${esc(mode)} / ${esc(folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
   }finally{try{fs.unlinkSync(tempFile);}catch(_){}}
  }catch(e){res.status(400).send(page('Export XML non riuscito',`<div class="box"><h2>XML non esportato</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione">Torna</a></div>`));}
 });
