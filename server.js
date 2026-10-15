@@ -2404,8 +2404,13 @@ function calcolaTotale(mezzo, data_inizio, data_fine, ora_inizio, ora_fine, km_p
   const extraKm = kmGiorno > 0 && kmPrev > kmInclusiTot ? (kmPrev - kmInclusiTot) * EXTRA_KM : 0;
   const extra = extraOrario(ora_inizio) + extraOrario(ora_fine);
   // V273: il prezzo giornaliero inserito e gia IVA compresa.
-  // Calcolo in centesimi per evitare errori di arrotondamento: totale = giorni x prezzo + eventuali extra.
-  const totaleCentesimi = Math.round(giorni * Math.round(prezzo * 100)) + Math.round(extra * 100) + Math.round(extraKm * 100);
+  // Calcolo in centesimi: giorni IVA inclusa + extra imponibili e relativa IVA.
+  // V332: tariffa giornaliera IVA inclusa; extra orario e km sono importi + IVA.
+  // Non ricalcola automaticamente le prenotazioni gia salvate.
+  const baseCents = giorni * Math.round(prezzo * 100);
+  const extraImponibileCents = Math.round(extra * 100) + Math.round(extraKm * 100);
+  const extraIvaCents = Math.round(extraImponibileCents * IVA);
+  const totaleCentesimi = baseCents + extraImponibileCents + extraIvaCents;
   const totale = totaleCentesimi / 100;
   const imponibile = Math.round((totale / (1 + IVA)) * 100) / 100;
   const iva = Math.round((totale - imponibile) * 100) / 100;
@@ -4750,7 +4755,9 @@ app.get('/noleggio', async (req, res) => {
           <a class="dp-home-card" href="/statistiche?modulo=noleggio"><span class="ico">📊</span>Statistiche<small>Incassi per giorno / mese / anno</small></a>
           <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>Clienti aziendali<small>Anagrafica condivisa con Trasporti e Officina</small></a>
           <a class="dp-home-card" href="/chiusura-aziendale"><span class="ico">🌴</span>Chiusura aziendale<small>ON/OFF manuale: blocca sito e WhatsApp</small></a>
-          <a class="dp-home-card" href="/service/fatture"><span class="ico">🔧</span>Fatture DP SERVICE<small>Apri archivio fatture serie S</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
+          <a class="dp-home-card" href="/fatture-da-fare"><span class="ico">🧾</span>Fatture DP RENT<small>Serie N · Noleggi da fatturare e storico</small></a>
+          <a class="dp-home-card" href="/fatturazione"><span class="ico">📤</span>Fatturazione DP<small>Registro elettronico e invii · Tutti i settori</small></a>
+          <a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
         </section>
         <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0}</p>
       </div>
@@ -12312,7 +12319,7 @@ app.get('/trasporti', async (req,res)=>{
       <a class="dp-home-card" href="/trasporti/siti"><span class="ico">📍</span>Siti<small>${stats[3].tot||0} punti carico/scarico</small></a>
       <a class="dp-home-card" href="/trasporti/anagrafiche"><span class="ico">👨‍✈️</span>Autisti / Bisarche<small>Anagrafiche operative</small></a>
       <a class="dp-home-card" href="/trasporti/fatturazione"><span class="ico">💶</span>Da fatturare<small>Trasporti consegnati</small></a>
-      <a class="dp-home-card" href="/fatturazione"><span class="ico">☁️</span>Fatturazione<small>Predisposta per Fatture in Cloud</small></a>
+      <a class="dp-home-card" href="/fatturazione"><span class="ico">📤</span>Fatturazione DP<small>Registro elettronico e invii · Tutti i settori</small></a>
       <a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla home</small></a>
     </section></div>`));
 });
@@ -14388,12 +14395,12 @@ function dpFreeFormV326(f={},error=''){
  return `<div class="box"><h2>🧾 Fattura libera / vendita mezzi — BOZZA</h2>
  <p>Questa funzione salva una <b>bozza amministrativa</b>, senza emettere documenti fiscali, assegnare numerazioni o inviare XML a Fatel.</p>
  ${error?`<p class="bad">${esc(error)}</p>`:''}
- <form method="post" action="/fatturazione/libere/nuova">
+ <form method="post" action="${f.id?'/fatturazione/libere/'+encodeURIComponent(f.id)+'/modifica':'/fatturazione/libere/nuova'}">
  <label for="dp-free-client-search">Cliente dall'anagrafica unica (nome, codice o Partita IVA)</label>
  <input id="dp-free-client-search" name="cliente" value="${val('cliente')}" required maxlength="180" autocomplete="off" placeholder="Digita almeno 2 caratteri" style="width:100%">
  <input type="hidden" id="dp-free-client-id" name="cliente_id" value="${val('cliente_id')}">
  <div id="dp-free-client-results" role="listbox" style="display:none;border:1px solid #d4d4d4;border-radius:9px;max-height:220px;overflow:auto;margin:5px 0 9px"></div>
- <p id="dp-free-client-confirm" aria-live="polite" style="font-size:13px;color:#535b66">Seleziona un cliente dall'elenco; non basta scriverne il nome.</p>
+ <p id="dp-free-client-confirm" aria-live="polite" style="font-size:13px;color:#535b66">${f.cliente_id?'✓ Cliente selezionato dall’anagrafica unica':'Seleziona un cliente dall’elenco; non basta scriverne il nome.'}</p>
  <script>(function(){
  const input=document.getElementById('dp-free-client-search'),hidden=document.getElementById('dp-free-client-id'),results=document.getElementById('dp-free-client-results'),info=document.getElementById('dp-free-client-confirm');let seq=0;
  input.addEventListener('input',async()=>{hidden.value='';info.textContent='Seleziona un cliente dall’elenco.';const q=input.value.trim();const req=++seq;results.replaceChildren();if(q.length<2){results.style.display='none';return;}
@@ -14413,7 +14420,7 @@ function dpFreeFormV326(f={},error=''){
  <label>Aliquota IVA di simulazione (non valida il regime fiscale)</label><select name="aliquota_iva">${['22','10','5','4','0'].map(c=>`<option ${selected('aliquota_iva',c,'22')} value="${c}">${c}%</option>`).join('')}</select>
  <p><small><b>IVA 0%:</b> per margine, esenzioni e natura IVA occorre verificare il trattamento fiscale; questa bozza non genera XML.</small></p>
  <label>Note interne</label><textarea name="note" rows="2">${val('note')}</textarea>
- <p><button class="btn" type="submit">💾 Salva bozza (senza emettere)</button> <a class="btn btn2" href="/fatturazione/libere">Registro bozze libere</a></p></form></div>`;
+ <p><button class="btn" type="submit">💾 ${f.id?'Aggiorna':'Salva'} bozza (senza emettere)</button> <a class="btn btn2" href="/fatturazione/libere">Registro bozze libere</a></p></form></div>`;
 }
 app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
  try{await dpMasterEnsure();const q=String(req.query.q||'').trim().slice(0,80);if(q.length<2)return res.json([]);
@@ -14424,7 +14431,7 @@ app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
 });
 app.get('/fatturazione/libere',async(req,res)=>{
  try{await dpFreeEnsure();const rows=await all('SELECT * FROM dp_fatture_libere_bozze ORDER BY id DESC LIMIT 300');
- res.send(page('Fatture libere',`<div class="box"><h2>🧾 Registro fatture libere — bozze</h2><p>Le bozze non hanno numerazione fiscale e non sono incluse nell'invio massivo.</p><a class="btn" href="/fatturazione/libere/nuova">＋ Nuova fattura libera</a> <a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div><div class="box" style="overflow-x:auto"><table><tr><th>ID bozza</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Totale indicativo</th><th>Stato</th></tr>${rows.map(r=>`<tr><td>${r.id}</td><td>${esc(r.data_documento)}</td><td>${esc(r.cliente)}</td><td>${esc(r.settore)}</td><td>${esc(r.tipo_documento)}</td><td>€ ${euro(r.totale)}</td><td>BOZZA</td></tr>`).join('')||'<tr><td colspan="7">Nessuna bozza</td></tr>'}</table></div>`));
+ res.send(page('Fatture libere',`<div class="box"><h2>🧾 Registro fatture libere — bozze</h2><p>Le bozze non hanno numerazione fiscale e non sono incluse nell'invio massivo.</p><a class="btn" href="/fatturazione/libere/nuova">＋ Nuova fattura libera</a> <a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div><div class="box" style="overflow-x:auto"><table><tr><th>ID bozza</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Totale indicativo</th><th>Stato</th><th>Azioni</th></tr>${rows.map(r=>`<tr><td>${r.id}</td><td>${esc(r.data_documento)}</td><td>${esc(r.cliente)}</td><td>${esc(r.settore)}</td><td>${esc(r.tipo_documento)}</td><td>€ ${euro(r.totale)}</td><td>BOZZA</td><td><a class="btn btn2" href="/fatturazione/libere/${r.id}/modifica">Apri / Modifica</a></td></tr>`).join('')||'<tr><td colspan="8">Nessuna bozza</td></tr>'}</table></div>`));
  }catch(e){res.status(500).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattura libera',dpFreeFormV326()));});
@@ -14446,15 +14453,60 @@ app.post('/fatturazione/libere/nuova',async(req,res)=>{
   res.redirect('/fatturazione/libere');
  }catch(e){res.status(400).send(page('Bozza non salvata',dpFreeFormV326(b,e.message)));}
 });
-app.get('/fatturazione/drive-fatel',(req,res)=>{
+// V332: modifica bozze libere pre-esistenti (solo BOZZA, nessuna emissione).
+app.get('/fatturazione/libere/:id/modifica',async(req,res)=>{
+ try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
+ if(!f)return res.status(404).send(page('Bozza non trovata','<div class="box">Bozza inesistente</div>'));
+ res.send(page('Modifica bozza libera',dpFreeFormV326(f)));
+ }catch(e){res.status(500).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
+});
+app.post('/fatturazione/libere/:id/modifica',async(req,res)=>{
+ const b={...req.body,id:req.params.id};
+ try{
+  await dpFreeEnsure();await dpMasterEnsure();
+  const existing=await get('SELECT id,stato FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
+  if(!existing||existing.stato!=='BOZZA')throw new Error('Solo le bozze possono essere modificate');
+  const clienteId=Number(b.cliente_id);
+  if(!Number.isSafeInteger(clienteId)||clienteId<=0)throw new Error('Selezionare il cliente dall’anagrafica unica');
+  const master=await get('SELECT id,ragione_sociale FROM dp_clienti_master WHERE id=?',[clienteId]);
+  if(!master)throw new Error('Cliente non trovato nell’anagrafica unica');
+  const cliente=String(master.ragione_sociale||'').trim(),descrizione=String(b.descrizione||'').trim();
+  const tipo=String(b.tipo_documento||'TD01'),settore=String(b.settore||'AUTO'),data=String(b.data_documento||'');
+  const quantita=Number(b.quantita),prezzo=Number(b.prezzo_unitario),aliquota=Number(b.aliquota_iva);
+  if(!cliente||cliente.length>180||!descrizione||descrizione.length>1500)throw new Error('Compilare cliente e descrizione');
+  if(!['TD01','TD02','TD04','TD05','TD24','TD25','TD26'].includes(tipo)||!['AUTO','RENT','SERVICE','TRASPORTI','ALTRO'].includes(settore))throw new Error('Tipo o settore non supportato');
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(data)||Number.isNaN(Date.parse(data)))throw new Error('Data non valida');
+  if(!Number.isFinite(quantita)||quantita<=0||!Number.isFinite(prezzo)||prezzo<0||![0,4,5,10,22].includes(aliquota))throw new Error('Quantità, prezzo o aliquota non validi');
+  const imponibile=Math.round(quantita*prezzo*100)/100,imposta=Math.round(imponibile*aliquota)/100,totale=Math.round((imponibile+imposta)*100)/100;
+  await run(`UPDATE dp_fatture_libere_bozze SET cliente=?,cliente_id=?,tipo_documento=?,settore=?,data_documento=?,descrizione=?,quantita=?,prezzo_unitario=?,aliquota_iva=?,imponibile=?,imposta=?,totale=?,riferimento=?,note=? WHERE id=? AND stato='BOZZA'`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),existing.id]);
+  res.redirect('/fatturazione/libere');
+ }catch(e){res.status(400).send(page('Modifica non salvata',dpFreeFormV326(b,e.message)));}
+});
+app.get('/fatturazione/drive-fatel',async(req,res)=>{
+ const id=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
  const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
- const folder=String(process.env.DP_FATEL_DRIVE_SUBFOLDER||'DP FATTURAZIONE XML - TEST');
- res.send(page('Cartella Fatel',`<div class="box"><h2>📁 Cartella XML per Fatel</h2>
- <p><b>Modalità configurata:</b> ${esc(mode)} · <b>Sottocartella Google Drive:</b> ${esc(folder)}</p>
- <p>Google Drive configurato: <b>${process.env.DRIVE_WEBAPP_URL&&process.env.GOOGLE_DRIVE_FOLDER_ID?'SÌ':'NO'}</b></p>
- <p><b>Attenzione:</b> il deposito su Google Drive non conferma il prelievo Fatel e non rappresenta l'invio SdI.</p>
- <p>La cartella viene creata al primo caricamento XML tramite l'integrazione esistente, se supportato dal connettore.</p>
- <p>Per abilitare la cartella effettivamente monitorata da Fatel occorre prima verificare con Zucchetti percorso, permessi e modalità di importazione.</p>
+ const link=id?`https://drive.google.com/drive/folders/${encodeURIComponent(id)}`:'';
+ let check='Non verificato',name='',direct=false;
+ try{
+  ensureDriveClientV172(); direct=!!drive;
+  if(!id) check='ID cartella non impostato su Render';
+  else if(!drive) check='Credenziali Google Service Account non disponibili: il percorso diretto non è verificabile';
+  else {
+   const r=await drive.files.get({fileId:id,fields:'id,name,mimeType,capabilities(canAddChildren)',supportsAllDrives:true});
+   const d=r.data||{}; name=d.name||'';
+   if(d.mimeType!=='application/vnd.google-apps.folder')check='ID non riferito a una cartella';
+   else if(d.capabilities?.canAddChildren===false)check='Cartella raggiungibile, ma senza permesso di scrittura';
+   else check='Cartella raggiungibile; scrittura effettiva da verificare con un test';
+  }
+ }catch(e){check='Accesso non verificato: '+String(e.message||e).slice(0,220)}
+ res.send(page('Cartella XML Fatel',`<div class="box"><h2>📁 Cartella XML Fatel</h2>
+ <p><b>Modalità:</b> ${esc(mode)} (in TEST gli XML usano il percorso di prova Apps Script, non la cartella Fatel definitiva)</p>
+ <p><b>ID:</b> ${esc(id||'DP_FATEL_FOLDER_ID non configurato')}</p>
+ ${name?`<p><b>Nome cartella:</b> ${esc(name)}</p>`:''}
+ <p><b>Controllo Google Drive:</b> ${esc(check)}</p>
+ ${link?`<p><a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Apri cartella in Google Drive</a></p>`:''}
+ <p>Per collegarla su Render: Environment → DP_FATEL_FOLDER_ID = ID della cartella. Usare l'account di servizio Google già configurato e autorizzarlo come Editor sulla cartella. Non modificare GOOGLE_DRIVE_FOLDER_ID.</p>
+ <p><b>Attenzione:</b> Fatel non è collegato. Un deposito XML su Drive non equivale a invio SdI.</p>
  <a class="btn btn2" href="/fatturazione">Torna alla fatturazione</a></div>`));
 });
 
@@ -14897,7 +14949,7 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
   await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
   const existing=await get('SELECT * FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[req.params.tipo,f.id]);
   if(existing)return res.status(409).send(page('XML già esportato',`<div class="box"><h2>XML già esportato</h2><p>File: ${esc(existing.file_name)}. Per evitare doppie importazioni non viene creato un secondo XML.</p><a href="/fatturazione" class="btn">Torna</a></div>`));
-  if(!process.env.DRIVE_WEBAPP_URL||!process.env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('Configura DRIVE_WEBAPP_URL e GOOGLE_DRIVE_FOLDER_ID su Render per salvare gli XML in Google Drive');
+  if(!googleDriveConfigured())throw new Error('Google Drive non configurato: verificare credenziali o Apps Script');
   const crypto=require('crypto');
   const tempFile=path.join(require('os').tmpdir(),`dp_xml_${crypto.randomBytes(12).toString('hex')}.xml`);
   try{
@@ -14906,7 +14958,23 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
    if(mode!=='TEST'&&mode!=='READY')throw new Error('DP_FATEL_DRIVE_MODE non valido (TEST/READY)');
    const folder=String(process.env.DP_FATEL_DRIVE_SUBFOLDER||(mode==='READY'?'DP FATTURAZIONE XML - DA INVIARE':'DP FATTURAZIONE XML - TEST'));
    if(!folder||folder.includes('..')||folder.includes('/')||folder.includes('\\'))throw new Error('Sottocartella Fatel non valida');
-   const result=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
+   let result;
+   if(mode==='READY'){
+     // La cartella definitiva NON deve ricadere sul vecchio upload Apps Script,
+     // perché quel percorso usa GOOGLE_DRIVE_FOLDER_ID dei contratti.
+     const fatelId=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
+     if(!/^[A-Za-z0-9_-]{15,}$/.test(fatelId))throw new Error('DP_FATEL_FOLDER_ID assente o non valido');
+     ensureDriveClientV172();
+     if(!drive)throw new Error('Account di servizio Google non configurato per accesso diretto alla cartella Fatel');
+     const check=await drive.files.get({fileId:fatelId,fields:'id,mimeType,capabilities(canAddChildren)',supportsAllDrives:true});
+     if(check.data?.mimeType!=='application/vnd.google-apps.folder')throw new Error('DP_FATEL_FOLDER_ID non è una cartella');
+     if(check.data?.capabilities?.canAddChildren===false)throw new Error('L’account di servizio non può scrivere nella cartella Fatel');
+     result=await uploadFileToDriveFolderV63(tempFile,filename,'application/xml',fatelId);
+     if(!result?.id)throw new Error('Upload diretto Fatel non confermato: nessun file depositato');
+   }else{
+     if(!process.env.DRIVE_WEBAPP_URL||!process.env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('Apps Script Drive non configurato per test');
+     result=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
+   }
    if(!result)throw new Error('Caricamento Google Drive non confermato');
    await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[req.params.tipo,f.id,result.id||'',filename]);
    res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Deposito Google Drive: ${esc(mode)} / ${esc(folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
