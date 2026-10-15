@@ -4750,7 +4750,7 @@ app.get('/noleggio', async (req, res) => {
           <a class="dp-home-card" href="/statistiche?modulo=noleggio"><span class="ico">📊</span>Statistiche<small>Incassi per giorno / mese / anno</small></a>
           <a class="dp-home-card" href="/clienti-azienda"><span class="ico">👥</span>Clienti aziendali<small>Anagrafica condivisa con Trasporti e Officina</small></a>
           <a class="dp-home-card" href="/chiusura-aziendale"><span class="ico">🌴</span>Chiusura aziendale<small>ON/OFF manuale: blocca sito e WhatsApp</small></a>
-          <a class="dp-home-card" href="/service/fatture"><span class="ico">🔧</span>Fatture DP SERVICE<small>${serviceCount} fatture serie S</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
+          <a class="dp-home-card" href="/service/fatture"><span class="ico">🔧</span>Fatture DP SERVICE<small>Apri archivio fatture serie S</small></a><a class="dp-home-card" href="/note-credito"><span class="ico">🧾</span>Note di credito<small>Registro unico tutti i settori</small></a><a class="dp-home-card" href="/"><span class="ico">🏠</span>DP Gestionale<small>Torna alla scelta moduli</small></a>
         </section>
         <p style="text-align:center;font-weight:900;color:#666;margin:22px 0">Mezzi: ${mezzi?.tot || 0} • Contratti: ${pren?.tot || 0}</p>
       </div>
@@ -14389,7 +14389,19 @@ function dpFreeFormV326(f={},error=''){
  <p>Questa funzione salva una <b>bozza amministrativa</b>, senza emettere documenti fiscali, assegnare numerazioni o inviare XML a Fatel.</p>
  ${error?`<p class="bad">${esc(error)}</p>`:''}
  <form method="post" action="/fatturazione/libere/nuova">
- <label>Cliente (ragione sociale o nome completo)</label><input name="cliente" value="${val('cliente')}" required maxlength="180">
+ <label for="dp-free-client-search">Cliente dall'anagrafica unica (nome, codice o Partita IVA)</label>
+ <input id="dp-free-client-search" name="cliente" value="${val('cliente')}" required maxlength="180" autocomplete="off" placeholder="Digita almeno 2 caratteri" style="width:100%">
+ <input type="hidden" id="dp-free-client-id" name="cliente_id" value="${val('cliente_id')}">
+ <div id="dp-free-client-results" role="listbox" style="display:none;border:1px solid #d4d4d4;border-radius:9px;max-height:220px;overflow:auto;margin:5px 0 9px"></div>
+ <p id="dp-free-client-confirm" aria-live="polite" style="font-size:13px;color:#535b66">Seleziona un cliente dall'elenco; non basta scriverne il nome.</p>
+ <script>(function(){
+ const input=document.getElementById('dp-free-client-search'),hidden=document.getElementById('dp-free-client-id'),results=document.getElementById('dp-free-client-results'),info=document.getElementById('dp-free-client-confirm');let seq=0;
+ input.addEventListener('input',async()=>{hidden.value='';info.textContent='Seleziona un cliente dall’elenco.';const q=input.value.trim();const req=++seq;results.replaceChildren();if(q.length<2){results.style.display='none';return;}
+ try{const r=await fetch('/fatturazione/libere/clienti-ricerca?q='+encodeURIComponent(q),{credentials:'same-origin'});if(!r.ok)throw new Error('Ricerca non disponibile');const items=await r.json();if(req!==seq)return;results.style.display='block';if(!items.length){results.textContent='Nessun cliente trovato. Crealo dall’anagrafica unica.';return;}
+ items.forEach(c=>{const bt=document.createElement('button');bt.type='button';bt.style.cssText='display:block;text-align:left;width:100%;border:0;border-bottom:1px solid #ddd;background:#fff;padding:9px;color:#222';bt.textContent=(c.codice?c.codice+' — ':'')+c.ragione_sociale+(c.piva?' · P.IVA '+c.piva:'');bt.onclick=()=>{input.value=c.ragione_sociale;hidden.value=String(c.id);results.style.display='none';info.textContent='✓ Cliente selezionato: '+c.ragione_sociale;};results.appendChild(bt);});}
+ catch(e){if(req===seq){results.style.display='block';results.textContent='Ricerca non disponibile. Riprova.';}}});
+ input.form.addEventListener('submit',e=>{if(!hidden.value){e.preventDefault();info.textContent='Devi selezionare un cliente dell’anagrafica unica prima di salvare.';input.focus();}});
+ })();</script>
  <label>Tipo documento (solo classificazione della bozza)</label><select name="tipo_documento">
  ${[['TD01','Fattura immediata'],['TD02','Acconto'],['TD04','Nota credito'],['TD05','Nota debito'],['TD24','Differita'],['TD25','Differita speciale'],['TD26','Beni ammortizzabili']].map(([c,n])=>`<option value="${c}" ${selected('tipo_documento',c,'TD01')}>${c} — ${n}</option>`).join('')}</select>
  <label>Settore</label><select name="settore">${[['AUTO','DP AUTO / vendita mezzi'],['RENT','Noleggio'],['SERVICE','Officina'],['TRASPORTI','Trasporti'],['ALTRO','Altro']].map(([c,n])=>`<option value="${c}" ${selected('settore',c,'AUTO')}>${n}</option>`).join('')}</select>
@@ -14403,6 +14415,13 @@ function dpFreeFormV326(f={},error=''){
  <label>Note interne</label><textarea name="note" rows="2">${val('note')}</textarea>
  <p><button class="btn" type="submit">💾 Salva bozza (senza emettere)</button> <a class="btn btn2" href="/fatturazione/libere">Registro bozze libere</a></p></form></div>`;
 }
+app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
+ try{await dpMasterEnsure();const q=String(req.query.q||'').trim().slice(0,80);if(q.length<2)return res.json([]);
+ const like='%'+q.replace(/[\%_]/g,'\\$&')+'%';
+ const rows=await all(`SELECT id,codice,ragione_sociale,piva FROM dp_clienti_master WHERE ragione_sociale LIKE ? ESCAPE '\\' OR codice LIKE ? ESCAPE '\\' OR piva LIKE ? ESCAPE '\\' ORDER BY ragione_sociale LIMIT 35`,[like,like,like]);
+ res.json(rows);
+ }catch(e){console.error('Ricerca clienti fattura libera',e);res.status(500).json({error:'Ricerca clienti non disponibile'});}
+});
 app.get('/fatturazione/libere',async(req,res)=>{
  try{await dpFreeEnsure();const rows=await all('SELECT * FROM dp_fatture_libere_bozze ORDER BY id DESC LIMIT 300');
  res.send(page('Fatture libere',`<div class="box"><h2>🧾 Registro fatture libere — bozze</h2><p>Le bozze non hanno numerazione fiscale e non sono incluse nell'invio massivo.</p><a class="btn" href="/fatturazione/libere/nuova">＋ Nuova fattura libera</a> <a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div><div class="box" style="overflow-x:auto"><table><tr><th>ID bozza</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Totale indicativo</th><th>Stato</th></tr>${rows.map(r=>`<tr><td>${r.id}</td><td>${esc(r.data_documento)}</td><td>${esc(r.cliente)}</td><td>${esc(r.settore)}</td><td>${esc(r.tipo_documento)}</td><td>€ ${euro(r.totale)}</td><td>BOZZA</td></tr>`).join('')||'<tr><td colspan="7">Nessuna bozza</td></tr>'}</table></div>`));
@@ -14412,7 +14431,10 @@ app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattu
 app.post('/fatturazione/libere/nuova',async(req,res)=>{
  const b=req.body||{};
  try{
-  await dpFreeEnsure(); const cliente=String(b.cliente||'').trim(),descrizione=String(b.descrizione||'').trim();
+  await dpFreeEnsure(); await dpMasterEnsure();
+  const clienteId=Number(b.cliente_id);if(!Number.isSafeInteger(clienteId)||clienteId<=0)throw new Error('Selezionare il cliente dall’anagrafica unica');
+  const master=await get('SELECT id,ragione_sociale FROM dp_clienti_master WHERE id=?',[clienteId]);if(!master)throw new Error('Cliente non trovato nell’anagrafica unica');
+  const cliente=String(master.ragione_sociale||'').trim(),descrizione=String(b.descrizione||'').trim();
   const tipo=String(b.tipo_documento||'TD01'),settore=String(b.settore||'AUTO'),data=String(b.data_documento||'');
   const quantita=Number(b.quantita),prezzo=Number(b.prezzo_unitario),aliquota=Number(b.aliquota_iva);
   if(!cliente||cliente.length>180||!descrizione||descrizione.length>1500)throw new Error('Compilare cliente e descrizione');
@@ -14420,7 +14442,7 @@ app.post('/fatturazione/libere/nuova',async(req,res)=>{
   if(!/^\d{4}-\d{2}-\d{2}$/.test(data)||Number.isNaN(Date.parse(data)))throw new Error('Data non valida');
   if(!Number.isFinite(quantita)||quantita<=0||!Number.isFinite(prezzo)||prezzo<0||![0,4,5,10,22].includes(aliquota))throw new Error('Quantità, prezzo o aliquota non validi');
   const imponibile=Math.round(quantita*prezzo*100)/100,imposta=Math.round(imponibile*aliquota)/100,totale=Math.round((imponibile+imposta)*100)/100;
-  await run(`INSERT INTO dp_fatture_libere_bozze(cliente,tipo_documento,settore,data_documento,descrizione,quantita,prezzo_unitario,aliquota_iva,imponibile,imposta,totale,riferimento,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,[cliente,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000)]);
+  await run(`INSERT INTO dp_fatture_libere_bozze(cliente,cliente_id,tipo_documento,settore,data_documento,descrizione,quantita,prezzo_unitario,aliquota_iva,imponibile,imposta,totale,riferimento,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000)]);
   res.redirect('/fatturazione/libere');
  }catch(e){res.status(400).send(page('Bozza non salvata',dpFreeFormV326(b,e.message)));}
 });
