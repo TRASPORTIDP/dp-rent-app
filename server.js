@@ -14452,7 +14452,22 @@ async function dpFreeEnsure(){
  prezzo_unitario REAL NOT NULL DEFAULT 0,aliquota_iva REAL NOT NULL DEFAULT 22,
  imponibile REAL NOT NULL DEFAULT 0,imposta REAL NOT NULL DEFAULT 0,totale REAL NOT NULL DEFAULT 0,
  riferimento TEXT,note TEXT,stato TEXT NOT NULL DEFAULT 'BOZZA',created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);
+  const cols=await all("PRAGMA table_info(dp_fatture_libere_bozze)");
+  if(!cols.some(c=>c.name==='righe_json'))await run("ALTER TABLE dp_fatture_libere_bozze ADD COLUMN righe_json TEXT");
 }
+function dpFreeLinesV339(b){
+ let a;
+ try{a=JSON.parse(String(b.righe_json||''));}catch(e){throw new Error('Righe non valide: riprovare a salvare');}
+ if(!Array.isArray(a)||a.length<1||a.length>100)throw new Error('Inserire da 1 a 100 righe');
+ return a.map((x,i)=>{
+  const descrizione=String(x.descrizione||'').trim().slice(0,1000),quantita=Number(x.quantita),prezzo=Number(x.prezzo),sconto=Number(x.sconto||0),iva=Number(x.iva);
+  if(!descrizione||!Number.isFinite(quantita)||quantita<=0||!Number.isFinite(prezzo)||prezzo<0||!Number.isFinite(sconto)||sconto<0||sconto>100||![0,4,5,10,22].includes(iva))throw new Error('Controllare descrizione, quantità, prezzo, sconto e IVA della riga '+(i+1));
+  const imponibile=Math.round(quantita*prezzo*(1-sconto/100)*100)/100;
+  const imposta=Math.round(imponibile*iva)/100;
+  return {descrizione,quantita,prezzo,sconto,iva,imponibile,imposta,totale:Math.round((imponibile+imposta)*100)/100};
+ });
+}
+function dpFreeAmountsV339(lines){const sum=k=>Math.round(lines.reduce((acc,x)=>acc+Number(x[k]||0),0)*100)/100;return {imponibile:sum('imponibile'),imposta:sum('imposta'),totale:sum('totale')};}
 function dpFreeFormV326(f={},error=''){
  const val=(k,d='')=>esc(f[k]===undefined?d:f[k]);
  const selected=(k,v,d='')=>String(f[k]===undefined?d:f[k])===v?'selected':'';
@@ -14477,12 +14492,28 @@ function dpFreeFormV326(f={},error=''){
  ${[['TD01','Fattura immediata'],['TD02','Acconto'],['TD04','Nota credito'],['TD05','Nota debito'],['TD24','Differita'],['TD25','Differita speciale'],['TD26','Beni ammortizzabili']].map(([c,n])=>`<option value="${c}" ${selected('tipo_documento',c,'TD01')}>${c} — ${n}</option>`).join('')}</select>
  <label>Settore</label><select name="settore">${[['AUTO','DP AUTO / vendita mezzi'],['RENT','Noleggio'],['SERVICE','Officina'],['TRASPORTI','Trasporti'],['ALTRO','Altro']].map(([c,n])=>`<option value="${c}" ${selected('settore',c,'AUTO')}>${n}</option>`).join('')}</select>
  <label>Data documento (bozza)</label><input name="data_documento" type="date" value="${val('data_documento',new Date().toISOString().slice(0,10))}" required>
- <label>Descrizione libera (es. Marca, modello, targa, telaio)</label><textarea name="descrizione" required maxlength="1500" rows="4">${val('descrizione')}</textarea>
+ <h3>Righe documento (modificabili)</h3>
+ <p>Ogni riga può avere quantità, prezzo, sconto e IVA diversi. Per veicoli usati con regime del margine, non scegliere IVA 0% come sostituto del trattamento fiscale: questa è soltanto una bozza.</p>
+ <div id="dp-free-lines"></div>
+ <button type="button" class="btn btn2" id="dp-free-add">＋ Aggiungi riga</button>
+ <p id="dp-free-totals" style="font-weight:bold"></p>
+ <input type="hidden" name="righe_json" id="dp-free-lines-json">
+ <input type="hidden" name="descrizione" id="dp-free-legacy-desc"><input type="hidden" name="quantita" id="dp-free-legacy-qty"><input type="hidden" name="prezzo_unitario" id="dp-free-legacy-price"><input type="hidden" name="aliquota_iva" id="dp-free-legacy-iva">
  <label>Riferimento documentale (eventuale DDT/contratto/ordine)</label><input name="riferimento" value="${val('riferimento')}" maxlength="250">
- <label>Quantità</label><input type="number" name="quantita" min="0.01" step="0.01" value="${val('quantita','1')}" required>
- <label>Prezzo unitario imponibile (€)</label><input type="number" name="prezzo_unitario" min="0" step="0.01" value="${val('prezzo_unitario','0')}" required>
- <label>Aliquota IVA di simulazione (non valida il regime fiscale)</label><select name="aliquota_iva">${['22','10','5','4','0'].map(c=>`<option ${selected('aliquota_iva',c,'22')} value="${c}">${c}%</option>`).join('')}</select>
- <p><small><b>IVA 0%:</b> per margine, esenzioni e natura IVA occorre verificare il trattamento fiscale; questa bozza non genera XML.</small></p>
+ <script>(function(){
+ const initial=${JSON.stringify(f.righe_json?JSON.parse(f.righe_json):[{descrizione:f.descrizione||'',quantita:f.quantita===undefined?1:f.quantita,prezzo:f.prezzo_unitario||0,sconto:0,iva:f.aliquota_iva===undefined?22:f.aliquota_iva}]).replace(/</g,'\u003c')};
+ const root=document.getElementById('dp-free-lines'),hidden=document.getElementById('dp-free-lines-json'),summary=document.getElementById('dp-free-totals');let lines=Array.isArray(initial)&&initial.length?initial:[];
+ const money=n=>(Number(n)||0).toLocaleString('it-IT',{style:'currency',currency:'EUR'});
+ function draw(){root.innerHTML='';lines.forEach((line,i)=>{let box=document.createElement('div');box.style.cssText='border:1px solid #ddd;border-radius:10px;padding:12px;margin:9px 0';
+ const fields=[['descrizione','Descrizione','text'],['quantita','Quantità','number'],['prezzo','Prezzo imponibile €','number'],['sconto','Sconto %','number']];
+ fields.forEach(([k,label,type])=>{const wrap=document.createElement('label');wrap.textContent=label;const input=document.createElement('input');input.type=type;input.value=line[k]??'';if(type==='number'){input.step='0.01';input.min='0'}input.style.width='100%';input.addEventListener('input',()=>{line[k]=input.value;sync()});wrap.appendChild(input);box.appendChild(wrap)});
+ const wrap=document.createElement('label');wrap.textContent='IVA %';const sel=document.createElement('select');[22,10,5,4,0].forEach(v=>{const o=document.createElement('option');o.value=v;o.textContent=v+'%';if(Number(line.iva)===v)o.selected=true;sel.appendChild(o)});sel.onchange=()=>{line.iva=sel.value;sync()};wrap.appendChild(sel);box.appendChild(wrap);
+ const remove=document.createElement('button');remove.type='button';remove.className='btn btn2';remove.textContent='Rimuovi riga';remove.onclick=()=>{if(lines.length>1){lines.splice(i,1);draw()}};box.appendChild(remove);root.appendChild(box)});sync()}
+ function sync(){hidden.value=JSON.stringify(lines);const totals=lines.reduce((a,x)=>{const impon=Math.round((Number(x.quantita)||0)*(Number(x.prezzo)||0)*(1-(Number(x.sconto)||0)/100)*100)/100;a.impon+=impon;a.iva+=Math.round(impon*(Number(x.iva)||0))/100;return a},{impon:0,iva:0});summary.textContent='Imponibile '+money(totals.impon)+' · IVA '+money(totals.iva)+' · Totale '+money(totals.impon+totals.iva);
+ const x=lines[0]||{};document.getElementById('dp-free-legacy-desc').value=x.descrizione||'';document.getElementById('dp-free-legacy-qty').value=x.quantita||1;document.getElementById('dp-free-legacy-price').value=x.prezzo||0;document.getElementById('dp-free-legacy-iva').value=x.iva??22;}
+ document.getElementById('dp-free-add').onclick=()=>{if(lines.length>=100)return;lines.push({descrizione:'',quantita:1,prezzo:0,sconto:0,iva:22});draw()};
+ root.closest('form').addEventListener('submit',()=>sync());draw();
+ })();</script>
  <label>Note interne</label><textarea name="note" rows="2">${val('note')}</textarea>
  <p><button class="btn" type="submit">💾 ${f.id?'Aggiorna':'Salva'} bozza (senza emettere)</button> <a class="btn btn2" href="/fatturazione/libere">Registro bozze libere</a></p></form></div>`;
 }
@@ -14495,7 +14526,7 @@ app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
 });
 app.get('/fatturazione/libere',async(req,res)=>{
  try{await dpFreeEnsure();const rows=await all('SELECT * FROM dp_fatture_libere_bozze ORDER BY id DESC LIMIT 300');
- res.send(page('Fatture libere',`<div class="box"><h2>🧾 Registro fatture libere — bozze</h2><p>Le bozze non hanno numerazione fiscale e non sono incluse nell'invio massivo.</p><a class="btn" href="/fatturazione/libere/nuova">＋ Nuova fattura libera</a> <a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div><div class="box" style="overflow-x:auto"><table><tr><th>ID bozza</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Totale indicativo</th><th>Stato</th><th>Azioni</th></tr>${rows.map(r=>`<tr><td>${r.id}</td><td>${esc(r.data_documento)}</td><td>${esc(r.cliente)}</td><td>${esc(r.settore)}</td><td>${esc(r.tipo_documento)}</td><td>€ ${euro(r.totale)}</td><td>BOZZA</td><td><a class="btn btn2" href="/fatturazione/libere/${r.id}/modifica">Apri / Modifica</a></td></tr>`).join('')||'<tr><td colspan="8">Nessuna bozza</td></tr>'}</table></div>`));
+ res.send(page('Fatture libere',`<div class="box"><h2>🧾 Registro fatture libere — bozze</h2><p>Le bozze non hanno numerazione fiscale e non sono incluse nell'invio massivo.</p><a class="btn" href="/fatturazione/libere/nuova">＋ Nuova fattura libera</a> <a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div><div class="box" style="overflow-x:auto"><table><tr><th>ID bozza</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Totale indicativo</th><th>Stato</th><th>Azioni</th></tr>${rows.map(r=>`<tr><td>${r.id}</td><td>${esc(r.data_documento)}</td><td>${esc(r.cliente)}</td><td>${esc(r.settore)}</td><td>${esc(r.tipo_documento)}</td><td>€ ${euro(r.totale)}</td><td>BOZZA</td><td><a class="btn btn2" href="/fatturazione/libere/${r.id}/modifica">Apri / Modifica</a> <a class="btn btn2" href="/fatturazione/libere/${r.id}/pdf" target="_blank">PDF bozza</a></td></tr>`).join('')||'<tr><td colspan="8">Nessuna bozza</td></tr>'}</table></div>`));
  }catch(e){res.status(500).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattura libera',dpFreeFormV326()));});
@@ -14507,13 +14538,12 @@ app.post('/fatturazione/libere/nuova',async(req,res)=>{
   const master=await get('SELECT id,ragione_sociale FROM dp_clienti_master WHERE id=?',[clienteId]);if(!master)throw new Error('Cliente non trovato nell’anagrafica unica');
   const cliente=String(master.ragione_sociale||'').trim(),descrizione=String(b.descrizione||'').trim();
   const tipo=String(b.tipo_documento||'TD01'),settore=String(b.settore||'AUTO'),data=String(b.data_documento||'');
-  const quantita=Number(b.quantita),prezzo=Number(b.prezzo_unitario),aliquota=Number(b.aliquota_iva);
-  if(!cliente||cliente.length>180||!descrizione||descrizione.length>1500)throw new Error('Compilare cliente e descrizione');
+  const lines=dpFreeLinesV339(b);const {imponibile,imposta,totale}=dpFreeAmountsV339(lines);const quantita=lines[0].quantita,prezzo=lines[0].prezzo,aliquota=lines[0].iva;
+  if(!cliente||cliente.length>180||!lines.length)throw new Error('Compilare cliente e righe');
   if(!['TD01','TD02','TD04','TD05','TD24','TD25','TD26'].includes(tipo)||!['AUTO','RENT','SERVICE','TRASPORTI','ALTRO'].includes(settore))throw new Error('Tipo o settore non supportato');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(data)||Number.isNaN(Date.parse(data)))throw new Error('Data non valida');
-  if(!Number.isFinite(quantita)||quantita<=0||!Number.isFinite(prezzo)||prezzo<0||![0,4,5,10,22].includes(aliquota))throw new Error('Quantità, prezzo o aliquota non validi');
-  const imponibile=Math.round(quantita*prezzo*100)/100,imposta=Math.round(imponibile*aliquota)/100,totale=Math.round((imponibile+imposta)*100)/100;
-  await run(`INSERT INTO dp_fatture_libere_bozze(cliente,cliente_id,tipo_documento,settore,data_documento,descrizione,quantita,prezzo_unitario,aliquota_iva,imponibile,imposta,totale,riferimento,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000)]);
+
+  await run(`INSERT INTO dp_fatture_libere_bozze(cliente,cliente_id,tipo_documento,settore,data_documento,descrizione,quantita,prezzo_unitario,aliquota_iva,imponibile,imposta,totale,riferimento,note,righe_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),JSON.stringify(lines)]);
   res.redirect('/fatturazione/libere');
  }catch(e){res.status(400).send(page('Bozza non salvata',dpFreeFormV326(b,e.message)));}
 });
@@ -14536,15 +14566,24 @@ app.post('/fatturazione/libere/:id/modifica',async(req,res)=>{
   if(!master)throw new Error('Cliente non trovato nell’anagrafica unica');
   const cliente=String(master.ragione_sociale||'').trim(),descrizione=String(b.descrizione||'').trim();
   const tipo=String(b.tipo_documento||'TD01'),settore=String(b.settore||'AUTO'),data=String(b.data_documento||'');
-  const quantita=Number(b.quantita),prezzo=Number(b.prezzo_unitario),aliquota=Number(b.aliquota_iva);
-  if(!cliente||cliente.length>180||!descrizione||descrizione.length>1500)throw new Error('Compilare cliente e descrizione');
+  const lines=dpFreeLinesV339(b);const {imponibile,imposta,totale}=dpFreeAmountsV339(lines);const quantita=lines[0].quantita,prezzo=lines[0].prezzo,aliquota=lines[0].iva;
+  if(!cliente||cliente.length>180||!lines.length)throw new Error('Compilare cliente e righe');
   if(!['TD01','TD02','TD04','TD05','TD24','TD25','TD26'].includes(tipo)||!['AUTO','RENT','SERVICE','TRASPORTI','ALTRO'].includes(settore))throw new Error('Tipo o settore non supportato');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(data)||Number.isNaN(Date.parse(data)))throw new Error('Data non valida');
-  if(!Number.isFinite(quantita)||quantita<=0||!Number.isFinite(prezzo)||prezzo<0||![0,4,5,10,22].includes(aliquota))throw new Error('Quantità, prezzo o aliquota non validi');
-  const imponibile=Math.round(quantita*prezzo*100)/100,imposta=Math.round(imponibile*aliquota)/100,totale=Math.round((imponibile+imposta)*100)/100;
-  await run(`UPDATE dp_fatture_libere_bozze SET cliente=?,cliente_id=?,tipo_documento=?,settore=?,data_documento=?,descrizione=?,quantita=?,prezzo_unitario=?,aliquota_iva=?,imponibile=?,imposta=?,totale=?,riferimento=?,note=? WHERE id=? AND stato='BOZZA'`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),existing.id]);
+
+  await run(`UPDATE dp_fatture_libere_bozze SET cliente=?,cliente_id=?,tipo_documento=?,settore=?,data_documento=?,descrizione=?,quantita=?,prezzo_unitario=?,aliquota_iva=?,imponibile=?,imposta=?,totale=?,riferimento=?,note=?,righe_json=? WHERE id=? AND stato='BOZZA'`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),JSON.stringify(lines),existing.id]);
   res.redirect('/fatturazione/libere');
  }catch(e){res.status(400).send(page('Modifica non salvata',dpFreeFormV326(b,e.message)));}
+});
+// V339: PDF di anteprima NON fiscale; nessuna numerazione o esportazione.
+app.get('/fatturazione/libere/:id/pdf',async(req,res)=>{
+ try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)return res.status(404).send('Bozza inesistente');
+ const lines=f.righe_json?JSON.parse(f.righe_json):[{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva,imponibile:f.imponibile,imposta:f.imposta,totale:f.totale}];
+ const doc=new PDFDocument({size:'A4',margin:45});res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`inline; filename="BOZZA_DP_${f.id}.pdf"`);doc.pipe(res);
+ doc.fontSize(20).text('DP GESTIONALE — BOZZA NON FISCALE');doc.moveDown(.6);doc.fontSize(11).text('Anteprima senza numerazione, emissione o validità fiscale');doc.moveDown();doc.text('Bozza n. '+f.id+' · Data '+f.data_documento+' · Settore '+f.settore);doc.text('Cliente: '+f.cliente);doc.text('Tipo previsto: '+f.tipo_documento);doc.moveDown();
+ for(let i=0;i<lines.length;i++){const l=lines[i];if(doc.y>700)doc.addPage();doc.fontSize(10).text((i+1)+'. '+l.descrizione).text('Q.tà '+l.quantita+' · Prezzo € '+Number(l.prezzo).toFixed(2)+' · Sconto '+(l.sconto||0)+'% · IVA '+l.iva+'% · Imponibile € '+Number(l.imponibile).toFixed(2));doc.moveDown(.5);}
+ doc.moveDown();doc.fontSize(12).text('Imponibile € '+Number(f.imponibile).toFixed(2)).text('IVA € '+Number(f.imposta).toFixed(2)).fontSize(15).text('TOTALE INDICATIVO € '+Number(f.totale).toFixed(2));doc.moveDown();doc.fontSize(10).text('Riferimenti: '+(f.riferimento||'-'));doc.text('DOCUMENTO DI PROVA — NON INVIARE A SDI O CLIENTE COME FATTURA');doc.end();
+ }catch(e){if(!res.headersSent)res.status(500).send('Anteprima non disponibile: '+e.message);else res.end();}
 });
 // V333: scrittura e cancellazione controllate, mai XML fiscali.
 app.post('/fatturazione/drive-fatel/test-scrittura',async(req,res)=>{
