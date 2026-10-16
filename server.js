@@ -2428,8 +2428,8 @@ async function queryDisponibilita(mezzo_id, data_inizio, data_fine, ora_inizio='
   data_fine = dpV226IsoDate(data_fine);
   // V180: se il mezzo è in officina/fermo, non è prenotabile.
   const mz = await get(`SELECT * FROM mezzi WHERE id=?`, [mezzo_id]).catch(()=>null);
-  if (mz && v180StatoMezzoOff(mz)) {
-    return { id: 0, codice: 'FERMO/OFFICINA', stato: 'officina', nome: 'Mezzo', cognome: 'in officina', data_inizio, data_fine };
+  if (mz && !dpV333MezzoPrenotabile(mz)) {
+    return { id: 0, codice: 'MEZZO NON PRENOTABILE', stato: 'non_disponibile', nome: 'Mezzo', cognome: 'in officina', data_inizio, data_fine };
   }
   // V141/V180: controllo con data+ora. Esclude rientrati/chiusi, così al check-in torna libero.
   const startReq = dpDateTimeSafe(data_inizio, ora_inizio, '08:30');
@@ -2518,9 +2518,18 @@ function v180Money(n){ return dpMoneyNum(n).toFixed(2); }
 function v188TotaleFinale(baseTotaleIvato, supplementoRientroIvato){
   return dpMoneyNum(baseTotaleIvato) + dpMoneyNum(supplementoRientroIvato);
 }
+// V333: unico criterio per disponibilita nuovi noleggi; mantiene gli storici.
+function dpV333MezzoPrenotabile(m){
+  if(!m) return false;
+  const statuses=[m.stato,m.stato_operativo].map(x=>String(x||'').trim().toLowerCase());
+  return !statuses.some(x=>/(vendut|vendit|archiviat|dismess|fuori.servizio|officina|fermo|manutenzion|guast|inattiv|non.disponibil|blocc)/.test(x));
+}
+function dpV333MezzoMotivo(m){
+  return [m?.stato_operativo,m?.stato].filter(Boolean).join(' / ')||'non disponibile';
+}
 function v180StatoMezzoOff(m){
   const st = String(m.stato_operativo || m.stato || '').toLowerCase();
-  return st.includes('officina') || st.includes('fermo') || st.includes('manutenzione');
+  return !dpV333MezzoPrenotabile(m);
 }
 function alertMezzo(m) {
   const out = [];
@@ -5854,7 +5863,7 @@ app.get('/nuova-prenotazione', async (req, res) => {
   const ocrData = OCR_PREFILL[req.query.ocr] || {};
   req.query = Object.assign({}, ocrData, req.query || {});
 
-  const mezzi = await all(`SELECT * FROM mezzi ORDER BY categoria,targa`);
+  const mezzi = (await all(`SELECT * FROM mezzi ORDER BY categoria,targa`)).filter(dpV333MezzoPrenotabile);
   res.send(page('Nuova prenotazione', `<h2>Nuova prenotazione / contratto</h2>
       <div class="box" style="border:2px solid #0b6b2d">
         <h3>1) Prima carica/scatta documento o patente</h3>
@@ -5891,6 +5900,7 @@ app.post('/prenota-admin', async (req, res) => {
     if (erroreDate) return res.send(page('Errore date', `<div class="box"><h2 class="bad">${esc(erroreDate)}</h2><a class="btn" href="/nuova-prenotazione">Torna</a></div>`));
     const mezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [b.mezzo_id]);
     if (!mezzo) return res.send(page('Mezzo non trovato', `<div class="box"><h2 class="bad">Mezzo non trovato</h2><a class="btn" href="/mezzi">Vai ai mezzi</a></div>`));
+    if(!dpV333MezzoPrenotabile(mezzo))return res.status(409).send(page('Mezzo non prenotabile',`<div class="box"><h2 class="bad">Mezzo non prenotabile</h2><p>${esc(mezzo.targa||'')} risulta ${esc(dpV333MezzoMotivo(mezzo))}. Nessun nuovo contratto creato.</p><a class="btn" href="/nuova-prenotazione">Scegli un altro mezzo</a></div>`));
     const occ = await queryDisponibilita(b.mezzo_id, b.data_inizio, b.data_fine, b.ora_inizio || '08:30', b.ora_fine || '18:00');
     if (occ) return res.send(page('Occupato', `<div class="box"><h2 class="bad">Mezzo occupato in queste date</h2><p><b>Nessun nuovo contratto è stato creato.</b></p><p>Il mezzo è già bloccato da: <a href="/prenotazione/${occ.id}">${esc(occ.codice)}</a></p><a class="btn" href="/planning">Vai al planning</a><a class="btn btn2" href="/nuova-prenotazione">Cambia date/mezzo</a></div>`));
 
@@ -6544,12 +6554,12 @@ document.addEventListener('DOMContentLoaded',function(){
     }
 
     const mezziTutti = await all(`SELECT * FROM mezzi ORDER BY id ASC`);
-    const mezzi = mezziTutti.filter(m => v123MezzoCompatibile(m, categoriaRichiesta));
+    const mezzi = mezziTutti.filter(m => dpV333MezzoPrenotabile(m) && v123MezzoCompatibile(m, categoriaRichiesta));
     if (!mezzi.length) return res.send(`<!doctype html><meta charset="utf-8"><h1>Nessun mezzo</h1><p>Nessun mezzo configurato correttamente per: ${esc(categoriaRichiesta)}.</p><p>Controlla anagrafica mezzi: categoria e posti.</p><a href="javascript:history.back()">Torna</a>`);
     let mezzo = null;
     if (existingPren && existingPren.mezzo_id) {
       const oldMezzo = await get(`SELECT * FROM mezzi WHERE id=?`, [existingPren.mezzo_id]).catch(()=>null);
-      if (oldMezzo && v123MezzoCompatibile(oldMezzo, categoriaRichiesta)) mezzo = oldMezzo;
+      if (oldMezzo && dpV333MezzoPrenotabile(oldMezzo) && v123MezzoCompatibile(oldMezzo, categoriaRichiesta)) mezzo = oldMezzo;
     }
     if (!mezzo) {
       for (const m of mezzi) {
@@ -8422,6 +8432,8 @@ app.get('/mezzi/:id/officina', async (req,res)=>{
 });
 app.post('/mezzi/:id/officina', async (req,res)=>{
   const b=req.body||{};
+  const current=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);
+  if(current && dpV266IsVenduto(current)) return res.status(409).send(page('Mezzo venduto',`<div class="box"><h2>Mezzo venduto</h2><p>Per riattivarlo utilizza Gestione mezzi → Riattiva, non il modulo officina.</p><a class="btn" href="/gestione-mezzi">Gestione mezzi</a></div>`));
   const stato = String(b.stato_operativo||'attivo').toLowerCase();
   await run(`UPDATE mezzi SET stato_operativo=?, stato=?, fermo_da=?, fermo_a=?, fermo_motivo=?, ultimo_intervento=?, km_attuali=?, km=? WHERE id=?`, [stato, stato==='attivo'?'attivo':'officina', b.fermo_da||'', b.fermo_a||'', b.fermo_motivo||'', b.fermo_motivo||'', b.km_attuali||0, b.km_attuali||0, req.params.id]);
   res.redirect('/planning');
@@ -10012,7 +10024,7 @@ app.get('/prenotazione/:id/converti-contratto',async(req,res)=>{await run(`UPDAT
 app.get('/mezzi/nuovo',(req,res)=>res.send(page('Nuovo mezzo',`<div class="box"><h2>Nuovo mezzo</h2><form method="post" action="/mezzi/nuovo"><div class="grid"><label>Targa<input name="targa" required></label><label>Marca<input name="marca"></label><label>Modello<input name="modello"></label><label>Tipo<select name="tipo"><option value="auto">Auto</option><option value="AUTO_4_POSTI">Auto 4 posti</option><option value="furgone">Furgone</option><option value="PULMINO_8_POSTI">Pulmino 8 posti</option><option value="pulmino">Pulmino 9 posti</option><option value="attrezzatura">Attrezzatura</option></select></label><label>Km<input name="km"></label><label>Prezzo giorno<input name="prezzo_giorno"></label><label>Km inclusi/giorno<input name="km_inclusi" value="150"></label><label>Cauzione standard<input name="cauzione" value="500"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo">Attivo</option><option value="officina">Officina/Fermo</option></select></label><label>GPS<select name="gps"><option value="0">NO</option><option value="1">SI</option></select></label><label>Blocco motore<select name="blocco_motore"><option value="0">NO</option><option value="1">SI</option></select></label></div><label>Note<textarea name="note"></textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`)));
 app.post('/mezzi/nuovo',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||'attivo');await run(`INSERT INTO mezzi (targa,marca,modello,tipo,km,km_attuali,prezzo_giorno,km_inclusi,cauzione,gps,blocco_motore,stato,stato_operativo,note) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.note)]);res.redirect('/mezzi');});
 app.get('/mezzi/:id/modifica',async(req,res)=>{const m=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);if(!m)return res.status(404).send('Mezzo non trovato');res.send(page('Modifica mezzo',`<div class="box"><h2>Modifica mezzo ${esc(m.targa)}</h2><form method="post" action="/mezzi/${m.id}/modifica"><div class="grid"><label>Targa<input name="targa" value="${esc(m.targa)}" required></label><label>Marca<input name="marca" value="${esc(m.marca)}"></label><label>Modello<input name="modello" value="${esc(m.modello)}"></label><label>Tipo<input name="tipo" value="${esc(m.tipo)}"></label><label>Km attuali<input name="km" value="${esc(m.km_attuali||m.km)}"></label><label>Prezzo giorno<input name="prezzo_giorno" value="${esc(m.prezzo_giorno)}"></label><label>Km inclusi/giorno<input name="km_inclusi" value="${esc(m.km_inclusi||150)}"></label><label>Cauzione standard<input name="cauzione" value="${esc(m.cauzione||500)}"></label><label>GPS<input name="gps" value="${esc(m.gps||'0')}"></label><label>Blocco motore<input name="blocco_motore" value="${esc(m.blocco_motore||'0')}"></label><label>Stato operativo<select name="stato_operativo"><option value="attivo" ${!v180StatoMezzoOff(m)?'selected':''}>Attivo / disponibile</option><option value="officina" ${v180StatoMezzoOff(m)?'selected':''}>Officina / fermo</option></select></label></div><label>Motivo fermo/officina</label><textarea name="fermo_motivo">${esc(m.fermo_motivo||'')}</textarea><label>Note<textarea name="note">${esc(m.note)}</textarea></label><button class="btn" type="submit">Salva mezzo</button><a class="btn btn2" href="/mezzi/${m.id}/officina">Fermo/officina veloce</a><a class="btn btn2" href="/mezzi">Annulla</a></form></div>`));});
-app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const st=v62Val(b.stato_operativo||b.stato||'attivo');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi');});
+app.post('/mezzi/:id/modifica',async(req,res)=>{const b=req.body||{};const current=await get(`SELECT * FROM mezzi WHERE id=?`,[req.params.id]);const st=dpV333MezzoPrenotabile(current)?v62Val(b.stato_operativo||b.stato||'attivo'):v62Val(current.stato_operativo||current.stato||'venduto');await run(`UPDATE mezzi SET targa=?,marca=?,modello=?,tipo=?,km=?,km_attuali=?,prezzo_giorno=?,km_inclusi=?,cauzione=?,gps=?,blocco_motore=?,stato=?,stato_operativo=?,fermo_motivo=?,note=? WHERE id=?`,[v62Val(b.targa).toUpperCase(),v62Val(b.marca).toUpperCase(),v62Val(b.modello).toUpperCase(),v62Val(b.tipo),v62Val(b.km),v62Val(b.km),v62Money(b.prezzo_giorno),v62Money(b.km_inclusi||150),v62Money(b.cauzione||500),v62Val(b.gps||'0'),v62Val(b.blocco_motore||'0'),st,st,v62Val(b.fermo_motivo),v62Val(b.note),req.params.id]);res.redirect('/mezzi');});
 app.post('/mezzi/:id/elimina',async(req,res)=>{await run(`DELETE FROM mezzi WHERE id=?`,[req.params.id]);res.redirect('/mezzi');});
 
 
@@ -10120,7 +10132,7 @@ app.get('/prenotazione/:id/modifica', async (req,res)=>{
   v67EnsureCriticalColumns(async ()=>{
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
     if(!p) return res.status(404).send(page('Non trovato', `<div class="box"><h2>Contratto non trovato</h2></div>`));
-    const mezzi = await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[]);
+    const mezzi = (await all(`SELECT * FROM mezzi ORDER BY targa, marca, modello`).catch(()=>[])).filter(m => dpV333MezzoPrenotabile(m) || Number(m.id)===Number(p.mezzo_id));
     const mezzoOptions = ['<option value="">-- scegli mezzo --</option>'].concat((mezzi||[]).map(m => `<option value="${esc(m.id)}" ${v159Selected(p.mezzo_id,m.id)}>${esc(v159MezzoLabel(m))}</option>`)).join('');
     res.send(page('Modifica contratto', `<div class="box">
       <h2>Modifica ${esc(p.codice || p.id)}</h2>
@@ -10749,7 +10761,7 @@ function dpVehicleMatchesCat(m, catInfo){
 async function dpFindAvailableVehicle(catInfo, startIso, endIso){
   let mezzi = [];
   try{ mezzi = await all(`SELECT * FROM mezzi ORDER BY id ASC`); }catch(e){ console.error('Errore select mezzi:', e.message); }
-  mezzi = (mezzi || []).filter(m => dpVehicleMatchesCat(m, catInfo));
+  mezzi = (mezzi || []).filter(m => dpV333MezzoPrenotabile(m) && dpVehicleMatchesCat(m, catInfo));
   for(const m of mezzi){
     try{
       const occ = await queryDisponibilita(m.id, startIso, endIso, '08:30', '18:00');
@@ -14482,6 +14494,27 @@ app.post('/fatturazione/libere/:id/modifica',async(req,res)=>{
   res.redirect('/fatturazione/libere');
  }catch(e){res.status(400).send(page('Modifica non salvata',dpFreeFormV326(b,e.message)));}
 });
+// V333: scrittura e cancellazione controllate, mai XML fiscali.
+app.post('/fatturazione/drive-fatel/test-scrittura',async(req,res)=>{
+ let createdId='';
+ try{
+  const id=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
+  if(!/^[A-Za-z0-9_-]{15,}$/.test(id)) throw new Error('DP_FATEL_FOLDER_ID non valido');
+  ensureDriveClientV172();
+  if(!drive)throw new Error('Account di servizio Google non disponibile');
+  const check=await drive.files.get({fileId:id,fields:'id,mimeType,capabilities(canAddChildren)',supportsAllDrives:true});
+  if(check.data?.mimeType!=='application/vnd.google-apps.folder')throw new Error('ID non corrisponde a una cartella');
+  if(check.data?.capabilities?.canAddChildren===false)throw new Error('Permessi di scrittura assenti');
+  const {Readable}=require('stream');
+  const stamp=new Date().toISOString();
+  const created=await drive.files.create({requestBody:{name:'TEST_COLLEGAMENTO_DP_'+Date.now()+'.txt',parents:[id]},media:{mimeType:'text/plain',body:Readable.from(['Verifica collegamento DP/Fatel '+stamp+'; NON e una fattura.\n'])},fields:'id,name,webViewLink',supportsAllDrives:true});
+  createdId=created.data?.id||'';
+  if(!createdId)throw new Error('Google Drive non ha confermato la creazione');
+  let cleanup='File di prova conservato';
+  try{await drive.files.delete({fileId:createdId,supportsAllDrives:true});cleanup='File di prova eliminato dopo il controllo';}catch(e){cleanup='Attenzione: test creato ma eliminazione non riuscita ('+e.message+')';}
+  res.send(page('Test Drive Fatel',`<div class="box"><h2>✅ Scrittura cartella Fatel confermata</h2><p>${esc(cleanup)}</p><p>Nessuna fattura XML generata o inviata.</p><a class="btn" href="/fatturazione/drive-fatel">Torna</a></div>`));
+ }catch(e){res.status(400).send(page('Test Drive Fatel',`<div class="box"><h2 class="bad">❌ Scrittura non confermata</h2><p>${esc(e.message)}</p><p>Nessuna fattura inviata.</p><a class="btn" href="/fatturazione/drive-fatel">Torna</a></div>`));}
+});
 app.get('/fatturazione/drive-fatel',async(req,res)=>{
  const id=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
  const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
@@ -14504,6 +14537,7 @@ app.get('/fatturazione/drive-fatel',async(req,res)=>{
  <p><b>ID:</b> ${esc(id||'DP_FATEL_FOLDER_ID non configurato')}</p>
  ${name?`<p><b>Nome cartella:</b> ${esc(name)}</p>`:''}
  <p><b>Controllo Google Drive:</b> ${esc(check)}</p>
+ <form method="POST" action="/fatturazione/drive-fatel/test-scrittura" onsubmit="return confirm('Eseguire il test di scrittura nella cartella Fatel? Nessun XML fiscale verra inviato.')"><button class="btn btn2" type="submit">🧪 Verifica scrittura su Drive</button></form>
  ${link?`<p><a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Apri cartella in Google Drive</a></p>`:''}
  <p>Per collegarla su Render: Environment → DP_FATEL_FOLDER_ID = ID della cartella. Usare l'account di servizio Google già configurato e autorizzarlo come Editor sulla cartella. Non modificare GOOGLE_DRIVE_FOLDER_ID.</p>
  <p><b>Attenzione:</b> Fatel non è collegato. Un deposito XML su Drive non equivale a invio SdI.</p>
