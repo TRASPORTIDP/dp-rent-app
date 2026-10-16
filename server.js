@@ -8396,53 +8396,85 @@ app.post('/documenti/:id', upload.single('file'), async (req, res) => {
     res.redirect(`/documenti/${req.params.id}`);
 });
 
+// V338: audit separato, non modifica numerazioni/fatture precedenti.
+async function dpV338AuditEnsure(){await run(`CREATE TABLE IF NOT EXISTS dp_rent_check_log (id INTEGER PRIMARY KEY AUTOINCREMENT, prenotazione_id INTEGER NOT NULL, fase TEXT NOT NULL, data_effettiva TEXT NOT NULL, ora_effettiva TEXT NOT NULL, dettaglio TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)`);}
+function dpV338DaysLate(p,date,time){
+ const planned=String(p.data_fine||'').slice(0,10),actual=String(date||'');
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(planned)||!/^\d{4}-\d{2}-\d{2}$/.test(actual))return 0;
+ const n=Math.round((Date.parse(actual+'T12:00:00Z')-Date.parse(planned+'T12:00:00Z'))/86400000);
+ if(n<=0)return 0;
+ return Math.max(0,n-(String(time||'00:00')<='09:00'?1:0));
+}
+function dpV338LateProposal(p,date,time,dayPrice){
+ const planned=String(p.data_fine||'').slice(0,10),n=/^\d{4}-\d{2}-\d{2}$/.test(planned)?Math.round((Date.parse(String(date)+'T12:00:00Z')-Date.parse(planned+'T12:00:00Z'))/86400000):0;
+ if(n<=0)return {days:0,fee:0};
+ if(n===1&&String(time)<='09:00')return {days:0,fee:36.60};
+ return {days:dpV338DaysLate(p,date,time),fee:Math.round(dpV338DaysLate(p,date,time)*dayPrice*100)/100};
+}
 app.get('/checkout/:id', async (req, res) => {
   const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
   if (!p) return res.send('Contratto non trovato');
   const nowTime = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-  res.send(page('Check-out', `<div class="box"><h2>📤 Check-out mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><form method="POST" action="/checkout/${p.id}"><div class="grid"><div><label>Orario check-out</label><input type="time" name="check_out_orario" value="${esc(p.check_out_orario || p.ora_inizio || nowTime)}"></div><div><label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions(p.carburante_uscita)}</select></div><div><label>Km uscita</label><input type="number" name="km_uscita" value="${esc(p.km_uscita)}"></div></div><label>Note check-out / danni presenti</label><textarea name="note">${esc(p.check_out_note || p.note)}</textarea><button>Salva check-out</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto uscita</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
+  res.send(page('Check-out', `<div class="box"><h2>📤 Check-out mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><form method="POST" action="/checkout/${p.id}"><div class="grid"><div><label>Data effettiva check-out</label><input type="date" name="check_out_data" value="${esc(p.data_inizio||new Date().toISOString().slice(0,10))}" required><label>Orario check-out</label><input type="time" name="check_out_orario" value="${esc(p.check_out_orario || p.ora_inizio || nowTime)}"></div><div><label>Carburante uscita</label><select name="carburante_uscita">${fuelOptions(p.carburante_uscita)}</select></div><div><label>Km uscita</label><input type="number" name="km_uscita" value="${esc(p.km_uscita)}"></div></div><label>Note check-out / danni presenti</label><textarea name="note">${esc(p.check_out_note || p.note)}</textarea><button>Salva check-out</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto uscita</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
 });
 app.post('/checkout/:id', async (req, res) => {
   const p = await get(`SELECT mezzo_id FROM prenotazioni WHERE id=?`, [req.params.id]);
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(req.body.check_out_data||'')||!/^\d{2}:\d{2}$/.test(req.body.check_out_orario||''))return res.status(400).send('Data e ora check-out non valide');
+  await dpV338AuditEnsure();
+  await run(`INSERT INTO dp_rent_check_log(prenotazione_id,fase,data_effettiva,ora_effettiva,dettaglio) VALUES(?,?,?,?,?)`,[req.params.id,'checkout',req.body.check_out_data,req.body.check_out_orario,JSON.stringify({km:req.body.km_uscita,carburante:req.body.carburante_uscita})]);
   await run(`UPDATE prenotazioni SET check_out_orario=?, carburante_uscita=?, km_uscita=?, check_out_note=?, note=?, stato='in_corso' WHERE id=?`, [req.body.check_out_orario, req.body.carburante_uscita, req.body.km_uscita, req.body.note, req.body.note, req.params.id]);
   if (p && req.body.km_uscita) await run(`UPDATE mezzi SET km_attuali=? WHERE id=?`, [req.body.km_uscita, p.mezzo_id]);
   try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
   res.send(actionScreen(req.params.id, 'Check-out salvato', 'Contratto aggiornato con orario check-out.'));
 });
-app.get('/checkin/:id', async (req, res) => {
-  const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [req.params.id]);
-  if (!p) return res.send('Contratto non trovato');
-  const nowTime = new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
-  const kmOut = Number(p.km_uscita || 0);
-  const kmStandard = Math.max(1, Number(p.giorni || 1)) * Number(p.km_inclusi || kmCategoria(p.categoria || p.tipo) || 150);
-  const kmIncl = v201KmConcordatiRientro(p, kmStandard);
-  res.send(page('Check-in', `<div class="box"><h2>📥 Check-in mezzo</h2><p><b>Contratto:</b> ${esc(p.codice||p.id)}</p><p><b>Km uscita:</b> ${esc(kmOut||'-')} &nbsp; <b>Km concordati:</b> ${esc(kmIncl||'-')} &nbsp; <b>Extra km:</b> €${esc(EXTRA_KM)} + IVA/km</p><form method="POST" action="/checkin/${p.id}"><div class="grid"><div><label>Orario check-in</label><input type="time" name="check_in_orario" value="${esc(p.check_in_orario || p.ora_fine || nowTime)}"></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km rientro</label><input type="number" name="km_rientro" value="${esc(p.km_rientro)}" required></div></div><div class="notice"><b>Calcolo automatico:</b> se i km percorsi superano i km concordati nel contratto/preventivo, il sistema calcola il supplemento cliente e aggiorna i km del mezzo.</div><label>Note rientro / danni / differenze</label><textarea name="note">${esc(p.check_in_note || p.note)}</textarea><button>Salva check-in e calcola extra km</button></form><div class="actions"><a class="btn btn3" href="/documenti/${p.id}">📸 Carica foto rientro</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">⬅️ Torna contratto</a></div></div>`));
+app.get('/checkin/:id', async(req,res)=>{
+ const p=await get('SELECT * FROM prenotazioni WHERE id=?',[req.params.id]);
+ if(!p)return res.status(404).send('Contratto non trovato');
+ const today=new Date().toISOString().slice(0,10);
+ const date=today,tm=new Date().toLocaleTimeString('it-IT',{hour:'2-digit',minute:'2-digit'});
+ const c=v180CheckinKmCalc(p,p.km_rientro||p.km_uscita);
+ const days=Math.max(1,Number(p.giorni)||1);
+ const dayPrice=Math.round(dpMoneyNum(p.totale)/days*100)/100;
+ const proposal=dpV338LateProposal(p,date,tm,dayPrice);
+ res.send(page('Check-in DP RENT',`<div class="box"><h2>📥 Check-in · ${esc(p.codice||p.id)}</h2><p><b>Rientro concordato:</b> ${esc(p.data_fine||'')} alle ${esc(p.ora_fine||'')}</p><p><b>Proposta automatica:</b> ${proposal.days} giorni aggiuntivi; supplemento € ${euro(proposal.fee)} IVA inclusa. Puoi sostituire qualsiasi importo, anche con zero.</p>
+ <form method="POST" action="/checkin/${p.id}" id="dp-check-v338">
+ <div class="grid"><div><label>Data effettiva riconsegna</label><input type="date" name="check_in_data" id="ci-date" value="${esc(date)}" required></div><div><label>Ora effettiva</label><input type="time" name="check_in_orario" id="ci-time" value="${esc(tm)}" required></div><div><label>Carburante rientro</label><select name="carburante_rientro">${fuelOptions(p.carburante_rientro)}</select></div><div><label>Km uscita</label><input type="number" value="${esc(p.km_uscita)}" readonly></div><div><label>Km rientro</label><input type="number" name="km_rientro" id="ci-kmin" min="0" value="${esc(p.km_rientro||p.km_uscita)}" required></div></div>
+ <h3>Supplementi: tutto modificabile da DP RENT</h3><div class="grid">
+ <div><label>Giornate extra addebitate</label><input type="number" min="0" step="1" name="giorni_extra" id="ci-days" value="${proposal.days}"></div>
+ <div><label>Tariffa giornaliera aggiuntiva (€ IVA compresa)</label><input type="number" min="0" step="0.01" id="ci-rate" value="${dayPrice.toFixed(2)}"></div>
+ <div><label>Supplemento ritardo (€ IVA compresa; modificabile anche a zero)</label><input type="number" min="0" step="0.01" name="supplemento_ritardo" id="ci-fee" value="${proposal.fee.toFixed(2)}" required></div>
+ <div><label>Km extra inclusi per il ritardo (modificabili)</label><input type="number" min="0" step="1" name="km_aggiuntivi_inclusi" id="ci-kmadd" value="${proposal.days*150}" required></div>
+ <div><label>Tariffa km eccedenti (€ + IVA/km)</label><input type="number" min="0" step="0.01" name="prezzo_km_extra" id="ci-kmrate" value="${Number(EXTRA_KM||0.20).toFixed(2)}" required></div>
+ <div><label>Altri supplementi / rettifiche (€ IVA inclusa, anche negativi)</label><input type="number" step="0.01" name="rettifica_manuale" id="ci-other" value="0.00" required></div>
+ </div><p><b>Km già concordati:</b> ${c.inclusi} · <b>Totale contratto:</b> € ${euro(p.totale)} IVA compresa</p>
+ <div class="notice" id="ci-preview" aria-live="polite">Calcolo finale in preparazione</div>
+ <label>Note rientro e motivazione eventuali rettifiche</label><textarea name="note">${esc(p.check_in_note||'')}</textarea>
+ <p>Gli importi sono proposte modificabili. Nessun addebito viene confermato finché non premi Salva.</p>
+ <button type="submit">Conferma importi e salva check-in</button><a class="btn btn2" href="/contratto/${p.id}/gestisci">Annulla</a></form></div>
+ <script>(function(){const d=document;const g=id=>d.getElementById(id);const num=id=>Number(g(id).value)||0;const planned=${JSON.stringify(String(p.data_fine||'').slice(0,10))},base=${JSON.stringify(dpMoneyNum(p.totale))},kmOut=${JSON.stringify(Number(p.km_uscita||0))},incl=${JSON.stringify(c.inclusi)};const money=n=>'€ '+n.toFixed(2).replace('.',',');
+ function calc(){const days=Math.max(0,num('ci-days')),kmadd=Math.max(0,num('ci-kmadd')),distance=Math.max(0,num('ci-kmin')-kmOut),extra=Math.max(0,distance-incl-kmadd),kmfee=extra*num('ci-kmrate')*1.22,total=base+num('ci-fee')+kmfee+num('ci-other');g('ci-preview').textContent='Giornate extra: '+days+' · Km percorsi: '+distance+' · Km inclusi: '+(incl+kmadd)+' · Km extra: '+extra+' · Extra km IVA inclusa: '+money(kmfee)+' · Supplemento ritardo: '+money(num('ci-fee'))+' · Rettifica: '+money(num('ci-other'))+' · TOTALE FINALE IVA COMPRESA: '+money(total);}
+ function suggest(){if(!planned)return;const delta=Math.round((Date.parse(g('ci-date').value+'T12:00:00Z')-Date.parse(planned+'T12:00:00Z'))/86400000);const morning=delta===1&&g('ci-time').value<='09:00';const days=Math.max(0,delta-(morning?1:0));g('ci-days').value=days;g('ci-fee').value=(morning?36.60:days*num('ci-rate')).toFixed(2);g('ci-kmadd').value=days*150;calc();}
+ ['ci-date','ci-time'].forEach(id=>g(id).addEventListener('change',suggest));['ci-days','ci-rate','ci-fee','ci-kmadd','ci-kmrate','ci-kmin','ci-other'].forEach(id=>g(id).addEventListener('input',calc));calc();})();</script>`));
 });
-app.post('/checkin/:id', async (req, res) => {
-  const p = await get(`SELECT p.*, m.km_attuali AS mezzo_km_attuali, m.tagliando_km AS mezzo_tagliando_km, m.tagliando_km_scadenza AS mezzo_tagliando_km_scadenza FROM prenotazioni p LEFT JOIN mezzi m ON m.id=p.mezzo_id WHERE p.id=?`, [req.params.id]);
-  if (!p) return res.send('Contratto non trovato');
-  const c = v180CheckinKmCalc(p, req.body.km_rientro);
-  const noteBase = req.body.note || '';
-  const noteExtra = c.extraKm > 0 ? `
-EXTRA KM RIENTRO: percorsi ${c.kmPercorsi}, concordati ${c.inclusi}, extra ${c.extraKm}, supplemento €${v180Money(c.supplemento)} IVA inclusa.` : `
-KM RIENTRO: percorsi ${c.kmPercorsi}, concordati ${c.inclusi}, nessun extra km.`;
-  await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?, km_rientro=?, km_percorsi=?, km_extra_rientro=?, supplemento_km_rientro=?, totale_finale=?, check_in_note=?, note=?, stato='rientrato' WHERE id=?`, [req.body.check_in_orario, req.body.carburante_rientro, c.kmIn, c.kmPercorsi, c.extraKm, v180Money(c.supplemento), v180Money(v188TotaleFinale(p.totale, c.supplemento)), noteBase + noteExtra, noteBase + noteExtra, req.params.id]);
-  if (p && c.kmIn) await run(`UPDATE mezzi SET km_attuali=?, km=? WHERE id=?`, [c.kmIn, c.kmIn, p.mezzo_id]);
-  try{ await syncContrattoDriveV63(req.params.id); }catch(e){}
-  let avvisoKm = '';
-  if (c.extraKm > 0) {
-    try {
-      const rKm = await dpV269SendKmExtraAlert(p, c);
-      avvisoKm = rKm && rKm.ok ? ' Email interna inviata per segnalare i km in eccedenza.' : '';
-    } catch (e) {
-      console.log('V269 avviso km eccedenza non inviato:', e.message);
-      avvisoKm = ' Attenzione: il check-in è salvato, ma la mail interna non è partita. Controllare la configurazione SMTP.';
-    }
-  }
-  const msg = c.extraKm > 0 ? `Check-in salvato. Km percorsi ${c.kmPercorsi}. Extra km ${c.extraKm}. Supplemento cliente: €${v180Money(c.supplemento)} IVA inclusa.${avvisoKm}` : `Check-in salvato. Km percorsi ${c.kmPercorsi}. Nessun supplemento km.`;
-  res.send(actionScreen(req.params.id, 'Check-in salvato', msg));
+app.post('/checkin/:id',async(req,res)=>{
+ const p=await get('SELECT * FROM prenotazioni WHERE id=?',[req.params.id]);
+ if(!p)return res.status(404).send('Contratto non trovato');
+ const b=req.body||{},date=String(b.check_in_data||''),tm=String(b.check_in_orario||'');
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||Number.isNaN(Date.parse(date))||!/^([01]\d|2[0-3]):[0-5]\d$/.test(tm))return res.status(400).send('Data/ora effettiva non valida');
+ const days=Number(b.giorni_extra),kmadd=Number(b.km_aggiuntivi_inclusi),fee=Number(b.supplemento_ritardo),kmrate=Number(b.prezzo_km_extra),other=Number(b.rettifica_manuale),kmIn=Number(b.km_rientro);
+ if(![days,kmadd,fee,kmrate,other,kmIn].every(Number.isFinite)||days<0||!Number.isInteger(days)||kmadd<0||fee<0||kmrate<0||kmIn<Number(p.km_uscita||0))return res.status(400).send('Controllare gli importi, i giorni e il contachilometri');
+ const c=v180CheckinKmCalc(p,kmIn),allowed=c.inclusi+kmadd,extraKm=Math.max(0,c.kmPercorsi-allowed),suppKm=Math.round(extraKm*kmrate*(1+Number(IVA||0.22))*100)/100;
+ const total=Math.round((dpMoneyNum(p.totale)+fee+suppKm+other)*100)/100;
+ if(total<0)return res.status(400).send('Il totale non può essere negativo');
+ await dpV338AuditEnsure();
+ const details={giorni_extra:days,km_aggiuntivi_inclusi:kmadd,tariffa_km_extra:kmrate,supplemento_ritardo:fee,extra_km:extraKm,importo_extra_km:suppKm,rettifica_manuale:other,totale_prima:dpMoneyNum(p.totale),totale_finale:total};
+ const note=String(b.note||'').slice(0,2000)+'\nRIEPILOGO CHECK-IN: '+JSON.stringify(details);
+ await run(`UPDATE prenotazioni SET check_in_orario=?, carburante_rientro=?,km_rientro=?,km_percorsi=?,km_extra_rientro=?,supplemento_km_rientro=?,totale_finale=?,check_in_note=?,note=?,stato='rientrato' WHERE id=?`,[tm,b.carburante_rientro,kmIn,c.kmPercorsi,extraKm,v180Money(suppKm),v180Money(total),note,note,req.params.id]);
+ await run(`INSERT INTO dp_rent_check_log(prenotazione_id,fase,data_effettiva,ora_effettiva,dettaglio) VALUES(?,?,?,?,?)`,[req.params.id,'checkin',date,tm,JSON.stringify(details)]);
+ if(p.mezzo_id&&kmIn)await run(`UPDATE mezzi SET km_attuali=?,km=? WHERE id=?`,[kmIn,kmIn,p.mezzo_id]);
+ try{await syncContrattoDriveV63(req.params.id)}catch(e){console.log('Drive check-in',e.message)}
+ res.send(actionScreen(req.params.id,'Check-in salvato','Totale confermato € '+v180Money(total)+' IVA compresa; supplementi e rettifiche registrati.'));
 });
-
 
 // V180 - fermo/officina mezzo dal planning o dalla scheda mezzo
 app.get('/mezzi/:id/officina', async (req,res)=>{
@@ -14396,9 +14428,9 @@ app.get('/fatturazione/invii',async(req,res)=>{
   const rows=visible.map(x=>{
    const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
    const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/fatturazione/xml/check/service/${x.id}`:`/note-credito/${x.id}`;
-   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${esc(st)}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
+   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Da verificare TD04'||st==='XML SERVICE da integrare'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='XML su Drive'?'<span style="color:#19744a;font-weight:bold">🟢 XML depositato (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
   }).join('');
-  res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Invio disattivato:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
+  res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Legenda:</b> 🟢 XML depositato su Drive, NON significa approvato fiscalmente. 🔴 Dati/documento da completare. ⚪ Da verificare. Nessuna validazione XSD/SdI ancora collegata.</p><p><b>Invio disattivato:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
     <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
     <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
     <form method="get"><label>Settore</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
