@@ -14915,6 +14915,9 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const comune=dpRequireV314(process.env.DP_XML_COMUNE,'DP_XML_COMUNE');
  const prov=dpRequireV314(process.env.DP_XML_PROVINCIA,'DP_XML_PROVINCIA');
  const regime=dpValV314(process.env.DP_XML_REGIME)||'RF01';
+ if(!/^RF(?:0[1-9]|1[0-9]|20)$/.test(regime))throw new Error('DP_XML_REGIME non valido: indicare il codice fiscale RF corretto in Render');
+ if(!/^\d{5}$/.test(cap))throw new Error('CAP aziendale non valido');
+ if(!/^[A-Z]{2}$/.test(prov.toUpperCase()))throw new Error('Provincia aziendale non valida');
  // V315: ogni settore usa la sua anagrafica; l'archivio condiviso è la fonte aggiornata.
  let cliente=null;
  if(tipo==='trasporti'){
@@ -14945,18 +14948,31 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const cComune=dpRequireV314(cliente.citta||cliente.citta_fatturazione,'comune cliente');
  const cProv=dpValV314(cliente.provincia||cliente.provincia_fatturazione);
  const paese=dpValV314(cliente.nazione||cliente.paese||'IT').toUpperCase();
+ if(paese==='IT' && !/^\d{5}$/.test(cCap))throw new Error('CAP cliente non valido: servono 5 cifre');
+ if(paese==='IT' && !/^[A-Z]{2}$/.test(cProv.toUpperCase()))throw new Error('Provincia cliente non valida: servono due lettere');
+ if(!/^[A-Z]{2}$/.test(paese))throw new Error('Nazione cliente non valida');
  const dest=dpValV314(cliente.sdi||cliente.codice_sdi)||'0000000';
  if(!/^[A-Z0-9]{7}$/.test(dest.toUpperCase()))throw new Error('Codice destinatario cliente deve essere di 7 caratteri');
  const pec=dpValV314(cliente.pec);
+ if(pec && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pec))throw new Error('PEC cliente non valida');
+ if(dest==='0000000' && pec && paese==='IT' && !/^.{0,256}$/.test(pec))throw new Error('PEC oltre il limite consentito');
  const progressivo=String(tipo==='noleggio'?'N':'T')+String(f.id).padStart(5,'0');
  const n=dpRequireV314(f.numero_display||f.numero,'numero fattura');
  const data=dpDateV314(f.data_fattura);
  // Prezzi aggregati: una riga riepilogativa; con aliquote diverse serve modello righe dedicato.
  const label=tipo==='noleggio'?'Servizi di noleggio':'Servizi di trasporto';
+ // V336: dati di pagamento solo se esplicitamente riconoscibili; non inventare scadenze.
+ const pagamentoTesto=dpValV314(f.pagamento||f.pagamento_descrizione).toLowerCase();
+ let pagamentoXml='';
+ if(/bonifico|bancari|iban|\bbanca\b/.test(pagamentoTesto)){
+   const iban=dpValV314(process.env.DP_XML_IBAN||DP_BANK_IBAN).replace(/\s/g,'').toUpperCase();
+   if(!/^IT\d{2}[A-Z]\d{10}[A-Z0-9]{12}$/.test(iban))throw new Error('IBAN aziendale non valido per XML bonifico: verificare DP_XML_IBAN / DP_BANK_IBAN');
+   pagamentoXml=`<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>${dpTagV314('ImportoPagamento',dpMoneyV314(totale))}${dpTagV314('IBAN',iban)}</DettaglioPagamento></DatiPagamento>`;
+ }
  const azienda=`<DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdFiscaleIVA><Anagrafica>${dpTagV314('Denominazione',denom)}</Anagrafica>${dpTagV314('RegimeFiscale',regime)}</DatiAnagrafici><Sede>${dpTagV314('Indirizzo',ind)}${dpTagV314('CAP',cap)}${dpTagV314('Comune',comune)}${dpTagV314('Provincia',prov)}<Nazione>IT</Nazione></Sede>`;
  const cId=`${/^\d{11}$/.test(cVat)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',cVat)}</IdFiscaleIVA>`:''}${cCf?dpTagV314('CodiceFiscale',cCf):''}`;
  const client=`<DatiAnagrafici>${cId}<Anagrafica>${dpTagV314('Denominazione',cName)}</Anagrafica></DatiAnagrafici><Sede>${dpTagV314('Indirizzo',cInd)}${dpTagV314('CAP',cCap)}${dpTagV314('Comune',cComune)}${cProv&&paese==='IT'?dpTagV314('Provincia',cProv):''}${dpTagV314('Nazione',paese)}</Sede>`;
- const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',progressivo)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${azienda}</CedentePrestatore><CessionarioCommittente>${client}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',n)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DettaglioLinee><NumeroLinea>1</NumeroLinea>${dpTagV314('Descrizione',label)}<Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imponibile))}${dpTagV314('PrezzoTotale',dpMoneyV314(imponibile))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee><DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imponibile))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo></DatiBeniServizi></FatturaElettronicaBody></p:FatturaElettronica>`;
+ const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',progressivo)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${azienda}</CedentePrestatore><CessionarioCommittente>${client}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',n)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DettaglioLinee><NumeroLinea>1</NumeroLinea>${dpTagV314('Descrizione',label)}<Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imponibile))}${dpTagV314('PrezzoTotale',dpMoneyV314(imponibile))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee><DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imponibile))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo></DatiBeniServizi>${pagamentoXml}</FatturaElettronicaBody></p:FatturaElettronica>`;
  return {f,xml,filename:`IT${vat}_${progressivo}.xml`};
 }
 
@@ -14980,6 +14996,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p><b>Tipo documento:</b> ${esc(xmlType)} — Fattura ordinaria</p>
       <p><b>File previsto:</b> ${esc(filename)}</p>
       <p>✅ Controlli anagrafici e aritmetici di base superati.</p>
+      <p><b>Pagamento XML:</b> ${xml.includes('<DatiPagamento>')?'Bonifico (MP05), IBAN presente, importo totale':'Non indicato: metodo non riconosciuto; controllare la fattura'}.</p>
       <p><b>Attenzione:</b> non è ancora una validazione ufficiale XSD/SdI. Verificare
       righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
       <a class="btn btn2" href="/fatturazione/xml/anteprima-scarica/${tipo}/${id}">⬇️ Scarica XML aggiornato (solo verifica)</a>
