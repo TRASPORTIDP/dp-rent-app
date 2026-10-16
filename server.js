@@ -14964,7 +14964,7 @@ async function dpMakeInvoiceXmlV314(tipo,id){
 // Non scrive su database, non carica su Drive, non assegna numerazioni.
 app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
   const tipo=req.params.tipo, id=req.params.id;
-  const back=tipo==='noleggio'?'/noleggio/fatture':'/trasporti/fatture';
+  const back=tipo==='noleggio'?'/fatture-da-fare':'/trasporti/fatturazione';
   if(!['noleggio','trasporti'].includes(tipo))
     return res.status(400).send(page('Controllo XML',`<div class="box"><h2>Settore non supportato</h2></div>`));
   try{
@@ -14982,7 +14982,8 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p>✅ Controlli anagrafici e aritmetici di base superati.</p>
       <p><b>Attenzione:</b> non è ancora una validazione ufficiale XSD/SdI. Verificare
       righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
-      ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}</p>`:
+      <a class="btn btn2" href="/fatturazione/xml/anteprima-scarica/${tipo}/${id}">⬇️ Scarica XML aggiornato (solo verifica)</a>
+      ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}. Puoi scaricare una versione aggiornata senza esportarla.</p>`:
       `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML su Drive</a>`}
       <a class="btn" href="${back}">Torna alle fatture</a></div>`));
   }catch(e){
@@ -14991,6 +14992,19 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p>Nessuna fattura o anagrafica è stata modificata.</p>
       <a class="btn btn2" href="${back}">Torna alle fatture</a></div>`));
   }
+});
+
+// V335: Scaricamento diagnostico: nessuna scrittura su DB/Drive o cambio stato fattura.
+app.get('/fatturazione/xml/anteprima-scarica/:tipo/:id([0-9]+)',async(req,res)=>{
+  const tipo=String(req.params.tipo||'');
+  if(!['noleggio','trasporti'].includes(tipo))return res.status(400).send('Settore non supportato');
+  try{
+    const {xml,filename}=await dpMakeInvoiceXmlV314(tipo,req.params.id);
+    res.setHeader('Content-Type','application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition','attachment; filename="VERIFICA_'+filename.replace(/[^a-zA-Z0-9_.-]/g,'')+'"');
+    res.setHeader('Cache-Control','no-store');
+    return res.status(200).send(xml);
+  }catch(err){return res.status(400).send(page('Anteprima XML non disponibile',`<div class="box"><h2>XML non disponibile</h2><p>${esc(err.message)}</p><a class="btn" href="/fatturazione/invii">Registro fatture</a></div>`));}
 });
 
 app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
