@@ -14395,7 +14395,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
   const visible=filtered.slice(0,300);
   const rows=visible.map(x=>{
    const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
-   const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/service/fatture/${x.id}`:`/note-credito/${x.id}`;
+   const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/fatturazione/xml/check/service/${x.id}`:`/note-credito/${x.id}`;
    return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${esc(st)}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
   }).join('');
   res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Invio disattivato:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
@@ -14895,7 +14895,69 @@ function dpValV314(v){return String(v==null?'':v).trim();}
 function dpMoneyV314(v){return Number(v).toFixed(2);}
 function dpRequireV314(v,label){if(!dpValV314(v))throw new Error('Dato fiscale mancante: '+label);return dpValV314(v);}
 function dpDateV314(v){const d=dpValV314(v).slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(d))throw new Error('Data fattura non valida');return d;}
+// V337: XML SERVICE con snapshot fattura, cliente da anagrafica collegata;
+// blocco sui casi non rappresentabili correttamente (IVA mista/zero e dati mancanti).
+async function dpMakeServiceXmlV337(id){
+ const dbFile=path.join(DATA_DIR,'dp_service.sqlite');
+ if(!fs.existsSync(dbFile))throw new Error('Database DP SERVICE non trovato');
+ const svc=new sqlite3.Database(dbFile,sqlite3.OPEN_READONLY);
+ const read=(sql,args=[])=>new Promise((resolve,reject)=>svc.get(sql,args,(e,r)=>e?reject(e):resolve(r)));
+ let f;
+ try {f=await read(`SELECT f.*,c.id AS service_cliente_id,c.source_main_id,c.ragione_sociale AS cliente,c.piva AS cliente_piva,c.cf AS cliente_cf,c.indirizzo AS cliente_indirizzo,c.citta AS cliente_citta,c.provincia AS cliente_provincia,c.pec AS cliente_pec,c.sdi AS cliente_sdi
+   FROM fatture_service f JOIN ordini_lavoro o ON o.id=f.ordine_id JOIN clienti c ON c.id=o.cliente_id WHERE f.id=?`,[id]);}
+ finally {await new Promise(resolve=>svc.close(()=>resolve()));}
+ if(!f)throw new Error('Fattura SERVICE o anagrafica non trovata');
+ if(!f.source_main_id)throw new Error('Cliente SERVICE non collegato all’anagrafica unica: associare prima di esportare XML');
+ const cliente=await get('SELECT * FROM dp_clienti_master WHERE id=?',[f.source_main_id]);
+ if(!cliente)throw new Error('Cliente non trovato nell’anagrafica unica');
+ if(dpValV314(cliente.ragione_sociale).toUpperCase()!==dpValV314(f.cliente).toUpperCase())throw new Error('Intestatario SERVICE e anagrafica unica differenti');
+ const vat=dpRequireV314(process.env.DP_XML_PIVA,'DP_XML_PIVA').replace(/^IT/i,'');
+ if(!/^\d{11}$/.test(vat))throw new Error('P.IVA aziendale non valida');
+ const regime=dpRequireV314(process.env.DP_XML_REGIME,'DP_XML_REGIME');
+ if(!/^RF(?:0[1-9]|1[0-9]|20)$/.test(regime))throw new Error('Regime fiscale non valido');
+ const descrizione=dpValV314(process.env.DP_XML_RAGIONE_SOCIALE);
+ const ind=dpRequireV314(process.env.DP_XML_INDIRIZZO,'indirizzo emittente');
+ const cap=dpRequireV314(process.env.DP_XML_CAP,'CAP emittente');
+ const comune=dpRequireV314(process.env.DP_XML_COMUNE,'comune emittente');
+ const prov=dpRequireV314(process.env.DP_XML_PROVINCIA,'provincia emittente');
+ const cv=dpValV314(cliente.piva).replace(/^IT/i,'');
+ const cf=dpValV314(cliente.codice_fiscale);
+ if(!/^\d{11}$/.test(cv)&&!/^[A-Z0-9]{11,16}$/.test(cf))throw new Error('Cliente senza P.IVA o CF valido');
+ const cind=dpRequireV314(cliente.indirizzo,'indirizzo cliente');
+ const ccap=dpRequireV314(cliente.cap,'CAP cliente');
+ const ccitta=dpRequireV314(cliente.citta,'città cliente');
+ const cprov=dpRequireV314(cliente.provincia,'provincia cliente');
+ if(!/^\d{5}$/.test(ccap)||!/^[A-Z]{2}$/.test(cprov.toUpperCase()))throw new Error('CAP/provincia cliente non validi');
+ const dest=dpValV314(cliente.sdi)||'0000000';
+ if(!/^[A-Z0-9]{7}$/.test(dest.toUpperCase()))throw new Error('Codice SDI cliente non valido');
+ const pec=dpValV314(cliente.pec);
+ let righe;
+ try{righe=JSON.parse(f.righe_json||'[]')}catch(e){throw new Error('Righe fattura SERVICE non leggibili')}
+ if(!Array.isArray(righe)||!righe.length)throw new Error('Fattura senza righe salvate');
+ const rates=[...new Set(righe.map(r=>Number(r.iva)))];
+ if(rates.length!==1||![4,5,10,22].includes(rates[0]))throw new Error('XML SERVICE: aliquote IVA miste, esenti o non supportate: serve dettaglio/natura IVA');
+ const imp=Number(f.imponibile),iva=Number(f.iva),total=Number(f.totale),aliquota=rates[0];
+ if(![imp,iva,total].every(Number.isFinite)||imp<=0||Math.abs(imp+iva-total)>.02||Math.abs(imp*aliquota/100-iva)>.03)throw new Error('Imponibile/IVA/totale SERVICE non coerenti');
+ const data=dpDateV314(f.data);
+ const numero=dpRequireV314(f.numero,'numero SERVICE')+'/S';
+ const prog='S'+String(f.id).padStart(5,'0');
+ const supplier=`<DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdFiscaleIVA><Anagrafica>${dpTagV314('Denominazione',descrizione)}</Anagrafica>${dpTagV314('RegimeFiscale',regime)}</DatiAnagrafici><Sede>${dpTagV314('Indirizzo',ind)}${dpTagV314('CAP',cap)}${dpTagV314('Comune',comune)}${dpTagV314('Provincia',prov)}<Nazione>IT</Nazione></Sede>`;
+ const cId=`${/^\d{11}$/.test(cv)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',cv)}</IdFiscaleIVA>`:''}${cf?dpTagV314('CodiceFiscale',cf):''}`;
+ const customer=`<DatiAnagrafici>${cId}<Anagrafica>${dpTagV314('Denominazione',cliente.ragione_sociale)}</Anagrafica></DatiAnagrafici><Sede>${dpTagV314('Indirizzo',cind)}${dpTagV314('CAP',ccap)}${dpTagV314('Comune',ccitta)}${dpTagV314('Provincia',cprov)}<Nazione>IT</Nazione></Sede>`;
+ // Snapshot di fattura: l'imponibile totale viene riassunto senza cambiare quantità/prezzi dello storico.
+ const row=`<DettaglioLinee><NumeroLinea>1</NumeroLinea><Descrizione>Interventi officina e ricambi - fattura ${dpXmlV314(numero)}</Descrizione><Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imp))}${dpTagV314('PrezzoTotale',dpMoneyV314(imp))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee>`;
+ const summary=`<DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imp))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo>`;
+ let payment='';
+ if(/^(BO|BON)/i.test(dpValV314(f.codice_pagamento))||/bonifico/i.test(dpValV314(f.pagamento_descrizione))){
+  const iban=dpValV314(process.env.DP_XML_IBAN||DP_BANK_IBAN).replace(/\s/g,'').toUpperCase();
+  if(!/^IT\d{2}[A-Z]\d{10}[A-Z0-9]{12}$/.test(iban))throw new Error('IBAN aziendale non valido');
+  payment=`<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>${dpTagV314('ImportoPagamento',dpMoneyV314(total))}${dpTagV314('IBAN',iban)}</DettaglioPagamento></DatiPagamento>`;
+ }
+ const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',prog)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${supplier}</CedentePrestatore><CessionarioCommittente>${customer}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',numero)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(total))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi>${row}${summary}</DatiBeniServizi>${payment}</FatturaElettronicaBody></p:FatturaElettronica>`;
+ return {f:{...f,cliente:f.cliente,numero_display:numero,id:f.id},xml,filename:`IT${vat}_${prog}.xml`};
+}
 async function dpMakeInvoiceXmlV314(tipo,id){
+ if(tipo==='service')return dpMakeServiceXmlV337(id);
  const tab=tipo==='noleggio'?'noleggio_fatture':tipo==='trasporti'?'trasporti_fatture':null;
  if(!tab)throw new Error('Settore XML non supportato');
  const f=await get(`SELECT * FROM ${tab} WHERE id=?`,[id]);if(!f)throw new Error('Fattura non trovata');
@@ -14980,8 +15042,8 @@ async function dpMakeInvoiceXmlV314(tipo,id){
 // Non scrive su database, non carica su Drive, non assegna numerazioni.
 app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
   const tipo=req.params.tipo, id=req.params.id;
-  const back=tipo==='noleggio'?'/fatture-da-fare':'/trasporti/fatturazione';
-  if(!['noleggio','trasporti'].includes(tipo))
+  const back=tipo==='noleggio'?'/fatture-da-fare':tipo==='service'?'/service/fatture':'/trasporti/fatturazione';
+  if(!['noleggio','trasporti','service'].includes(tipo))
     return res.status(400).send(page('Controllo XML',`<div class="box"><h2>Settore non supportato</h2></div>`));
   try{
     const {f,xml,filename}=await dpMakeInvoiceXmlV314(tipo,id);
@@ -15014,7 +15076,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
 // V335: Scaricamento diagnostico: nessuna scrittura su DB/Drive o cambio stato fattura.
 app.get('/fatturazione/xml/anteprima-scarica/:tipo/:id([0-9]+)',async(req,res)=>{
   const tipo=String(req.params.tipo||'');
-  if(!['noleggio','trasporti'].includes(tipo))return res.status(400).send('Settore non supportato');
+  if(!['noleggio','trasporti','service'].includes(tipo))return res.status(400).send('Settore non supportato');
   try{
     const {xml,filename}=await dpMakeInvoiceXmlV314(tipo,req.params.id);
     res.setHeader('Content-Type','application/xml; charset=utf-8');
