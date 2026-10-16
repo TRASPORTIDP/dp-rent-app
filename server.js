@@ -2717,6 +2717,26 @@ async function uploadFileToDrive(localPath, filename, mimetype, subFolderName) {
   };
 }
 
+// V334: invio dedicato a cartella Fatel tramite Apps Script (non account di servizio).
+async function dpFatelAppsScriptUploadV334(localPath, filename, mimeType) {
+  const url=String(process.env.DRIVE_WEBAPP_URL||'').trim();
+  const folderId=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
+  if(!url || !/^https:\/\/script\.google\.com\//.test(url)) throw new Error('DRIVE_WEBAPP_URL Apps Script non configurato');
+  if(!/^[A-Za-z0-9_-]{15,}$/.test(folderId)) throw new Error('DP_FATEL_FOLDER_ID non configurato');
+  await assertFileReadyV173(localPath,'Upload Fatel Apps Script');
+  const response=await fetch(url,{
+    method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'},
+    body:JSON.stringify({folderId, fileName:filename,filename, mimeType:mimeType||'application/octet-stream',base64:fs.readFileSync(localPath).toString('base64')})
+  });
+  const body=await response.text();
+  let data;
+  try { data=JSON.parse(body); } catch {throw new Error('Risposta Apps Script non valida: '+body.slice(0,250));}
+  if(!response.ok || !data.ok)throw new Error(String(data.error||'Caricamento Apps Script Fatel fallito'));
+  const id=data.fileId||data.id;
+  if(!id || String(data.folderId||'')!==folderId)throw new Error('Deposito Fatel non confermato nella cartella dedicata');
+  return {id,webViewLink:data.url||data.link||data.webViewLink||'',folderId:data.folderId};
+}
+
 function cleanupLocalAfterDriveV151(localPath){
   try {
     if (!localPath) return;
@@ -14496,25 +14516,21 @@ app.post('/fatturazione/libere/:id/modifica',async(req,res)=>{
 });
 // V333: scrittura e cancellazione controllate, mai XML fiscali.
 app.post('/fatturazione/drive-fatel/test-scrittura',async(req,res)=>{
- let createdId='';
+ const crypto=require('crypto');
+ const fileName='TEST_COLLEGAMENTO_DP_'+Date.now()+'_'+crypto.randomBytes(3).toString('hex')+'.txt';
+ const tempFile=path.join(require('os').tmpdir(),fileName);
  try{
-  const id=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
-  if(!/^[A-Za-z0-9_-]{15,}$/.test(id)) throw new Error('DP_FATEL_FOLDER_ID non valido');
-  ensureDriveClientV172();
-  if(!drive)throw new Error('Account di servizio Google non disponibile');
-  const check=await drive.files.get({fileId:id,fields:'id,mimeType,capabilities(canAddChildren)',supportsAllDrives:true});
-  if(check.data?.mimeType!=='application/vnd.google-apps.folder')throw new Error('ID non corrisponde a una cartella');
-  if(check.data?.capabilities?.canAddChildren===false)throw new Error('Permessi di scrittura assenti');
-  const {Readable}=require('stream');
-  const stamp=new Date().toISOString();
-  const created=await drive.files.create({requestBody:{name:'TEST_COLLEGAMENTO_DP_'+Date.now()+'.txt',parents:[id]},media:{mimeType:'text/plain',body:Readable.from(['Verifica collegamento DP/Fatel '+stamp+'; NON e una fattura.\n'])},fields:'id,name,webViewLink',supportsAllDrives:true});
-  createdId=created.data?.id||'';
-  if(!createdId)throw new Error('Google Drive non ha confermato la creazione');
-  let cleanup='File di prova conservato';
-  try{await drive.files.delete({fileId:createdId,supportsAllDrives:true});cleanup='File di prova eliminato dopo il controllo';}catch(e){cleanup='Attenzione: test creato ma eliminazione non riuscita ('+e.message+')';}
-  res.send(page('Test Drive Fatel',`<div class="box"><h2>✅ Scrittura cartella Fatel confermata</h2><p>${esc(cleanup)}</p><p>Nessuna fattura XML generata o inviata.</p><a class="btn" href="/fatturazione/drive-fatel">Torna</a></div>`));
+  fs.writeFileSync(tempFile,'Test tecnico cartella XML Fatel. Non è una fattura. '+new Date().toISOString()+'\\n','utf8');
+  const result=await dpFatelAppsScriptUploadV334(tempFile,fileName,'text/plain');
+  res.send(page('Test Drive Fatel',`<div class="box"><h2>✅ Scrittura Fatel confermata tramite Apps Script</h2>
+   <p>File di prova creato: <b>${esc(fileName)}</b>.</p>
+   <p>Il file viene lasciato nella cartella per consentire una verifica visiva e potrà essere eliminato manualmente.</p>
+   ${result.webViewLink?`<p><a class="btn" href="${esc(result.webViewLink)}" target="_blank" rel="noopener">Apri il file di prova</a></p>`:''}
+   <p>Nessuna fattura/XML fiscale generata né inviata allo SdI.</p><a class="btn btn2" href="/fatturazione/drive-fatel">Torna</a></div>`));
  }catch(e){res.status(400).send(page('Test Drive Fatel',`<div class="box"><h2 class="bad">❌ Scrittura non confermata</h2><p>${esc(e.message)}</p><p>Nessuna fattura inviata.</p><a class="btn" href="/fatturazione/drive-fatel">Torna</a></div>`));}
+ finally{try{fs.unlinkSync(tempFile)}catch(_){}}
 });
+
 app.get('/fatturazione/drive-fatel',async(req,res)=>{
  const id=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
  const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
@@ -14533,13 +14549,13 @@ app.get('/fatturazione/drive-fatel',async(req,res)=>{
   }
  }catch(e){check='Accesso non verificato: '+String(e.message||e).slice(0,220)}
  res.send(page('Cartella XML Fatel',`<div class="box"><h2>📁 Cartella XML Fatel</h2>
- <p><b>Modalità:</b> ${esc(mode)} (in TEST gli XML usano il percorso di prova Apps Script, non la cartella Fatel definitiva)</p>
+ <p><b>Modalità:</b> ${esc(mode)} (in TEST gli XML usano il percorso di prova Apps Script, non la cartella Fatel definitiva. Il pulsante test scrittura verifica invece la cartella Fatel tramite Apps Script)</p>
  <p><b>ID:</b> ${esc(id||'DP_FATEL_FOLDER_ID non configurato')}</p>
  ${name?`<p><b>Nome cartella:</b> ${esc(name)}</p>`:''}
  <p><b>Controllo Google Drive:</b> ${esc(check)}</p>
- <form method="POST" action="/fatturazione/drive-fatel/test-scrittura" onsubmit="return confirm('Eseguire il test di scrittura nella cartella Fatel? Nessun XML fiscale verra inviato.')"><button class="btn btn2" type="submit">🧪 Verifica scrittura su Drive</button></form>
+ <form method="POST" action="/fatturazione/drive-fatel/test-scrittura" onsubmit="return confirm('Eseguire il test di scrittura nella cartella Fatel? Nessun XML fiscale verra inviato.')"><button class="btn btn2" type="submit">🧪 Verifica scrittura tramite Apps Script</button></form>
  ${link?`<p><a class="btn" href="${esc(link)}" target="_blank" rel="noopener">Apri cartella in Google Drive</a></p>`:''}
- <p>Per collegarla su Render: Environment → DP_FATEL_FOLDER_ID = ID della cartella. Usare l'account di servizio Google già configurato e autorizzarlo come Editor sulla cartella. Non modificare GOOGLE_DRIVE_FOLDER_ID.</p>
+ <p>Per collegarla su Render: Environment → DP_FATEL_FOLDER_ID = ID della cartella. Il test di scrittura usa DRIVE_WEBAPP_URL con il deployment Apps Script aggiornato. Non modificare GOOGLE_DRIVE_FOLDER_ID.</p>
  <p><b>Attenzione:</b> Fatel non è collegato. Un deposito XML su Drive non equivale a invio SdI.</p>
  <a class="btn btn2" href="/fatturazione">Torna alla fatturazione</a></div>`));
 });
@@ -14994,24 +15010,16 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
    if(!folder||folder.includes('..')||folder.includes('/')||folder.includes('\\'))throw new Error('Sottocartella Fatel non valida');
    let result;
    if(mode==='READY'){
-     // La cartella definitiva NON deve ricadere sul vecchio upload Apps Script,
-     // perché quel percorso usa GOOGLE_DRIVE_FOLDER_ID dei contratti.
-     const fatelId=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
-     if(!/^[A-Za-z0-9_-]{15,}$/.test(fatelId))throw new Error('DP_FATEL_FOLDER_ID assente o non valido');
-     ensureDriveClientV172();
-     if(!drive)throw new Error('Account di servizio Google non configurato per accesso diretto alla cartella Fatel');
-     const check=await drive.files.get({fileId:fatelId,fields:'id,mimeType,capabilities(canAddChildren)',supportsAllDrives:true});
-     if(check.data?.mimeType!=='application/vnd.google-apps.folder')throw new Error('DP_FATEL_FOLDER_ID non è una cartella');
-     if(check.data?.capabilities?.canAddChildren===false)throw new Error('L’account di servizio non può scrivere nella cartella Fatel');
-     result=await uploadFileToDriveFolderV63(tempFile,filename,'application/xml',fatelId);
-     if(!result?.id)throw new Error('Upload diretto Fatel non confermato: nessun file depositato');
+     // Con READY l'XML viene depositato esattamente nella cartella Fatel tramite Apps Script.
+     // Verificare correttezza XML e procedura Zucchetti prima di attivare READY.
+     result=await dpFatelAppsScriptUploadV334(tempFile,filename,'application/xml');
    }else{
      if(!process.env.DRIVE_WEBAPP_URL||!process.env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('Apps Script Drive non configurato per test');
      result=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
    }
    if(!result)throw new Error('Caricamento Google Drive non confermato');
    await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[req.params.tipo,f.id,result.id||'',filename]);
-   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Deposito Google Drive: ${esc(mode)} / ${esc(folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
+   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Deposito Google Drive: ${esc(mode)} / ${esc(mode==='READY'?'DP FATTURAZIONE XML - FATEL':folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
   }finally{try{fs.unlinkSync(tempFile);}catch(_){}}
  }catch(e){res.status(400).send(page('Export XML non riuscito',`<div class="box"><h2>XML non esportato</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione">Torna</a></div>`));}
 });
