@@ -14407,7 +14407,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
    all(`SELECT id,numero_display,cliente,data_documento AS data_fattura,totale,stato,'credito' AS settore FROM dp_note_credito ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
    all(`SELECT tipo,fattura_id,file_name,exported_at FROM dp_xml_exports`).catch(()=>[]),
    dpReadServiceInvoices(),
-   (async()=>{await dpFreeEnsure();return all("SELECT id,numero_fattura AS numero_display,cliente,data_documento AS data_fattura,totale,stato,'libere' AS settore FROM dp_fatture_libere_bozze WHERE stato='REGISTRATA'")})()
+   (async()=>{await dpFreeEnsure();return all("SELECT id,numero_fattura AS numero_display,cliente,data_documento AS data_fattura,totale,stato,'libere' AS settore FROM dp_fatture_libere_bozze WHERE stato IN ('REGISTRATA','PROVA')")})()
   ]);
   const exported=new Set(exports.map(x=>String(x.tipo)+':'+x.fattura_id));
   const src=[...rent,...tr,...credit,...service,...libere].sort((a,b)=>String(b.data_fattura||'').localeCompare(String(a.data_fattura||''))||b.id-a.id);
@@ -14416,7 +14416,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
   const needle=String(req.query.cerca||'').trim().toLowerCase();
   const filtered=src.filter(x=>(!qSet.has(sector)||x.settore===sector)&&(!needle||String(x.cliente||'').toLowerCase().includes(needle)||String(x.numero_display||'').toLowerCase().includes(needle)));
   function state(x){
-   if(/ANNULLAT|BOZZA/i.test(String(x.stato||'')))return 'Non pronta';
+   if(/ANNULLAT|BOZZA|PROVA/i.test(String(x.stato||'')))return 'Non pronta';
    if(x.settore==='credito')return 'Da verificare TD04';
    if(x.settore==='service')return 'XML SERVICE da integrare';
    if(x.settore==='libere')return 'XML da validare';
@@ -14539,19 +14539,20 @@ app.get('/fatturazione/libere',async(req,res)=>{
   const out=rows.map(r=>{
    const id=Number(r.id),registered=r.stato==='REGISTRATA';
    const u='/fatturazione/libere/'+id;
-   const state=registered?'<span style="font-weight:800;color:#087b35">● REGISTRATA</span>':'<span style="font-weight:800;color:#8b6500">● BOZZA</span>';
-   return `<tr><td>${registered?esc(r.numero_fattura):'#'+id}</td><td>${esc(r.data_documento||'')}</td><td>${esc(r.cliente||'')}</td><td>${esc(r.settore||'')}</td><td>${esc(r.tipo_documento||'')}</td><td>€ ${euro(r.imponibile||0)}</td><td><b>€ ${euro(r.totale||0)}</b></td><td>${state}</td><td style="min-width:310px">
+   const state=registered?'<span style="font-weight:800;color:#087b35">● REGISTRATA</span>':r.stato==='PROVA'?'<span style="font-weight:800;color:#2369ac">● SIMULAZIONE</span>':'<span style="font-weight:800;color:#8b6500">● BOZZA</span>';
+   return `<tr><td>${registered||r.stato==='PROVA'?esc(r.numero_fattura):'#'+id}</td><td>${esc(r.data_documento||'')}</td><td>${esc(r.cliente||'')}</td><td>${esc(r.settore||'')}</td><td>${esc(r.tipo_documento||'')}</td><td>€ ${euro(r.imponibile||0)}</td><td><b>€ ${euro(r.totale||0)}</b></td><td>${state}</td><td style="min-width:310px">
     <a class="btn" href="${registered?u+'/dettaglio':u+'/modifica'}">APRI</a>
     <a class="btn btn2" href="${u}/pdf" target="_blank" rel="noopener">PDF</a>
-    ${registered?'':`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`}
+    ${r.stato==='BOZZA'?`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`:''}
     <a class="btn btn2" href="${u}/xml-verifica">XML</a>
-    ${registered?'':`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`}
+    ${r.stato==='BOZZA'?`<form action="${u}/registra-prova" method="post" style="display:inline" onsubmit="return confirm('Crea simulazione TEST-L? Non è fattura fiscale e non verrà inviata.')"><button class="btn" type="submit">REGISTRA PROVA</button></form>`:''}
+    ${r.stato==='BOZZA'?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`:''}
    </td></tr>`;
   }).join('');
-  const registered=rows.filter(x=>x.stato==='REGISTRATA').length,drafts=rows.length-registered;
+  const registered=rows.filter(x=>x.stato==='REGISTRATA').length,tests=rows.filter(x=>x.stato==='PROVA').length,drafts=rows.length-registered-tests;
   res.send(page('Fatture libere',`<div class="box"><h2>🧾 FATTURE LIBERE / DP AUTO</h2>
    <p>Archivio unico dei documenti manuali: clienti dall'anagrafica comune, righe multiple, PDF e XML.</p>
-   <p><b>Bozze: ${drafts} · Registrate: ${registered}</b> · Nessun invio automatico allo SdI.</p>
+   <p><b>Bozze: ${drafts} · Simulazioni: ${tests} · Registrate: ${registered}</b> · Nessun invio automatico allo SdI.</p>
    <a class="btn" href="/fatturazione/libere/nuova">＋ NUOVA FATTURA LIBERA</a>
    <a class="btn btn2" href="/fatturazione/invii">REGISTRO ELETTRONICO</a>
    <a class="btn btn2" href="/fatturazione">FATTURAZIONE DP</a></div>
@@ -14608,6 +14609,19 @@ app.post('/fatturazione/libere/:id/modifica',async(req,res)=>{
 });
 // V341: registrazione fattura libera con numerazione indipendente. Operazione esplicita,
 // non confondere con trasmissione SdI o validazione ufficiale.
+// V343 - La registrazione PROVA non emette fatture, non alloca numeri fiscali, non deposita XML.
+app.post('/fatturazione/libere/:id/registra-prova',async(req,res)=>{
+ try{
+  await dpFreeEnsure(); await dpMasterEnsure();
+  const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
+  if(!f||f.stato!=='BOZZA')throw new Error('Bozza non disponibile per la simulazione');
+  await dpFreePreviewXmlV340(f.id); // i controlli preliminari restano obbligatori
+  if(f.tipo_documento!=='TD01')throw new Error('La simulazione attuale ammette soltanto TD01.');
+  const numero='TEST-'+f.id+'/L';
+  await run("UPDATE dp_fatture_libere_bozze SET stato='PROVA', numero_fattura=?,anno_fattura=?,serie_fattura='TEST-L',emessa_at=CURRENT_TIMESTAMP WHERE id=? AND stato='BOZZA'",[numero,Number(f.data_documento.slice(0,4)),f.id]);
+  res.redirect('/fatturazione/libere/'+f.id+'/dettaglio');
+ }catch(e){res.status(400).send(page('Registrazione di prova',`<div class="box"><h2>Prova non registrata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
 app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
  try{
   await dpFreeEnsure();await dpMasterEnsure();
@@ -14630,18 +14644,64 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
 });
 app.get('/fatturazione/libere/:id/dettaglio',async(req,res)=>{
  try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)throw new Error('Documento inesistente');
- res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
+ res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
  }catch(e){res.status(404).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 // V339: PDF di anteprima NON fiscale; nessuna numerazione o esportazione.
+// V343: impaginazione uniforme, anche per la simulazione. PDF TEST mai valido fiscalmente.
 app.get('/fatturazione/libere/:id/pdf',async(req,res)=>{
- try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)return res.status(404).send('Bozza inesistente');
- const lines=f.righe_json?JSON.parse(f.righe_json):[{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva,imponibile:f.imponibile,imposta:f.imposta,totale:f.totale}];
- const doc=new PDFDocument({size:'A4',margin:45});res.setHeader('Content-Type','application/pdf');res.setHeader('Content-Disposition',`inline; filename="BOZZA_DP_${f.id}.pdf"`);doc.pipe(res);
- doc.fontSize(20).text(f.stato==='REGISTRATA'?'TRASPORTI DP - FATTURA '+f.numero_fattura:'DP GESTIONALE — BOZZA NON FISCALE');doc.moveDown(.6);doc.fontSize(11).text(f.stato==='REGISTRATA'?'Documento registrato. Trasmissione SdI da effettuare separatamente.':'Anteprima senza numerazione, emissione o validità fiscale');doc.moveDown();doc.text('Bozza n. '+f.id+' · Data '+f.data_documento+' · Settore '+f.settore);doc.text('Cliente: '+f.cliente);doc.text('Tipo previsto: '+f.tipo_documento);doc.moveDown();
- for(let i=0;i<lines.length;i++){const l=lines[i];if(doc.y>700)doc.addPage();doc.fontSize(10).text((i+1)+'. '+l.descrizione).text('Q.tà '+l.quantita+' · Prezzo € '+Number(l.prezzo).toFixed(2)+' · Sconto '+(l.sconto||0)+'% · IVA '+l.iva+'% · Imponibile € '+Number(l.imponibile).toFixed(2));doc.moveDown(.5);}
- doc.moveDown();doc.fontSize(12).text('Imponibile € '+Number(f.imponibile).toFixed(2)).text('IVA € '+Number(f.imposta).toFixed(2)).fontSize(15).text('TOTALE INDICATIVO € '+Number(f.totale).toFixed(2));doc.moveDown();doc.fontSize(10).text('Riferimenti: '+(f.riferimento||'-'));if(f.stato!=='REGISTRATA')doc.text('DOCUMENTO DI PROVA — NON INVIARE A SDI O CLIENTE COME FATTURA');doc.end();
- }catch(e){if(!res.headersSent)res.status(500).send('Anteprima non disponibile: '+e.message);else res.end();}
+ try{
+  await dpFreeEnsure(); await dpMasterEnsure();
+  const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
+  if(!f)return res.status(404).send('Documento inesistente');
+  const lines=dpFreeLinesV339({righe_json:f.righe_json||JSON.stringify([{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva}])});
+  const client=f.cliente_id?await get('SELECT * FROM dp_clienti_master WHERE id=?',[f.cliente_id]):null;
+  const final=f.stato==='REGISTRATA';
+  const doc=new PDFDocument({size:'A4',margin:42,bufferPages:false});
+  res.setHeader('Content-Type','application/pdf');
+  res.setHeader('Content-Disposition',`inline; filename="${final?'FATTURA':f.stato==='PROVA'?'SIMULAZIONE':'BOZZA'}_LIBERA_${f.id}.pdf"`);
+  doc.pipe(res);
+  const W=doc.page.width, right=W-42,red='#c50912',dark='#18191d',grey='#69707b';
+  const rect=(x,y,w,h,c)=>doc.save().fillColor(c).rect(x,y,w,h).fill().restore();
+  const h=(str,x,y,opts={})=>doc.fillColor(dark).font('Helvetica-Bold').fontSize(10).text(String(str||''),x,y,opts);
+  function header(){
+   rect(0,0,W,106,dark);rect(0,101,W,5,red);
+   doc.font('Helvetica-Bold').fontSize(22).fillColor('#ffffff').text('TRASPORTI DP S.R.L.',42,24);
+   doc.font('Helvetica').fontSize(9).text('Via Tuderte 466 • 05035 Narni (TR)',42,55);
+   doc.fontSize(9).text('P.IVA '+String(process.env.DP_XML_PIVA||''),42,73);
+   doc.fillColor(dark);
+  }
+  header();
+  const kind=final?'FATTURA':f.stato==='PROVA'?'SIMULAZIONE FATTURA — NON FISCALE':'BOZZA — NON FISCALE';
+  h(kind,42,126);doc.font('Helvetica-Bold').fontSize(17).text(final?f.numero_fattura:f.stato==='PROVA'?f.numero_fattura:'BOZZA #'+f.id,42,143);
+  doc.font('Helvetica').fontSize(10).text('Data: '+f.data_documento+'      Tipo: '+f.tipo_documento+'      Settore: '+f.settore,42,173);
+  rect(42,200,W-84,72,'#f3f4f6');h('CLIENTE / DESTINATARIO',54,211);
+  doc.font('Helvetica').fontSize(10).text(String(f.cliente||''),54,230,{width:W-110});
+  if(client){doc.fontSize(8).fillColor(grey).text([client.indirizzo,client.cap,client.citta,client.provincia].filter(Boolean).join(' · '),54,249,{width:W-110});}
+  let y=293;
+  function headings(){rect(42,y,W-84,25,dark);doc.fillColor('#fff').font('Helvetica-Bold').fontSize(8).text('DESCRIZIONE',49,y+8,{width:233}).text('Q.TÀ',289,y+8,{width:38,align:'right'}).text('PREZZO',337,y+8,{width:57,align:'right'}).text('IVA',402,y+8,{width:35,align:'right'}).text('IMPORTO',446,y+8,{width:100,align:'right'});y+=25;}
+  headings();
+  lines.forEach((l,i)=>{
+   let height=Math.max(30,Math.ceil(String(l.descrizione).length/42)*12+12);
+   if(y+height>doc.page.height-185){doc.addPage();header();y=128;headings();}
+   if(i%2===0)rect(42,y,W-84,height,'#f3f4f6');
+   doc.fillColor(dark).font('Helvetica').fontSize(9).text(l.descrizione,49,y+7,{width:233});
+   doc.text(String(l.quantita),289,y+7,{width:38,align:'right'});
+   doc.text(Number(l.prezzo).toFixed(2),337,y+7,{width:57,align:'right'});
+   doc.text(l.iva+'%',402,y+7,{width:35,align:'right'});
+   doc.font('Helvetica-Bold').text(Number(l.imponibile).toFixed(2),446,y+7,{width:100,align:'right'});
+   y+=height;
+  });
+  if(y>doc.page.height-175){doc.addPage();header();y=130;}
+  y+=18;rect(317,y,237,77,'#f3f4f6');
+  doc.fillColor(dark).font('Helvetica').fontSize(10).text('Imponibile',328,y+10).text('€ '+Number(f.imponibile).toFixed(2),445,y+10,{width:98,align:'right'});
+  doc.text('IVA',328,y+28).text('€ '+Number(f.imposta).toFixed(2),445,y+28,{width:98,align:'right'});
+  rect(317,y+49,237,28,red);doc.fillColor('#fff').font('Helvetica-Bold').fontSize(11).text('TOTALE',328,y+56).text('€ '+Number(f.totale).toFixed(2),420,y+56,{width:123,align:'right'});
+  doc.fillColor(dark).font('Helvetica').fontSize(9).text('Riferimenti: '+(f.riferimento||'—'),42,y+13,{width:255});
+  if(!final)doc.fillColor(red).font('Helvetica-Bold').fontSize(9).text('DOCUMENTO DI PROVA. NON INVIARE A CLIENTE O SDI.',42,doc.page.height-81,{width:W-84,align:'center'});
+  else doc.fillColor(grey).font('Helvetica').fontSize(9).text('Stato trasmissione SdI non verificato',42,doc.page.height-81,{width:W-84,align:'center'});
+  doc.end();
+ }catch(e){if(!res.headersSent)res.status(500).send('PDF non disponibile: '+e.message);else res.end();}
 });
 // V340: anteprima XML non fiscale della bozza, mai inviata o numerata.
 async function dpFreePreviewXmlV340(id){
