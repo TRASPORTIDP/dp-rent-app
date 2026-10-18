@@ -14435,7 +14435,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
   res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Legenda:</b> 🟢 XML depositato su Drive, NON significa approvato fiscalmente. 🔴 Dati/documento da completare. ⚪ Da verificare. Nessuna validazione XSD/SdI ancora collegata.</p><p><b>Invio disattivato:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
     <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
     <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
-    <form method="get"><label>Settore</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option><option value="libere" ${sector==='libere'?'selected':''}>Fatture libere</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
+    <form method="get"><label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option><option value="libere" ${sector==='libere'?'selected':''}>Fatture libere</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
     <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Le fatture SERVICE sono visibili ma non selezionabili per invio finché non sarà validato il loro XML.</p>
     <button class="btn btn2" type="button" id="inv-all">Seleziona disponibili</button> <button class="btn btn2" type="button" id="inv-clear">Deseleziona</button> <button class="btn" type="button" id="inv-demo">🧪 Simula preparazione massiva (0)</button>
     <p id="inv-msg" role="status" aria-live="polite"></p><a class="btn btn2" href="/fatturazione">Torna a fatturazione</a></div>
@@ -14459,6 +14459,8 @@ async function dpFreeEnsure(){
   for(const [column,definition] of [['numero_fattura','TEXT'],['anno_fattura','INTEGER'],['serie_fattura','TEXT'],['emessa_at','TEXT']]){
     if(!cols.some(c=>c.name===column))await run('ALTER TABLE dp_fatture_libere_bozze ADD COLUMN '+column+' '+definition);
   }
+  if(!cols.some(c=>c.name==='regime_iva'))await run("ALTER TABLE dp_fatture_libere_bozze ADD COLUMN regime_iva TEXT NOT NULL DEFAULT 'ORDINARIA'");
+  if(!cols.some(c=>c.name==='costo_acquisto'))await run("ALTER TABLE dp_fatture_libere_bozze ADD COLUMN costo_acquisto REAL");
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS dp_libere_sezionale_numero ON dp_fatture_libere_bozze(anno_fattura,serie_fattura,numero_fattura)`);
 
 }
@@ -14475,10 +14477,24 @@ function dpFreeLinesV339(b){
  });
 }
 function dpFreeAmountsV339(lines){const sum=k=>Math.round(lines.reduce((acc,x)=>acc+Number(x[k]||0),0)*100)/100;return {imponibile:sum('imponibile'),imposta:sum('imposta'),totale:sum('totale')};}
+function dpFreeRegimeV345(b,lines){
+ const regime=String(b.regime_iva||'ORDINARIA').trim();
+ if(!['ORDINARIA','MARGINE_ANALITICO'].includes(regime))throw new Error('Regime IVA non riconosciuto');
+ const costoRaw=String(b.costo_acquisto??'').trim();
+ const costo=costoRaw===''?null:Number(costoRaw);
+ if(costo!==null&&(!Number.isFinite(costo)||costo<0))throw new Error('Costo di acquisto non valido');
+ if(regime==='MARGINE_ANALITICO'){
+  if(lines.some(l=>l.iva!==0))throw new Error('Regime del margine: impostare IVA 0% su tutte le righe; l’IVA non va esposta in fattura');
+  if(costo===null)throw new Error('Regime del margine: indicare il costo di acquisto documentato');
+  if(lines.length!==1)throw new Error('Regime del margine analitico: usare un documento per singolo bene fino al completamento della gestione multi-bene');
+ }
+ return {regime,costo};
+}
+
 function dpFreeFormV326(f={},error=''){
  const val=(k,d='')=>esc(f[k]===undefined?d:f[k]);
  const selected=(k,v,d='')=>String(f[k]===undefined?d:f[k])===v?'selected':'';
- return `<div class="box"><h2>🧾 Fattura libera / vendita mezzi — BOZZA</h2>
+ return `<div class="box"><h2>🧾 Fattura libera — TRASPORTI DP S.R.L. — BOZZA</h2>
  <p>Questa funzione salva una <b>bozza amministrativa</b>, senza emettere documenti fiscali, assegnare numerazioni o inviare XML a Fatel.</p>
  ${error?`<p class="bad">${esc(error)}</p>`:''}
  <form method="post" action="${f.id?'/fatturazione/libere/'+encodeURIComponent(f.id)+'/modifica':'/fatturazione/libere/nuova'}">
@@ -14497,7 +14513,13 @@ function dpFreeFormV326(f={},error=''){
  })();</script>
  <label>Tipo documento (solo classificazione della bozza)</label><select name="tipo_documento">
  ${[['TD01','Fattura immediata'],['TD02','Acconto'],['TD04','Nota credito'],['TD05','Nota debito'],['TD24','Differita'],['TD25','Differita speciale'],['TD26','Beni ammortizzabili']].map(([c,n])=>`<option value="${c}" ${selected('tipo_documento',c,'TD01')}>${c} — ${n}</option>`).join('')}</select>
- <label>Settore</label><select name="settore">${[['AUTO','DP AUTO / vendita mezzi'],['RENT','Noleggio'],['SERVICE','Officina'],['TRASPORTI','Trasporti'],['ALTRO','Altro']].map(([c,n])=>`<option value="${c}" ${selected('settore',c,'AUTO')}>${n}</option>`).join('')}</select>
+ <label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore">${[['AUTO','Vendita mezzi / beni'],['RENT','Noleggio'],['SERVICE','Officina'],['TRASPORTI','Trasporti'],['ALTRO','Altro']].map(([c,n])=>`<option value="${c}" ${selected('settore',c,'AUTO')}>${n}</option>`).join('')}</select>
+ <label>Regime IVA documento</label><select name="regime_iva" id="dp-free-regime">
+  <option value="ORDINARIA" ${selected('regime_iva','ORDINARIA','ORDINARIA')}>IVA ordinaria (aliquote per riga)</option>
+  <option value="MARGINE_ANALITICO" ${selected('regime_iva','MARGINE_ANALITICO')}>Regime del margine analitico — beni usati idonei, IVA non esposta</option>
+ </select>
+ <p><small>Il regime del margine va usato solo quando l'acquisto e il bene rispettano la disciplina applicabile. In tale regime inserire il prezzo di vendita complessivo per riga (IVA non esposta) e IVA 0%, non una finta esenzione ordinaria.</small></p>
+ <label>Costo di acquisto documentato (€) — solo per margine</label><input name="costo_acquisto" type="number" min="0" step="0.01" value="${val('costo_acquisto','')}" placeholder="Inserire il costo di acquisto documentato">
  <label>Data documento (bozza)</label><input name="data_documento" type="date" value="${val('data_documento',new Date().toISOString().slice(0,10))}" required>
  <h3>Righe documento (modificabili)</h3>
  <p>Ogni riga può avere quantità, prezzo, sconto e IVA diversi. Per veicoli usati con regime del margine, non scegliere IVA 0% come sostituto del trattamento fiscale: questa è soltanto una bozza.</p>
@@ -14550,7 +14572,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
    </td></tr>`;
   }).join('');
   const registered=rows.filter(x=>x.stato==='REGISTRATA').length,tests=rows.filter(x=>x.stato==='PROVA').length,drafts=rows.length-registered-tests;
-  res.send(page('Fatture libere',`<div class="box"><h2>🧾 FATTURE LIBERE / DP AUTO</h2>
+  res.send(page('Fatture libere',`<div class="box"><h2>🧾 FATTURE LIBERE — TRASPORTI DP S.R.L.</h2>
    <p>Archivio unico dei documenti manuali: clienti dall'anagrafica comune, righe multiple, PDF e XML.</p>
    <p><b>Bozze: ${drafts} · Simulazioni: ${tests} · Registrate: ${registered}</b> · Nessun invio automatico allo SdI.</p>
    <a class="btn" href="/fatturazione/libere/nuova">＋ NUOVA FATTURA LIBERA</a>
@@ -14569,12 +14591,12 @@ app.post('/fatturazione/libere/nuova',async(req,res)=>{
   const master=await get('SELECT id,ragione_sociale FROM dp_clienti_master WHERE id=?',[clienteId]);if(!master)throw new Error('Cliente non trovato nell’anagrafica unica');
   const cliente=String(master.ragione_sociale||'').trim(),descrizione=String(b.descrizione||'').trim();
   const tipo=String(b.tipo_documento||'TD01'),settore=String(b.settore||'AUTO'),data=String(b.data_documento||'');
-  const lines=dpFreeLinesV339(b);const {imponibile,imposta,totale}=dpFreeAmountsV339(lines);const quantita=lines[0].quantita,prezzo=lines[0].prezzo,aliquota=lines[0].iva;
+  const lines=dpFreeLinesV339(b);const {regime,costo}=dpFreeRegimeV345(b,lines);const {imponibile,imposta,totale}=dpFreeAmountsV339(lines);const quantita=lines[0].quantita,prezzo=lines[0].prezzo,aliquota=lines[0].iva;
   if(!cliente||cliente.length>180||!lines.length)throw new Error('Compilare cliente e righe');
   if(!['TD01','TD02','TD04','TD05','TD24','TD25','TD26'].includes(tipo)||!['AUTO','RENT','SERVICE','TRASPORTI','ALTRO'].includes(settore))throw new Error('Tipo o settore non supportato');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(data)||Number.isNaN(Date.parse(data)))throw new Error('Data non valida');
 
-  await run(`INSERT INTO dp_fatture_libere_bozze(cliente,cliente_id,tipo_documento,settore,data_documento,descrizione,quantita,prezzo_unitario,aliquota_iva,imponibile,imposta,totale,riferimento,note,righe_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),JSON.stringify(lines)]);
+  await run(`INSERT INTO dp_fatture_libere_bozze(cliente,cliente_id,tipo_documento,settore,data_documento,descrizione,quantita,prezzo_unitario,aliquota_iva,imponibile,imposta,totale,riferimento,note,righe_json,regime_iva,costo_acquisto) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),JSON.stringify(lines),regime,costo]);
   res.redirect('/fatturazione/libere');
  }catch(e){res.status(400).send(page('Bozza non salvata',dpFreeFormV326(b,e.message)));}
 });
@@ -14598,12 +14620,12 @@ app.post('/fatturazione/libere/:id/modifica',async(req,res)=>{
   if(!master)throw new Error('Cliente non trovato nell’anagrafica unica');
   const cliente=String(master.ragione_sociale||'').trim(),descrizione=String(b.descrizione||'').trim();
   const tipo=String(b.tipo_documento||'TD01'),settore=String(b.settore||'AUTO'),data=String(b.data_documento||'');
-  const lines=dpFreeLinesV339(b);const {imponibile,imposta,totale}=dpFreeAmountsV339(lines);const quantita=lines[0].quantita,prezzo=lines[0].prezzo,aliquota=lines[0].iva;
+  const lines=dpFreeLinesV339(b);const {regime,costo}=dpFreeRegimeV345(b,lines);const {imponibile,imposta,totale}=dpFreeAmountsV339(lines);const quantita=lines[0].quantita,prezzo=lines[0].prezzo,aliquota=lines[0].iva;
   if(!cliente||cliente.length>180||!lines.length)throw new Error('Compilare cliente e righe');
   if(!['TD01','TD02','TD04','TD05','TD24','TD25','TD26'].includes(tipo)||!['AUTO','RENT','SERVICE','TRASPORTI','ALTRO'].includes(settore))throw new Error('Tipo o settore non supportato');
   if(!/^\d{4}-\d{2}-\d{2}$/.test(data)||Number.isNaN(Date.parse(data)))throw new Error('Data non valida');
 
-  await run(`UPDATE dp_fatture_libere_bozze SET cliente=?,cliente_id=?,tipo_documento=?,settore=?,data_documento=?,descrizione=?,quantita=?,prezzo_unitario=?,aliquota_iva=?,imponibile=?,imposta=?,totale=?,riferimento=?,note=?,righe_json=? WHERE id=? AND stato='BOZZA'`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),JSON.stringify(lines),existing.id]);
+  await run(`UPDATE dp_fatture_libere_bozze SET cliente=?,cliente_id=?,tipo_documento=?,settore=?,data_documento=?,descrizione=?,quantita=?,prezzo_unitario=?,aliquota_iva=?,imponibile=?,imposta=?,totale=?,riferimento=?,note=?,righe_json=?,regime_iva=?,costo_acquisto=? WHERE id=? AND stato='BOZZA'`,[cliente,clienteId,tipo,settore,data,descrizione,quantita,prezzo,aliquota,imponibile,imposta,totale,String(b.riferimento||'').slice(0,250),String(b.note||'').slice(0,1000),JSON.stringify(lines),regime,costo,existing.id]);
   res.redirect('/fatturazione/libere');
  }catch(e){res.status(400).send(page('Modifica non salvata',dpFreeFormV326(b,e.message)));}
 });
@@ -14617,6 +14639,7 @@ app.post('/fatturazione/libere/:id/registra-prova',async(req,res)=>{
   if(!f||f.stato!=='BOZZA')throw new Error('Bozza non disponibile per la simulazione');
   await dpFreePreviewXmlV340(f.id); // i controlli preliminari restano obbligatori
   if(f.tipo_documento!=='TD01')throw new Error('La simulazione attuale ammette soltanto TD01.');
+  if(f.regime_iva==='MARGINE_ANALITICO')throw new Error('Regime del margine: consentita soltanto anteprima bozza prima della verifica fiscale.');
   const numero='TEST-'+f.id+'/L';
   await run("UPDATE dp_fatture_libere_bozze SET stato='PROVA', numero_fattura=?,anno_fattura=?,serie_fattura='TEST-L',emessa_at=CURRENT_TIMESTAMP WHERE id=? AND stato='BOZZA'",[numero,Number(f.data_documento.slice(0,4)),f.id]);
   res.redirect('/fatturazione/libere/'+f.id+'/dettaglio');
@@ -14628,7 +14651,7 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
   const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
   if(!f||f.stato!=='BOZZA')throw new Error('Documento inesistente o già registrato');
   if(f.tipo_documento!=='TD01')throw new Error('Registrazione libera: al momento è supportata la fattura ordinaria TD01. Non usare questa funzione per margine, acconti o note credito.');
-  if(f.settore==='AUTO' && /margine/i.test(String(f.note||'')))throw new Error('Vendita con regime del margine: trattamento fiscale non ancora supportato.');
+  if(f.regime_iva==='MARGINE_ANALITICO')throw new Error('Emissione fiscale del regime del margine non ancora autorizzata: XML disponibile solo in verifica, senza invio.');
   const lines=dpFreeLinesV339({righe_json:f.righe_json||JSON.stringify([{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva}])});
   if(lines.some(l=>l.iva!==22))throw new Error('Registrazione con aliquote speciali: richiede verifica fiscale. È ammessa solo IVA ordinaria 22%.');
   // Valida XML completo prima di assegnare un numero. La convalida XSD resta esterna.
@@ -14661,45 +14684,68 @@ app.get('/fatturazione/libere/:id/pdf',async(req,res)=>{
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition',`inline; filename="${final?'FATTURA':f.stato==='PROVA'?'SIMULAZIONE':'BOZZA'}_LIBERA_${f.id}.pdf"`);
   doc.pipe(res);
-  const W=doc.page.width, right=W-42,red='#c50912',dark='#18191d',grey='#69707b';
+  const W=doc.page.width, M=36, red='#d40f19', dark='#12161b', soft='#f1f2f4', grey='#59616b';
   const rect=(x,y,w,h,c)=>doc.save().fillColor(c).rect(x,y,w,h).fill().restore();
-  const h=(str,x,y,opts={})=>doc.fillColor(dark).font('Helvetica-Bold').fontSize(10).text(String(str||''),x,y,opts);
+  const txt=(v,x,y,w,size=9,bold=false,color=dark)=>doc.font(bold?'Helvetica-Bold':'Helvetica').fontSize(size).fillColor(color).text(String(v??''),x,y,{width:w,lineBreak:false});
+  const section=(name,x,y,w)=>{rect(x,y,w,24,red);txt(name,x+10,y+7,w-20,9,true,'#fff');};
+  const issuerName=String(process.env.DP_XML_RAGIONE_SOCIALE||'TRASPORTI DP S.R.L.');
+  const issuerStreet=String(process.env.DP_XML_INDIRIZZO||'Via Tuderte 466');
+  const issuerTown=[process.env.DP_XML_CAP,process.env.DP_XML_COMUNE,process.env.DP_XML_PROVINCIA].filter(Boolean).join(' ');
+  const iban=String(process.env.DP_IBAN||process.env.IBAN_AZIENDA||'').trim();
   function header(){
-   rect(0,0,W,106,dark);rect(0,101,W,5,red);
-   doc.font('Helvetica-Bold').fontSize(22).fillColor('#ffffff').text('TRASPORTI DP S.R.L.',42,24);
-   doc.font('Helvetica').fontSize(9).text('Via Tuderte 466 • 05035 Narni (TR)',42,55);
-   doc.fontSize(9).text('P.IVA '+String(process.env.DP_XML_PIVA||''),42,73);
-   doc.fillColor(dark);
+    rect(0,0,W,16,dark);rect(0,16,W,4,red);
+    txt('TRASPORTI DP',M,42,180,22,true,red);
+    txt('TRASPORTI DP S.R.L.',M+200,43,260,19,true,dark);
+    txt('FATTURAZIONE GENERALE',M+200,68,270,9,true,grey);
+    rect(W-155,91,155,52,dark);txt('FATTURA',W-145,102,132,15,true,'#fff');
+    txt(f.stato==='REGISTRATA'?String(f.numero_fattura):f.stato==='PROVA'?String(f.numero_fattura):'BOZZA '+f.id,W-145,125,132,9,true,'#fff');
+    txt(issuerName,M,104,315,11,true);txt(issuerStreet+' - '+issuerTown,M,124,340,9);
+    txt('P.IVA '+String(process.env.DP_XML_PIVA||''),M,139,300,9);
   }
   header();
-  const kind=final?'FATTURA':f.stato==='PROVA'?'SIMULAZIONE FATTURA — NON FISCALE':'BOZZA — NON FISCALE';
-  h(kind,42,126);doc.font('Helvetica-Bold').fontSize(17).text(final?f.numero_fattura:f.stato==='PROVA'?f.numero_fattura:'BOZZA #'+f.id,42,143);
-  doc.font('Helvetica').fontSize(10).text('Data: '+f.data_documento+'      Tipo: '+f.tipo_documento+'      Settore: '+f.settore,42,173);
-  rect(42,200,W-84,72,'#f3f4f6');h('CLIENTE / DESTINATARIO',54,211);
-  doc.font('Helvetica').fontSize(10).text(String(f.cliente||''),54,230,{width:W-110});
-  if(client){doc.fontSize(8).fillColor(grey).text([client.indirizzo,client.cap,client.citta,client.provincia].filter(Boolean).join(' · '),54,249,{width:W-110});}
-  let y=293;
-  function headings(){rect(42,y,W-84,25,dark);doc.fillColor('#fff').font('Helvetica-Bold').fontSize(8).text('DESCRIZIONE',49,y+8,{width:233}).text('Q.TÀ',289,y+8,{width:38,align:'right'}).text('PREZZO',337,y+8,{width:57,align:'right'}).text('IVA',402,y+8,{width:35,align:'right'}).text('IMPORTO',446,y+8,{width:100,align:'right'});y+=25;}
+  const prova=!final;
+  if(prova){rect(M,163,W-2*M,25,'#fff0f0');txt(f.stato==='PROVA'?'SIMULAZIONE - DOCUMENTO NON FISCALE':'BOZZA - DOCUMENTO NON FISCALE',M+9,169,W-2*M-18,10,true,red);}
+  const top=prova?201:172, boxGap=10, boxW=(W-2*M-boxGap)/2;
+  section('CLIENTE / DESTINATARIO',M,top,boxW);section('DATI DOCUMENTO',M+boxW+boxGap,top,boxW);
+  doc.strokeColor('#cdd2d6').lineWidth(1).rect(M,top+24,boxW,108).stroke().rect(M+boxW+boxGap,top+24,boxW,108).stroke();
+  txt(f.cliente,M+10,top+34,boxW-20,11,true);
+  if(client){
+    txt(String(client.indirizzo||''),M+10,top+55,boxW-20,9);
+    txt([client.cap,client.citta,client.provincia].filter(Boolean).join(' '),M+10,top+71,boxW-20,9);
+    txt('P.IVA '+String(client.piva||'')+'  CF '+String(client.codice_fiscale||''),M+10,top+88,boxW-20,8);
+  }
+  const rightX=M+boxW+boxGap+10;
+  txt('Data: '+String(f.data_documento||''),rightX,top+35,boxW-20,9,true);
+  txt('Tipo: '+String(f.tipo_documento||''),rightX,top+53,boxW-20,9);
+  txt('Regime: '+(f.regime_iva==='MARGINE_ANALITICO'?'Margine beni usati':'IVA ordinaria'),rightX,top+71,boxW-20,9);
+  txt('Numero: '+(f.numero_fattura||'Bozza '+f.id),rightX,top+89,boxW-20,9,true);
+  let y=top+149;
+  function headings(){rect(M,y,W-2*M,26,red);txt('DESCRIZIONE',M+8,y+8,202,8,true,'#fff');txt('Q.TÀ',M+220,y+8,42,8,true,'#fff');txt('PREZZO',M+265,y+8,70,8,true,'#fff');txt('IVA',M+346,y+8,36,8,true,'#fff');txt('TOTALE',M+394,y+8,110,8,true,'#fff');y+=26;}
   headings();
   lines.forEach((l,i)=>{
-   let height=Math.max(30,Math.ceil(String(l.descrizione).length/42)*12+12);
-   if(y+height>doc.page.height-185){doc.addPage();header();y=128;headings();}
-   if(i%2===0)rect(42,y,W-84,height,'#f3f4f6');
-   doc.fillColor(dark).font('Helvetica').fontSize(9).text(l.descrizione,49,y+7,{width:233});
-   doc.text(String(l.quantita),289,y+7,{width:38,align:'right'});
-   doc.text(Number(l.prezzo).toFixed(2),337,y+7,{width:57,align:'right'});
-   doc.text(l.iva+'%',402,y+7,{width:35,align:'right'});
-   doc.font('Helvetica-Bold').text(Number(l.imponibile).toFixed(2),446,y+7,{width:100,align:'right'});
-   y+=height;
+    const height=Math.max(30,Math.ceil(String(l.descrizione).length/36)*12+12);
+    if(y+height>doc.page.height-230){doc.addPage();header();y=174;headings();}
+    if(i%2===0)rect(M,y,W-2*M,height,soft);
+    txt(l.descrizione,M+8,y+7,203,9,true);txt(l.quantita,M+220,y+7,40,9);txt(Number(l.prezzo).toFixed(2),M+265,y+7,70,9);
+    txt(l.iva+'%',M+346,y+7,40,9);txt('€ '+Number(l.imponibile).toFixed(2),M+394,y+7,110,9,true);
+    y+=height;
   });
-  if(y>doc.page.height-175){doc.addPage();header();y=130;}
-  y+=18;rect(317,y,237,77,'#f3f4f6');
-  doc.fillColor(dark).font('Helvetica').fontSize(10).text('Imponibile',328,y+10).text('€ '+Number(f.imponibile).toFixed(2),445,y+10,{width:98,align:'right'});
-  doc.text('IVA',328,y+28).text('€ '+Number(f.imposta).toFixed(2),445,y+28,{width:98,align:'right'});
-  rect(317,y+49,237,28,red);doc.fillColor('#fff').font('Helvetica-Bold').fontSize(11).text('TOTALE',328,y+56).text('€ '+Number(f.totale).toFixed(2),420,y+56,{width:123,align:'right'});
-  doc.fillColor(dark).font('Helvetica').fontSize(9).text('Riferimenti: '+(f.riferimento||'—'),42,y+13,{width:255});
-  if(!final)doc.fillColor(red).font('Helvetica-Bold').fontSize(9).text('DOCUMENTO DI PROVA. NON INVIARE A CLIENTE O SDI.',42,doc.page.height-81,{width:W-84,align:'center'});
-  else doc.fillColor(grey).font('Helvetica').fontSize(9).text('Stato trasmissione SdI non verificato',42,doc.page.height-81,{width:W-84,align:'center'});
+  if(y>doc.page.height-260){doc.addPage();header();y=175;}
+  y+=20;const paneW=(W-2*M-12)/2, rX=M+paneW+12;
+  section('PAGAMENTO / NOTE',M,y,paneW);
+  doc.strokeColor('#cdd2d6').rect(M,y+24,paneW,112).stroke();
+  txt('Riferimento: '+(f.riferimento||'—'),M+9,y+35,paneW-18,9);
+  txt(f.regime_iva==='MARGINE_ANALITICO'?'Regime del margine - art. 36 D.L. 41/1995':'Pagamento: da concordare / confermare',M+9,y+57,paneW-18,9);
+  if(iban)txt('IBAN: '+iban,M+9,y+79,paneW-18,8);
+  section('RIEPILOGO ECONOMICO',rX,y,paneW);
+  doc.strokeColor('#cdd2d6').rect(rX,y+24,paneW,112).stroke();
+  txt('Imponibile',rX+9,y+39,110,10);txt('€ '+Number(f.imponibile).toFixed(2),rX+131,y+39,paneW-141,10,true);
+  txt(f.regime_iva==='MARGINE_ANALITICO'?'IVA non esposta':'IVA',rX+9,y+59,118,10);txt(f.regime_iva==='MARGINE_ANALITICO'?'—':'€ '+Number(f.imposta).toFixed(2),rX+131,y+59,paneW-141,10,true);
+  rect(rX,y+83,paneW,29,red);txt('TOTALE',rX+9,y+91,102,11,true,'#fff');txt('€ '+Number(f.totale).toFixed(2),rX+110,y+91,paneW-120,11,true,'#fff');
+  const footerY=doc.page.height-60;rect(0,footerY,W,60,dark);
+  txt('TRASPORTI DP S.R.L.',M,footerY+13,280,9,true,'#fff');
+  txt(prova?'SOLO PROVA - NON INVIARE A CLIENTI O SDI':'Consegna SdI non verificata',M,footerY+31,W-2*M,9,true,'#fff');
+  rect(W-85,footerY,20,60,'#14964a');rect(W-65,footerY,20,60,'#fff');rect(W-45,footerY,45,60,red);
   doc.end();
  }catch(e){if(!res.headersSent)res.status(500).send('PDF non disponibile: '+e.message);else res.end();}
 });
@@ -14712,7 +14758,9 @@ async function dpFreePreviewXmlV340(id){
  const c=await get('SELECT * FROM dp_clienti_master WHERE id=?',[f.cliente_id]);
  if(!c)throw new Error('Cliente non associato all’anagrafica');
  const lines=dpFreeLinesV339({righe_json:f.righe_json||JSON.stringify([{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva}])});
- if(lines.some(x=>x.iva===0))throw new Error('IVA 0%: manca Natura IVA, non generare XML');
+ const regime=String(f.regime_iva||'ORDINARIA');
+ if(regime==='MARGINE_ANALITICO')dpFreeRegimeV345(f,lines);
+ else if(lines.some(x=>x.iva===0))throw new Error('IVA 0% ordinaria: manca Natura IVA, non generare XML');
  const a=dpFreeAmountsV339(lines);
  if(Math.abs(a.totale-Number(f.totale))>.02)throw new Error('Importi della bozza non coerenti: salvare nuovamente');
  const vat=String(process.env.DP_XML_PIVA||'').trim().replace(/^IT/i,'');
@@ -14725,14 +14773,15 @@ async function dpFreePreviewXmlV340(id){
  const dest=String(c.sdi||'0000000').trim().toUpperCase();if(!/^[A-Z0-9]{7}$/.test(dest))throw new Error('Codice destinatario non valido');
  const tag=dpTagV314; const issuer=`<DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese>${tag('IdCodice',vat)}</IdFiscaleIVA><Anagrafica>${tag('Denominazione',den)}</Anagrafica>${tag('RegimeFiscale',reg)}</DatiAnagrafici><Sede>${tag('Indirizzo',ind)}${tag('CAP',cap)}${tag('Comune',cit)}${tag('Provincia',prov)}<Nazione>IT</Nazione></Sede>`;
  const customer=`<DatiAnagrafici>${/^\d{11}$/.test(cVat)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${tag('IdCodice',cVat)}</IdFiscaleIVA>`:''}${cf?tag('CodiceFiscale',cf):''}<Anagrafica>${tag('Denominazione',c.ragione_sociale||[c.nome,c.cognome].filter(Boolean).join(' '))}</Anagrafica></DatiAnagrafici><Sede>${tag('Indirizzo',c.indirizzo)}${tag('CAP',c.cap)}${tag('Comune',c.citta)}${tag('Provincia',String(c.provincia).toUpperCase())}<Nazione>IT</Nazione></Sede>`;
- const details=lines.map((l,i)=>`<DettaglioLinee>${tag('NumeroLinea',i+1)}${tag('Descrizione',l.descrizione)}${tag('Quantita',Number(l.quantita).toFixed(2))}${tag('PrezzoUnitario',Number(l.prezzo).toFixed(2))}${l.sconto?`<ScontoMaggiorazione><Tipo>SC</Tipo>${tag('Percentuale',Number(l.sconto).toFixed(2))}</ScontoMaggiorazione>`:''}${tag('PrezzoTotale',dpMoneyV314(l.imponibile))}${tag('AliquotaIVA',dpMoneyV314(l.iva))}</DettaglioLinee>`).join('');
- const riepiloghi=[...new Set(lines.map(x=>x.iva))].sort((a,b)=>b-a).map(iva=>{const group=lines.filter(x=>x.iva===iva),impon=group.reduce((s,x)=>s+x.imponibile,0),tax=group.reduce((s,x)=>s+x.imposta,0);return `<DatiRiepilogo>${tag('AliquotaIVA',dpMoneyV314(iva))}${tag('ImponibileImporto',dpMoneyV314(impon))}${tag('Imposta',dpMoneyV314(tax))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo>`}).join('');
+ const details=lines.map((l,i)=>`<DettaglioLinee>${tag('NumeroLinea',i+1)}${tag('Descrizione',l.descrizione)}${tag('Quantita',Number(l.quantita).toFixed(2))}${tag('PrezzoUnitario',Number(l.prezzo).toFixed(2))}${l.sconto?`<ScontoMaggiorazione><Tipo>SC</Tipo>${tag('Percentuale',Number(l.sconto).toFixed(2))}</ScontoMaggiorazione>`:''}${tag('PrezzoTotale',dpMoneyV314(l.imponibile))}${tag('AliquotaIVA',dpMoneyV314(l.iva))}${regime==='MARGINE_ANALITICO'?'<Natura>N5</Natura>':''}</DettaglioLinee>`).join('');
+ const riepiloghi=[...new Set(lines.map(x=>x.iva))].sort((a,b)=>b-a).map(iva=>{const group=lines.filter(x=>x.iva===iva),impon=group.reduce((s,x)=>s+x.imponibile,0),tax=group.reduce((s,x)=>s+x.imposta,0);return `<DatiRiepilogo>${tag('AliquotaIVA',dpMoneyV314(iva))}${tag('ImponibileImporto',dpMoneyV314(impon))}${tag('Imposta',dpMoneyV314(tax))}${regime==='MARGINE_ANALITICO'?'<Natura>N5</Natura><RiferimentoNormativo>Regime del margine - art. 36 D.L. 41/1995</RiferimentoNormativo>':'<EsigibilitaIVA>I</EsigibilitaIVA>'}</DatiRiepilogo>`}).join('');
  let xml=`<?xml version="1.0" encoding="UTF-8"?>\n<!-- SOLO BOZZA DI VERIFICA - NON EMESSA, NON INVIARE ALLO SDI -->\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${tag('IdCodice',vat)}</IdTrasmittente>${tag('ProgressivoInvio','B'+String(f.id).padStart(5,'0'))}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${tag('CodiceDestinatario',dest)}</DatiTrasmissione><CedentePrestatore>${issuer}</CedentePrestatore><CessionarioCommittente>${customer}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${tag('Data',dpDateV314(f.data_documento))}${tag('Numero','BOZZA-'+f.id)}${tag('ImportoTotaleDocumento',dpMoneyV314(a.totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi>${details}${riepiloghi}</DatiBeniServizi></FatturaElettronicaBody></p:FatturaElettronica>`;
  if(f.stato==='REGISTRATA'){xml=xml.replace('<!-- SOLO BOZZA DI VERIFICA - NON EMESSA, NON INVIARE ALLO SDI -->\n','').replace('<Numero>BOZZA-'+f.id+'</Numero>','<Numero>'+dpXmlV314(f.numero_fattura)+'</Numero>').replace('<ProgressivoInvio>B'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>','<ProgressivoInvio>L'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>');}
+ if(f.stato==='PROVA'){xml=xml.replace('<Numero>BOZZA-'+f.id+'</Numero>','<Numero>'+dpXmlV314(f.numero_fattura)+'</Numero>').replace('<ProgressivoInvio>B'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>','<ProgressivoInvio>X'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>');}
  return xml;
 }
 app.get('/fatturazione/libere/:id/xml-verifica',async(req,res)=>{
- try{const xml=await dpFreePreviewXmlV340(req.params.id);res.setHeader('Content-Type','application/xml; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="VERIFICA_BOZZA_DP_${Number(req.params.id)}.xml"`);res.setHeader('Cache-Control','no-store');res.send(xml)}
+ try{const xml=await dpFreePreviewXmlV340(req.params.id);res.setHeader('Content-Type','application/xml; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="VERIFICA_DOCUMENTO_DP_${Number(req.params.id)}.xml"`);res.setHeader('Cache-Control','no-store');res.send(xml)}
  catch(e){res.status(400).send(page('Controllo XML bozza',`<div class="box"><h2>🔴 XML da correggere</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere/${Number(req.params.id)}/modifica">Torna alla bozza</a></div>`))}
 });
 
@@ -15019,7 +15068,7 @@ app.get('/note-credito',async(req,res)=>{
  const settore=String(req.query.settore||'').toUpperCase();
  const rows=await all(`SELECT * FROM dp_note_credito ${dpNCAllModules.includes(settore)?'WHERE settore=?':''} ORDER BY id DESC LIMIT 500`,dpNCAllModules.includes(settore)?[settore]:[]);
  const table=rows.map(n=>`<tr><td><a href="/note-credito/${n.id}">${esc(n.numero_display||'BOZZA #'+n.id)}</a></td><td>${esc(n.settore)}</td><td>${esc(n.cliente)}</td><td>${esc(n.fattura_origine_numero)}</td><td>${esc(n.data_documento)}</td><td>€ ${dpNCEuro(dpNCCents(n.totale))}</td><td>${esc(n.stato)}</td></tr>`).join('')||'<tr><td colspan="7">Nessuna nota di credito</td></tr>';
- res.send(page('Note di credito',`<div class="box"><h2>🧾 Note di credito - tutti i settori</h2><p>Registro unico. I documenti sono predisposti per l’esportazione elettronica TD04; nessun invio a FATEL è attivo.</p><form method="GET"><label>Settore</label><select name="settore"><option value="">Tutti</option>${dpNCAllModules.map(x=>`<option ${settore===x?'selected':''}>${x}</option>`).join('')}</select><button>Filtra</button></form><a class="btn" href="/note-credito/nuova">+ Nuova nota di credito</a> <a class="btn btn2" href="/fatturazione">Fatturazione</a></div><div class="box" style="overflow:auto"><table><tr><th>Numero</th><th>Settore</th><th>Cliente</th><th>Fattura riferimento</th><th>Data</th><th>Importo</th><th>Stato</th></tr>${table}</table></div>`));
+ res.send(page('Note di credito',`<div class="box"><h2>🧾 Note di credito - tutti i settori</h2><p>Registro unico. I documenti sono predisposti per l’esportazione elettronica TD04; nessun invio a FATEL è attivo.</p><form method="GET"><label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore"><option value="">Tutti</option>${dpNCAllModules.map(x=>`<option ${settore===x?'selected':''}>${x}</option>`).join('')}</select><button>Filtra</button></form><a class="btn" href="/note-credito/nuova">+ Nuova nota di credito</a> <a class="btn btn2" href="/fatturazione">Fatturazione</a></div><div class="box" style="overflow:auto"><table><tr><th>Numero</th><th>Settore</th><th>Cliente</th><th>Fattura riferimento</th><th>Data</th><th>Importo</th><th>Stato</th></tr>${table}</table></div>`));
  }catch(e){dpNCPageError(res,e);}
 });
 app.get('/note-credito/nuova',async(req,res)=>{
