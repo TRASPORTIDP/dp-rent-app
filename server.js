@@ -14577,7 +14577,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
     ${r.stato==='BOZZA'?`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`:''}
     <a class="btn btn2" href="${u}/xml-verifica">XML</a>
     ${r.stato==='BOZZA'?`<form action="${u}/registra-prova" method="post" style="display:inline" onsubmit="return confirm('Crea simulazione TEST-L? Non è fattura fiscale e non verrà inviata.')"><button class="btn" type="submit">REGISTRA PROVA</button></form>`:''}
-    ${r.stato==='BOZZA'?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`:''}
+    ${r.stato==='BOZZA'?`<a class="btn btn2" href="${u}/verifica-emissione">VERIFICA EMISSIONE</a>`:''}
    </td></tr>`;
   }).join('');
   const registered=rows.filter(x=>x.stato==='REGISTRATA').length,tests=rows.filter(x=>x.stato==='PROVA').length,drafts=rows.length-registered-tests;
@@ -14641,6 +14641,30 @@ app.post('/fatturazione/libere/:id/modifica',async(req,res)=>{
 // V341: registrazione fattura libera con numerazione indipendente. Operazione esplicita,
 // non confondere con trasmissione SdI o validazione ufficiale.
 // V343 - La registrazione PROVA non emette fatture, non alloca numeri fiscali, non deposita XML.
+// Controllo preliminare senza assegnazione di numeri e senza invio esterno.
+app.get('/fatturazione/libere/:id/verifica-emissione',async(req,res)=>{
+ const id=Number(req.params.id);
+ try{
+  await dpFreeEnsure();await dpMasterEnsure();
+  const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[id]);
+  if(!f)throw new Error('Documento non trovato');
+  const checks=[];
+  const check=(label,ok,detail)=>checks.push({label,ok,detail});
+  check('Bozza modificabile',f.stato==='BOZZA',f.stato||'stato ignoto');
+  check('Tipo TD01',f.tipo_documento==='TD01',String(f.tipo_documento||''));
+  check('Regime IVA ordinario',f.regime_iva!=='MARGINE_ANALITICO',String(f.regime_iva||'ORDINARIA'));
+  let lines=[];
+  try{lines=dpFreeLinesV339({righe_json:f.righe_json||JSON.stringify([{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva}])});check('Righe e importi',true,lines.length+' righe');}
+  catch(e){check('Righe e importi',false,e.message);}
+  check('IVA 22% su tutte le righe',lines.length>0&&lines.every(x=>x.iva===22),'Aliquote diverse richiedono verifiche specifiche');
+  try{await dpFreePreviewXmlV340(id);check('Controlli XML interni',true,'Non sostituiscono validazione XSD o esito SdI');}
+  catch(e){check('Controlli XML interni',false,e.message);}
+  check('Sezionale L abilitato',String(process.env.DP_FREE_ISSUE_ENABLED||'')==='YES','Serve conferma della serie contabile prima di registrare');
+  const ready=checks.every(x=>x.ok);
+  const items=checks.map(x=>`<tr><td>${x.ok?'✅':'🔴'} ${esc(x.label)}</td><td>${esc(x.detail)}</td></tr>`).join('');
+  res.send(page('Verifica emissione libera',`<div class="box"><h2>Controllo fattura libera #${id}</h2><p>Cliente: ${esc(f.cliente)} · Importo € ${euro(f.totale)}</p><table>${items}</table><p><b>${ready?'Controlli applicativi superati: registrazione disponibile':'Registrazione bloccata: completare i controlli'}</b></p><p>La validazione XSD esterna, il collegamento Zucchetti/Fatel e la consegna SdI non sono attivi: la registrazione non è un invio.</p>${ready?`<form action="/fatturazione/libere/${id}/registra" method="post" onsubmit="return confirm('Assegnare definitivamente il numero fiscale nella serie L? Non cancellare la fattura dopo la registrazione.')"><button class="btn" type="submit">CONFERMA REGISTRAZIONE FISCALE</button></form>`:''}<a class="btn btn2" href="/fatturazione/libere">Archivio fatture</a></div>`));
+ }catch(e){res.status(400).send(page('Verifica emissione',`<div class="box"><h2>Controllo non disponibile</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione/libere">Archivio</a></div>`));}
+});
 app.post('/fatturazione/libere/:id/registra-prova',async(req,res)=>{
  try{
   await dpFreeEnsure(); await dpMasterEnsure();
@@ -14667,10 +14691,14 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
   await dpFreePreviewXmlV340(f.id);
   if(String(process.env.DP_FREE_ISSUE_ENABLED||'')!=='YES')throw new Error('Per evitare numerazioni fiscali non autorizzate, manca DP_FREE_ISSUE_ENABLED=YES. Concordare prima il sezionale L con il commercialista.');
   const year=Number(f.data_documento.slice(0,4));
-  // L'atomicità di SELECT+UPDATE dipende dal writer SQLite. Vincolo unique evita doppioni.
-  const mx=await get(`SELECT MAX(CAST(SUBSTR(numero_fattura,1,INSTR(numero_fattura,'/')-1) AS INTEGER)) AS n FROM dp_fatture_libere_bozze WHERE anno_fattura=? AND serie_fattura='L'`,[year]);
-  const next=(Number(mx?.n)||0)+1,numero=`${next}/L`;
-  const r=await run(`UPDATE dp_fatture_libere_bozze SET stato='REGISTRATA',numero_fattura=?,anno_fattura=?,serie_fattura='L',emessa_at=CURRENT_TIMESTAMP WHERE id=? AND stato='BOZZA'`,[numero,year,f.id]);
+  if(!Number.isInteger(year)||year<2020||year>2100)throw new Error('Anno del documento non valido');
+  // Un unico UPDATE calcola ed assegna il progressivo: evita la finestra fra SELECT e UPDATE.
+  // L'indice unique per anno/serie/numero blocca eventuali collisioni; nessun retry silenzioso.
+  const r=await run(`UPDATE dp_fatture_libere_bozze SET stato='REGISTRATA',
+    numero_fattura=(SELECT CAST(COALESCE(MAX(CAST(SUBSTR(numero_fattura,1,INSTR(numero_fattura,'/')-1) AS INTEGER)),0)+1 AS TEXT) || '/L'
+      FROM dp_fatture_libere_bozze AS previous WHERE previous.anno_fattura=? AND previous.serie_fattura='L' AND INSTR(previous.numero_fattura,'/')>1),
+    anno_fattura=?,serie_fattura='L',emessa_at=CURRENT_TIMESTAMP WHERE id=? AND stato='BOZZA'`,[year,year,f.id]);
+  if(!r||r.changes!==1)throw new Error('Registrazione non effettuata: documento già modificato o operazione non conclusa');
   res.redirect('/fatturazione/libere/'+f.id+'/dettaglio');
  }catch(e){res.status(400).send(page('Registrazione fattura',`<div class="box"><h2>Registrazione non effettuata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere/${Number(req.params.id)}/modifica">Torna al documento</a></div>`));}
 });
