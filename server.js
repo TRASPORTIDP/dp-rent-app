@@ -14416,6 +14416,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
   const needle=String(req.query.cerca||'').trim().toLowerCase();
   const filtered=src.filter(x=>(!qSet.has(sector)||x.settore===sector)&&(!needle||String(x.cliente||'').toLowerCase().includes(needle)||String(x.numero_display||'').toLowerCase().includes(needle)));
   function state(x){
+   if(x.settore==='libere' && String(x.stato||'').toUpperCase()==='PROVA')return 'Simulazione (non inviabile)';
    if(/ANNULLAT|BOZZA|PROVA/i.test(String(x.stato||'')))return 'Non pronta';
    if(x.settore==='credito')return 'Da verificare TD04';
    if(x.settore==='service')return 'XML SERVICE da integrare';
@@ -14425,12 +14426,12 @@ app.get('/fatturazione/invii',async(req,res)=>{
    return 'Da verificare XML';
   }
   const c={totale:filtered.length,da_verificare:0,drive:0,esterno:0,nonpronte:0,consegnate:0};
-  for(const x of filtered){let t=state(x);if(t==='XML su Drive')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta')c.nonpronte++;else c.da_verificare++;}
+  for(const x of filtered){let t=state(x);if(t==='XML su Drive')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta'||t==='Simulazione (non inviabile)')c.nonpronte++;else c.da_verificare++;}
   const visible=filtered.slice(0,300);
   const rows=visible.map(x=>{
    const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
    const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/fatturazione/xml/check/service/${x.id}`:x.settore==='libere'?`/fatturazione/libere/${x.id}/dettaglio`:`/note-credito/${x.id}`;
-   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Da verificare TD04'||st==='XML SERVICE da integrare'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='XML su Drive'?'<span style="color:#19744a;font-weight:bold">🟢 XML depositato (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
+   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Simulazione (non inviabile)'||st==='Da verificare TD04'||st==='XML SERVICE da integrare'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='XML su Drive'?'<span style="color:#19744a;font-weight:bold">🟢 XML depositato (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
   }).join('');
   res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Legenda:</b> 🟢 XML depositato su Drive, NON significa approvato fiscalmente. 🔴 Dati/documento da completare. ⚪ Da verificare. Nessuna validazione XSD/SdI ancora collegata.</p><p><b>Invio disattivato:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
     <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
@@ -14586,7 +14587,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
    <a class="btn" href="/fatturazione/libere/nuova">＋ NUOVA FATTURA LIBERA</a>
    <a class="btn btn2" href="/fatturazione/invii">REGISTRO ELETTRONICO</a>
    <a class="btn btn2" href="/fatturazione">FATTURAZIONE DP</a></div>
-   <div class="box" style="overflow-x:auto"><h2>📚 ARCHIVIO FATTURE LIBERE</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Imponibile</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${out||'<tr><td colspan="9">Nessun documento</td></tr>'}</table></div>`));
+   <div class="box" style="overflow-x:auto"><h2>📚 ARCHIVIO FATTURE LIBERE</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Categoria</th><th>Tipo</th><th>Imponibile</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${out||'<tr><td colspan="9">Nessun documento</td></tr>'}</table></div>`));
  }catch(e){res.status(500).send(page('Fatture libere',`<div class="box"><h2>Archivio non disponibile</h2><p>${esc(e.message)}</p></div>`))}
 });
 
@@ -14675,7 +14676,7 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
 });
 app.get('/fatturazione/libere/:id/dettaglio',async(req,res)=>{
  try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)throw new Error('Documento inesistente');
- res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" target="_blank" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
+ res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p><b>Sezione:</b> FATTURE LIBERE — TRASPORTI DP S.R.L. · <b>Categoria descrittiva:</b> ${esc(f.settore||'ALTRO')} · <b>Tipo:</b> ${esc(f.tipo_documento)}</p>${f.stato==='PROVA'?'<p style="color:#a11;font-weight:bold">Documento di sola simulazione: nessun numero fiscale assegnato, nessun invio consentito. Per una fattura reale creare una nuova bozza e procedere ai controlli previsti.</p>':''}<p><a class="btn" target="_blank" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
  }catch(e){res.status(404).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 // V339: PDF di anteprima NON fiscale; nessuna numerazione o esportazione.
