@@ -14531,11 +14531,34 @@ app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
  res.json(rows);
  }catch(e){console.error('Ricerca clienti fattura libera',e);res.status(500).json({error:'Ricerca clienti non disponibile'});}
 });
+// V342: unico archivio operativo, stesso schema azioni degli altri settori.
 app.get('/fatturazione/libere',async(req,res)=>{
- try{await dpFreeEnsure();const rows=await all('SELECT * FROM dp_fatture_libere_bozze ORDER BY id DESC LIMIT 300');
- res.send(page('Fatture libere',`<div class="box"><h2>🧾 Registro fatture libere — bozze</h2><p>Le bozze non hanno numerazione fiscale e non sono incluse nell'invio massivo.</p><a class="btn" href="/fatturazione/libere/nuova">＋ Nuova fattura libera</a> <a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div><div class="box" style="overflow-x:auto"><table><tr><th>ID bozza</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Totale indicativo</th><th>Stato</th><th>Azioni</th></tr>${rows.map(r=>`<tr><td>${r.id}</td><td>${esc(r.data_documento)}</td><td>${esc(r.cliente)}</td><td>${esc(r.settore)}</td><td>${esc(r.tipo_documento)}</td><td>€ ${euro(r.totale)}</td><td>${esc(r.stato||'BOZZA')} ${r.numero_fattura?esc(r.numero_fattura):''}</td><td>${r.stato==='BOZZA'?`<a class="btn btn2" href="/fatturazione/libere/${r.id}/modifica">Apri / Modifica</a> <form action="/fatturazione/libere/${r.id}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: registrare con numero della serie L? Operazione irreversibile; NON trasmette a SdI.')"><button class="btn" type="submit">Registra fattura</button></form>`:`<a class="btn btn2" href="/fatturazione/libere/${r.id}/dettaglio">Apri fattura ${esc(r.numero_fattura||'')}</a>`} <a class="btn btn2" href="/fatturazione/libere/${r.id}/pdf" target="_blank">PDF bozza</a> <a class="btn btn2" href="/fatturazione/libere/${r.id}/xml-verifica">XML verifica</a></td></tr>`).join('')||'<tr><td colspan="8">Nessuna bozza</td></tr>'}</table></div>`));
- }catch(e){res.status(500).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
+ try{
+  await dpFreeEnsure();
+  const rows=await all('SELECT * FROM dp_fatture_libere_bozze ORDER BY id DESC LIMIT 300');
+  const out=rows.map(r=>{
+   const id=Number(r.id),registered=r.stato==='REGISTRATA';
+   const u='/fatturazione/libere/'+id;
+   const state=registered?'<span style="font-weight:800;color:#087b35">● REGISTRATA</span>':'<span style="font-weight:800;color:#8b6500">● BOZZA</span>';
+   return `<tr><td>${registered?esc(r.numero_fattura):'#'+id}</td><td>${esc(r.data_documento||'')}</td><td>${esc(r.cliente||'')}</td><td>${esc(r.settore||'')}</td><td>${esc(r.tipo_documento||'')}</td><td>€ ${euro(r.imponibile||0)}</td><td><b>€ ${euro(r.totale||0)}</b></td><td>${state}</td><td style="min-width:310px">
+    <a class="btn" href="${registered?u+'/dettaglio':u+'/modifica'}">APRI</a>
+    <a class="btn btn2" href="${u}/pdf" target="_blank" rel="noopener">PDF</a>
+    ${registered?'':`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`}
+    <a class="btn btn2" href="${u}/xml-verifica">XML</a>
+    ${registered?'':`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`}
+   </td></tr>`;
+  }).join('');
+  const registered=rows.filter(x=>x.stato==='REGISTRATA').length,drafts=rows.length-registered;
+  res.send(page('Fatture libere',`<div class="box"><h2>🧾 FATTURE LIBERE / DP AUTO</h2>
+   <p>Archivio unico dei documenti manuali: clienti dall'anagrafica comune, righe multiple, PDF e XML.</p>
+   <p><b>Bozze: ${drafts} · Registrate: ${registered}</b> · Nessun invio automatico allo SdI.</p>
+   <a class="btn" href="/fatturazione/libere/nuova">＋ NUOVA FATTURA LIBERA</a>
+   <a class="btn btn2" href="/fatturazione/invii">REGISTRO ELETTRONICO</a>
+   <a class="btn btn2" href="/fatturazione">FATTURAZIONE DP</a></div>
+   <div class="box" style="overflow-x:auto"><h2>📚 ARCHIVIO FATTURE LIBERE</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Imponibile</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${out||'<tr><td colspan="9">Nessun documento</td></tr>'}</table></div>`));
+ }catch(e){res.status(500).send(page('Fatture libere',`<div class="box"><h2>Archivio non disponibile</h2><p>${esc(e.message)}</p></div>`))}
 });
+
 app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattura libera',dpFreeFormV326()));});
 app.post('/fatturazione/libere/nuova',async(req,res)=>{
  const b=req.body||{};
@@ -14607,7 +14630,7 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
 });
 app.get('/fatturazione/libere/:id/dettaglio',async(req,res)=>{
  try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)throw new Error('Documento inesistente');
- res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf">PDF documento</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML per controllo</a> <a class="btn btn2" href="/fatturazione/libere">Archivio</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
+ res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
  }catch(e){res.status(404).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 // V339: PDF di anteprima NON fiscale; nessuna numerazione o esportazione.
@@ -14733,7 +14756,7 @@ app.get('/fatturazione', async(req,res)=>{
     <a class="dp-fatt-card" href="/service/fatture"><span class="dp-fatt-icon">🔧</span><span><span class="dp-fatt-name">Fatture DP SERVICE</span><small>Serie S · ${serviceCount} fatture registrate</small></span></a>
     <a class="dp-fatt-card trans" href="/trasporti/fatturazione"><span class="dp-fatt-icon">🚛</span><span><span class="dp-fatt-name">Fatture TRASPORTI</span><small>Serie T · ${tr.tot||0} trasporti da fatturare</small></span></a>
     <a class="dp-fatt-card" href="/note-credito"><span class="dp-fatt-icon">↩️</span><span><span class="dp-fatt-name">Note di credito</span><small>Registro rettifiche · Tutti i settori</small></span></a>
-    <a class="dp-fatt-card free" href="/fatturazione/libere"><span class="dp-fatt-icon">🚗</span><span><span class="dp-fatt-name">Fatture libere / Vendita mezzi</span><small>Bozze manuali · Nessuna emissione automatica</small></span></a>
+    <a class="dp-fatt-card free" href="/fatturazione/libere"><span class="dp-fatt-icon">🚗</span><span><span class="dp-fatt-name">Fatture libere / Vendita mezzi</span><small>Fatture manuali · Archivio · PDF · XML</small></span></a>
    </section>
    <section class="dp-fatt-tools">
     <a class="dp-fatt-register" href="/fatturazione/invii"><span style="font-size:34px">📤</span><span><strong>Registro fatture elettroniche</strong><small>Tutti i settori · Contatori · Verifica XML · Preparazione invii</small></span></a>
