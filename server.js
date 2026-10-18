@@ -14692,29 +14692,34 @@ app.get('/fatturazione/libere/:id/pdf',async(req,res)=>{
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition',`inline; filename="${final?'FATTURA':f.stato==='PROVA'?'SIMULAZIONE':'BOZZA'}_LIBERA_${f.id}.pdf"`);
   doc.pipe(res);
-  const W=doc.page.width, M=36, red='#d40f19', dark='#12161b', soft='#f1f2f4', grey='#59616b';
+  const W=doc.page.width, M=42, red='#e00013', dark='#101014', soft='#f5f5f5', grey='#59616b';
   const rect=(x,y,w,h,c)=>doc.save().fillColor(c).rect(x,y,w,h).fill().restore();
   const txt=(v,x,y,w,size=9,bold=false,color=dark)=>doc.font(bold?'Helvetica-Bold':'Helvetica').fontSize(size).fillColor(color).text(String(v??''),x,y,{width:w,lineBreak:false,ellipsis:true,height:size+5});
-  const section=(name,x,y,w)=>{rect(x,y,w,24,red);txt(name,x+10,y+7,w-20,9,true,'#fff');};
+  const section=(name,x,y,w,black=false)=>{rect(x,y,w,23,black?dark:red);txt(name,x+10,y+6,w-20,9,true,'#fff');};
   const issuerName=String(process.env.DP_XML_RAGIONE_SOCIALE||'TRASPORTI DP S.R.L.');
   const issuerStreet=String(process.env.DP_XML_INDIRIZZO||'Via Tuderte 466');
   const issuerTown=[process.env.DP_XML_CAP,process.env.DP_XML_COMUNE,process.env.DP_XML_PROVINCIA].filter(Boolean).join(' ');
   const iban=String(process.env.DP_IBAN||process.env.IBAN_AZIENDA||'').trim();
   function header(){
-    rect(0,0,W,16,dark);rect(0,16,W,4,red);
-    txt('TRASPORTI DP',M,42,180,22,true,red);
-    txt('TRASPORTI DP S.R.L.',M+200,43,260,19,true,dark);
-    txt('FATTURAZIONE GENERALE',M+200,68,270,9,true,grey);
-    rect(W-155,91,155,52,dark);txt('FATTURA',W-145,102,132,15,true,'#fff');
-    txt(f.stato==='REGISTRATA'?String(f.numero_fattura):f.stato==='PROVA'?String(f.numero_fattura):'BOZZA '+f.id,W-145,125,132,9,true,'#fff');
-    txt(issuerName,M,104,315,11,true);txt(issuerStreet+' - '+issuerTown,M,124,340,9);
-    txt('P.IVA '+String(process.env.DP_XML_PIVA||''),M,139,300,9);
+    // Layout unificato al modello DP SERVICE: testata nera, riquadro fattura e fascia tricolore.
+    rect(0,0,W,154,dark);
+    rect(W-55,0,18,154,'#119448');rect(W-37,0,18,154,'#ffffff');rect(W-19,0,19,154,red);
+    txt('TRASPORTI DP',M,33,295,27,true,'#fff');
+    txt('TRASPORTI DP S.R.L.',M,75,375,14,true,'#fff');
+    txt('FATTURAZIONE GENERALE',M,96,350,9,true,'#ff333b');
+    rect(W-171,25,105,57,red);
+    txt('FATTURA',W-157,41,92,15,true,'#fff');
+    txt(f.stato==='REGISTRATA'?String(f.numero_fattura):f.stato==='PROVA'?String(f.numero_fattura):'BOZZA '+f.id,W-165,95,100,10,true,'#fff');
+    txt(String(f.data_documento||''),W-165,111,100,9,false,'#fff');
+    rect(0,154,W,5,red);
+    txt(issuerName,M,174,400,11,true);
+    txt(issuerStreet+' - '+issuerTown+'  |  P.IVA '+String(process.env.DP_XML_PIVA||''),M,191,W-2*M,8);
   }
   header();
   const prova=!final;
-  if(prova){rect(M,163,W-2*M,25,'#fff0f0');txt(f.stato==='PROVA'?'SIMULAZIONE - DOCUMENTO NON FISCALE':'BOZZA - DOCUMENTO NON FISCALE',M+9,169,W-2*M-18,10,true,red);}
-  const top=prova?201:172, boxGap=10, boxW=(W-2*M-boxGap)/2;
-  section('CLIENTE / DESTINATARIO',M,top,boxW);section('DATI DOCUMENTO',M+boxW+boxGap,top,boxW);
+  if(prova){rect(M,215,W-2*M,20,'#fff0f0');txt(f.stato==='PROVA'?'SIMULAZIONE - DOCUMENTO NON FISCALE':'BOZZA - DOCUMENTO NON FISCALE',M+8,220,W-2*M-16,8,true,red);}
+  const top=prova?246:220, boxGap=11, boxW=(W-2*M-boxGap)/2;
+  section('CLIENTE / DESTINATARIO',M,top,boxW);section('DATI DOCUMENTO',M+boxW+boxGap,top,boxW,true);
   doc.strokeColor('#cdd2d6').lineWidth(1).rect(M,top+24,boxW,108).stroke().rect(M+boxW+boxGap,top+24,boxW,108).stroke();
   txt(f.cliente,M+10,top+34,boxW-20,11,true);
   if(client){
@@ -14727,33 +14732,33 @@ app.get('/fatturazione/libere/:id/pdf',async(req,res)=>{
   txt('Tipo: '+String(f.tipo_documento||''),rightX,top+53,boxW-20,9);
   txt('Regime: '+(f.regime_iva==='MARGINE_ANALITICO'?'Margine beni usati':'IVA ordinaria'),rightX,top+71,boxW-20,9);
   txt('Numero: '+(f.numero_fattura||'Bozza '+f.id),rightX,top+89,boxW-20,9,true);
-  let y=top+149;
-  function headings(){rect(M,y,W-2*M,26,red);txt('DESCRIZIONE',M+8,y+8,202,8,true,'#fff');txt('Q.TÀ',M+220,y+8,42,8,true,'#fff');txt('PREZZO',M+265,y+8,70,8,true,'#fff');txt('IVA',M+346,y+8,36,8,true,'#fff');txt('TOTALE',M+394,y+8,110,8,true,'#fff');y+=26;}
+  let y=top+147;
+  function headings(){rect(M,y,W-2*M,26,dark);txt('DESCRIZIONE',M+8,y+8,202,8,true,'#fff');txt('Q.TÀ',M+220,y+8,42,8,true,'#fff');txt('PREZZO',M+265,y+8,70,8,true,'#fff');txt('IVA',M+346,y+8,36,8,true,'#fff');txt('TOTALE',M+394,y+8,110,8,true,'#fff');y+=26;}
   headings();
   lines.forEach((l,i)=>{
     const height=Math.max(30,Math.ceil(String(l.descrizione).length/36)*12+12);
-    if(y+height>doc.page.height-250){doc.addPage();header();y=174;headings();}
+    if(y+height>doc.page.height-225){doc.addPage();header();y=225;headings();}
     if(i%2===0)rect(M,y,W-2*M,height,soft);
     txt(l.descrizione,M+8,y+7,203,9,true);txt(l.quantita,M+220,y+7,40,9);txt(Number(l.prezzo).toFixed(2),M+265,y+7,70,9);
     txt(l.iva+'%',M+346,y+7,40,9);txt('€ '+Number(l.totale).toFixed(2),M+394,y+7,110,9,true);
     y+=height;
   });
-  if(y>doc.page.height-260){doc.addPage();header();y=175;}
+  if(y>doc.page.height-218){doc.addPage();header();y=225;}
   y+=20;const paneW=(W-2*M-12)/2, rX=M+paneW+12;
   section('PAGAMENTO / NOTE',M,y,paneW);
   doc.strokeColor('#cdd2d6').rect(M,y+24,paneW,112).stroke();
   txt('Riferimento: '+(f.riferimento||'—'),M+9,y+35,paneW-18,9);
   txt(f.regime_iva==='MARGINE_ANALITICO'?'Regime del margine - art. 36 D.L. 41/1995':'Pagamento: da concordare / confermare',M+9,y+57,paneW-18,9);
   if(iban)txt('IBAN: '+iban,M+9,y+79,paneW-18,8);
-  section('RIEPILOGO ECONOMICO',rX,y,paneW);
+  section('RIEPILOGO ECONOMICO',rX,y,paneW,true);
   doc.strokeColor('#cdd2d6').rect(rX,y+24,paneW,112).stroke();
   txt('Imponibile',rX+9,y+39,110,10);txt('€ '+Number(f.imponibile).toFixed(2),rX+131,y+39,paneW-141,10,true);
   txt(f.regime_iva==='MARGINE_ANALITICO'?'IVA non esposta':'IVA',rX+9,y+59,118,10);txt(f.regime_iva==='MARGINE_ANALITICO'?'—':'€ '+Number(f.imposta).toFixed(2),rX+131,y+59,paneW-141,10,true);
   rect(rX,y+83,paneW,29,red);txt('TOTALE',rX+9,y+91,102,11,true,'#fff');txt('€ '+Number(f.totale).toFixed(2),rX+110,y+91,paneW-120,11,true,'#fff');
-  const footerY=doc.page.height-60;rect(0,footerY,W,60,dark);
+  const footerY=doc.page.height-55;rect(0,footerY,W,55,dark);
   txt('TRASPORTI DP S.R.L.',M,footerY+13,280,9,true,'#fff');
   txt(prova?'SOLO PROVA - NON INVIARE A CLIENTI O SDI':'Consegna SdI non verificata',M,footerY+31,W-2*M,9,true,'#fff');
-  rect(W-85,footerY,20,60,'#14964a');rect(W-65,footerY,20,60,'#fff');rect(W-45,footerY,45,60,red);
+  rect(W-55,footerY,18,55,'#14964a');rect(W-37,footerY,18,55,'#fff');rect(W-19,footerY,19,55,red);
   doc.end();
  }catch(e){if(!res.headersSent)res.status(500).send('PDF non disponibile: '+e.message);else res.end();}
 });
