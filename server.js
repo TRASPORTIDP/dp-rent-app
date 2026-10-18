@@ -14494,8 +14494,16 @@ function dpFreeRegimeV345(b,lines){
 function dpFreeFormV326(f={},error=''){
  const val=(k,d='')=>esc(f[k]===undefined?d:f[k]);
  const selected=(k,v,d='')=>String(f[k]===undefined?d:f[k])===v?'selected':'';
- return `<div class="box"><h2>🧾 Fattura libera — TRASPORTI DP S.R.L. — BOZZA</h2>
- <p>Questa funzione salva una <b>bozza amministrativa</b>, senza emettere documenti fiscali, assegnare numerazioni o inviare XML a Fatel.</p>
+ return `<style>
+.dp-free-form .dp-free-actionbar{display:flex;flex-wrap:wrap;gap:9px;margin:15px 0}
+.dp-free-form .dp-free-actionbar .btn{margin:0}
+.dp-free-form #dp-free-lines{display:grid;gap:10px}
+.dp-free-form #dp-free-lines>div{display:grid;grid-template-columns:minmax(220px,2.5fr) repeat(4,minmax(95px,1fr));gap:10px;align-items:end;margin:0!important}
+.dp-free-form #dp-free-lines>div>label{margin:0}
+.dp-free-form #dp-free-lines>div>button{grid-column:1/-1;justify-self:start}
+@media(max-width:800px){.dp-free-form #dp-free-lines>div{grid-template-columns:repeat(2,minmax(0,1fr))}.dp-free-form #dp-free-lines>div>label:first-child{grid-column:1/-1}}
+</style><div class="box dp-free-form"><h2>🧾 FATTURA LIBERA — TRASPORTI DP S.R.L.</h2>
+ <p>Gestione fattura libera · stessa anagrafica dei reparti · righe modificabili · PDF A4 e XML di controllo. Il salvataggio crea una bozza, non invia nulla a SdI.</p><div class="dp-free-actionbar"><a class="btn btn2" href="/fatturazione">← Fatturazione</a><a class="btn btn2" href="/fatturazione/libere">Archivio fatture libere</a><a class="btn btn2" href="/fatturazione/invii">Registro elettronico</a>${f.id?`<a class="btn btn2" target="_blank" href="/fatturazione/libere/${f.id}/pdf">Anteprima PDF</a><a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">Controllo XML</a>`:''}</div>
  ${error?`<p class="bad">${esc(error)}</p>`:''}
  <form method="post" action="${f.id?'/fatturazione/libere/'+encodeURIComponent(f.id)+'/modifica':'/fatturazione/libere/nuova'}">
  <label for="dp-free-client-search">Cliente dall'anagrafica unica (nome, codice o Partita IVA)</label>
@@ -14511,7 +14519,7 @@ function dpFreeFormV326(f={},error=''){
  catch(e){if(req===seq){results.style.display='block';results.textContent='Ricerca non disponibile. Riprova.';}}});
  input.form.addEventListener('submit',e=>{if(!hidden.value){e.preventDefault();info.textContent='Devi selezionare un cliente dell’anagrafica unica prima di salvare.';input.focus();}});
  })();</script>
- <label>Tipo documento (solo classificazione della bozza)</label><select name="tipo_documento">
+ <label>Tipo documento (salvataggio in bozza; registrazione abilitata solo per TD01 ordinaria verificata)</label><select name="tipo_documento">
  ${[['TD01','Fattura immediata'],['TD02','Acconto'],['TD04','Nota credito'],['TD05','Nota debito'],['TD24','Differita'],['TD25','Differita speciale'],['TD26','Beni ammortizzabili']].map(([c,n])=>`<option value="${c}" ${selected('tipo_documento',c,'TD01')}>${c} — ${n}</option>`).join('')}</select>
  <label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore">${[['AUTO','Vendita mezzi / beni'],['RENT','Noleggio'],['SERVICE','Officina'],['TRASPORTI','Trasporti'],['ALTRO','Altro']].map(([c,n])=>`<option value="${c}" ${selected('settore',c,'AUTO')}>${n}</option>`).join('')}</select>
  <label>Regime IVA documento</label><select name="regime_iva" id="dp-free-regime">
@@ -14544,7 +14552,7 @@ function dpFreeFormV326(f={},error=''){
  root.closest('form').addEventListener('submit',()=>sync());draw();
  })();</script>
  <label>Note interne</label><textarea name="note" rows="2">${val('note')}</textarea>
- <p><button class="btn" type="submit">💾 ${f.id?'Aggiorna':'Salva'} bozza (senza emettere)</button> <a class="btn btn2" href="/fatturazione/libere">Registro bozze libere</a> ${f.id?`<a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML per verifica (non fiscale)</a>`:''}</p></form></div>`;
+ <div class="dp-free-actionbar"><button class="btn" type="submit">💾 ${f.id?'Salva modifiche':'Salva bozza'}</button><a class="btn btn2" href="/fatturazione/libere">Archivio</a>${f.id?`<a class="btn btn2" target="_blank" href="/fatturazione/libere/${f.id}/pdf">PDF</a><a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML</a>`:''}</div></form></div>`;
 }
 app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
  try{await dpMasterEnsure();const q=String(req.query.q||'').trim().slice(0,80);if(q.length<2)return res.json([]);
@@ -14667,7 +14675,7 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
 });
 app.get('/fatturazione/libere/:id/dettaglio',async(req,res)=>{
  try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)throw new Error('Documento inesistente');
- res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
+ res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" target="_blank" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Non equivale a consegna SdI:</b> l'invio è ancora disattivato e la validazione XSD esterna deve essere completata.</p></div>`));
  }catch(e){res.status(404).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 // V339: PDF di anteprima NON fiscale; nessuna numerazione o esportazione.
@@ -14680,13 +14688,13 @@ app.get('/fatturazione/libere/:id/pdf',async(req,res)=>{
   const lines=dpFreeLinesV339({righe_json:f.righe_json||JSON.stringify([{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva}])});
   const client=f.cliente_id?await get('SELECT * FROM dp_clienti_master WHERE id=?',[f.cliente_id]):null;
   const final=f.stato==='REGISTRATA';
-  const doc=new PDFDocument({size:'A4',margin:42,bufferPages:false});
+  const doc=new PDFDocument({size:'A4',margin:0,bufferPages:false,autoFirstPage:true});
   res.setHeader('Content-Type','application/pdf');
   res.setHeader('Content-Disposition',`inline; filename="${final?'FATTURA':f.stato==='PROVA'?'SIMULAZIONE':'BOZZA'}_LIBERA_${f.id}.pdf"`);
   doc.pipe(res);
   const W=doc.page.width, M=36, red='#d40f19', dark='#12161b', soft='#f1f2f4', grey='#59616b';
   const rect=(x,y,w,h,c)=>doc.save().fillColor(c).rect(x,y,w,h).fill().restore();
-  const txt=(v,x,y,w,size=9,bold=false,color=dark)=>doc.font(bold?'Helvetica-Bold':'Helvetica').fontSize(size).fillColor(color).text(String(v??''),x,y,{width:w,lineBreak:false});
+  const txt=(v,x,y,w,size=9,bold=false,color=dark)=>doc.font(bold?'Helvetica-Bold':'Helvetica').fontSize(size).fillColor(color).text(String(v??''),x,y,{width:w,lineBreak:false,ellipsis:true,height:size+5});
   const section=(name,x,y,w)=>{rect(x,y,w,24,red);txt(name,x+10,y+7,w-20,9,true,'#fff');};
   const issuerName=String(process.env.DP_XML_RAGIONE_SOCIALE||'TRASPORTI DP S.R.L.');
   const issuerStreet=String(process.env.DP_XML_INDIRIZZO||'Via Tuderte 466');
@@ -14724,10 +14732,10 @@ app.get('/fatturazione/libere/:id/pdf',async(req,res)=>{
   headings();
   lines.forEach((l,i)=>{
     const height=Math.max(30,Math.ceil(String(l.descrizione).length/36)*12+12);
-    if(y+height>doc.page.height-230){doc.addPage();header();y=174;headings();}
+    if(y+height>doc.page.height-250){doc.addPage();header();y=174;headings();}
     if(i%2===0)rect(M,y,W-2*M,height,soft);
     txt(l.descrizione,M+8,y+7,203,9,true);txt(l.quantita,M+220,y+7,40,9);txt(Number(l.prezzo).toFixed(2),M+265,y+7,70,9);
-    txt(l.iva+'%',M+346,y+7,40,9);txt('€ '+Number(l.imponibile).toFixed(2),M+394,y+7,110,9,true);
+    txt(l.iva+'%',M+346,y+7,40,9);txt('€ '+Number(l.totale).toFixed(2),M+394,y+7,110,9,true);
     y+=height;
   });
   if(y>doc.page.height-260){doc.addPage();header();y=175;}
