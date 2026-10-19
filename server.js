@@ -14818,13 +14818,13 @@ async function dpFreePreviewXmlV340(id){
  const customer=`<DatiAnagrafici>${/^\d{11}$/.test(cVat)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${tag('IdCodice',cVat)}</IdFiscaleIVA>`:''}${cf?tag('CodiceFiscale',cf):''}<Anagrafica>${tag('Denominazione',c.ragione_sociale||[c.nome,c.cognome].filter(Boolean).join(' '))}</Anagrafica></DatiAnagrafici><Sede>${tag('Indirizzo',c.indirizzo)}${tag('CAP',c.cap)}${tag('Comune',c.citta)}${tag('Provincia',String(c.provincia).toUpperCase())}<Nazione>IT</Nazione></Sede>`;
  const details=lines.map((l,i)=>`<DettaglioLinee>${tag('NumeroLinea',i+1)}${tag('Descrizione',l.descrizione)}${tag('Quantita',Number(l.quantita).toFixed(2))}${tag('PrezzoUnitario',Number(l.prezzo).toFixed(2))}${l.sconto?`<ScontoMaggiorazione><Tipo>SC</Tipo>${tag('Percentuale',Number(l.sconto).toFixed(2))}</ScontoMaggiorazione>`:''}${tag('PrezzoTotale',dpMoneyV314(l.imponibile))}${tag('AliquotaIVA',dpMoneyV314(l.iva))}${regime==='MARGINE_ANALITICO'?'<Natura>N5</Natura>':''}</DettaglioLinee>`).join('');
  const riepiloghi=[...new Set(lines.map(x=>x.iva))].sort((a,b)=>b-a).map(iva=>{const group=lines.filter(x=>x.iva===iva),impon=group.reduce((s,x)=>s+x.imponibile,0),tax=group.reduce((s,x)=>s+x.imposta,0);return `<DatiRiepilogo>${tag('AliquotaIVA',dpMoneyV314(iva))}${tag('ImponibileImporto',dpMoneyV314(impon))}${tag('Imposta',dpMoneyV314(tax))}${regime==='MARGINE_ANALITICO'?'<Natura>N5</Natura><RiferimentoNormativo>Regime del margine - art. 36 D.L. 41/1995</RiferimentoNormativo>':'<EsigibilitaIVA>I</EsigibilitaIVA>'}</DatiRiepilogo>`}).join('');
- let xml=`<?xml version="1.0" encoding="UTF-8"?>\n<!-- SOLO BOZZA DI VERIFICA - NON EMESSA, NON INVIARE ALLO SDI -->\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${tag('IdCodice',vat)}</IdTrasmittente>${tag('ProgressivoInvio','B'+String(f.id).padStart(5,'0'))}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${tag('CodiceDestinatario',dest)}</DatiTrasmissione><CedentePrestatore>${issuer}</CedentePrestatore><CessionarioCommittente>${customer}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${tag('Data',dpDateV314(f.data_documento))}${tag('Numero','BOZZA-'+f.id)}${tag('ImportoTotaleDocumento',dpMoneyV314(a.totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi>${details}${riepiloghi}</DatiBeniServizi></FatturaElettronicaBody></p:FatturaElettronica>`;
- if(f.stato==='REGISTRATA'){xml=xml.replace('<!-- SOLO BOZZA DI VERIFICA - NON EMESSA, NON INVIARE ALLO SDI -->\n','').replace('<Numero>BOZZA-'+f.id+'</Numero>','<Numero>'+dpXmlV314(f.numero_fattura)+'</Numero>').replace('<ProgressivoInvio>B'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>','<ProgressivoInvio>L'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>');}
- if(f.stato==='PROVA'){xml=xml.replace('<Numero>BOZZA-'+f.id+'</Numero>','<Numero>'+dpXmlV314(f.numero_fattura)+'</Numero>').replace('<ProgressivoInvio>B'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>','<ProgressivoInvio>X'+String(f.id).padStart(5,'0')+'</ProgressivoInvio>');}
+ let xml=`<?xml version="1.0" encoding="UTF-8"?>\n<!-- SOLO BOZZA DI VERIFICA - NON EMESSA, NON INVIARE ALLO SDI -->\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${tag('IdCodice',vat)}</IdTrasmittente>${tag('ProgressivoInvio',dpXmlProgressV346('B',f.id))}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${tag('CodiceDestinatario',dest)}</DatiTrasmissione><CedentePrestatore>${issuer}</CedentePrestatore><CessionarioCommittente>${customer}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${tag('Data',dpDateV314(f.data_documento))}${tag('Numero','BOZZA-'+f.id)}${tag('ImportoTotaleDocumento',dpMoneyV314(a.totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi>${details}${riepiloghi}</DatiBeniServizi></FatturaElettronicaBody></p:FatturaElettronica>`;
+ if(f.stato==='REGISTRATA'){xml=xml.replace('<!-- SOLO BOZZA DI VERIFICA - NON EMESSA, NON INVIARE ALLO SDI -->\n','').replace('<Numero>BOZZA-'+f.id+'</Numero>','<Numero>'+dpXmlV314(f.numero_fattura)+'</Numero>').replace('<ProgressivoInvio>'+dpXmlProgressV346('B',f.id)+'</ProgressivoInvio>','<ProgressivoInvio>'+dpXmlProgressV346('L',f.id)+'</ProgressivoInvio>');}
+ if(f.stato==='PROVA'){xml=xml.replace('<Numero>BOZZA-'+f.id+'</Numero>','<Numero>'+dpXmlV314(f.numero_fattura)+'</Numero>').replace('<ProgressivoInvio>'+dpXmlProgressV346('B',f.id)+'</ProgressivoInvio>','<ProgressivoInvio>'+dpXmlProgressV346('X',f.id)+'</ProgressivoInvio>');}
  return xml;
 }
 app.get('/fatturazione/libere/:id/xml-verifica',async(req,res)=>{
- try{const xml=await dpFreePreviewXmlV340(req.params.id);res.setHeader('Content-Type','application/xml; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="VERIFICA_DOCUMENTO_DP_${Number(req.params.id)}.xml"`);res.setHeader('Cache-Control','no-store');res.send(xml)}
+ try{const xml=await dpFreePreviewXmlV340(req.params.id);res.setHeader('Content-Type','application/xml; charset=utf-8');res.setHeader('Content-Disposition',`attachment; filename="${dpXmlFilenameV346(xml)}"`);res.setHeader('Cache-Control','no-store');res.send(xml)}
  catch(e){res.status(400).send(page('Controllo XML bozza',`<div class="box"><h2>🔴 XML da correggere</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere/${Number(req.params.id)}/modifica">Torna alla bozza</a></div>`))}
 });
 
@@ -15205,6 +15205,21 @@ app.get('/note-credito/:id.pdf',async(req,res)=>{
 // V314 - Export controllato FatturaPA via Google Drive; nessun invio diretto allo SdI.
 function dpXmlV314(v){return String(v==null?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');}
 function dpTagV314(k,v){return `<${k}>${dpXmlV314(v)}</${k}>`;}
+// FatturaPA: ProgressivoInvio e nome file devono avere un token alfanumerico di max 5 caratteri.
+// Non troncare gli ID: produrrebbe collisioni fra documenti distinti.
+function dpXmlProgressV346(prefix,id){
+ const n=Number(id),p=String(prefix||'').toUpperCase();
+ if(!/^[A-Z]$/.test(p)||!Number.isSafeInteger(n)||n<1||n>9999)
+  throw new Error('Progressivo XML fuori intervallo per la serie '+p+' (ID 1-9999): verificare una nuova strategia univoca prima di esportare');
+ return p+String(n).padStart(4,'0');
+}
+function dpXmlFilenameV346(xml){
+ const vat=(xml.match(/<IdTrasmittente>\s*<IdPaese>IT<\/IdPaese>\s*<IdCodice>([0-9]{11})<\/IdCodice>/)||[])[1];
+ const prog=(xml.match(/<ProgressivoInvio>([A-Z0-9]{1,5})<\/ProgressivoInvio>/)||[])[1];
+ if(!vat||!prog)throw new Error('Identificativo XML non valido: impossibile comporre il nome FatturaPA');
+ return 'IT'+vat+'_'+prog+'.xml';
+}
+
 function dpValV314(v){return String(v==null?'':v).trim();}
 function dpMoneyV314(v){return Number(v).toFixed(2);}
 function dpRequireV314(v,label){if(!dpValV314(v))throw new Error('Dato fiscale mancante: '+label);return dpValV314(v);}
@@ -15254,7 +15269,7 @@ async function dpMakeServiceXmlV337(id){
  if(![imp,iva,total].every(Number.isFinite)||imp<=0||Math.abs(imp+iva-total)>.02||Math.abs(imp*aliquota/100-iva)>.03)throw new Error('Imponibile/IVA/totale SERVICE non coerenti');
  const data=dpDateV314(f.data);
  const numero=dpRequireV314(f.numero,'numero SERVICE')+'/S';
- const prog='S'+String(f.id).padStart(5,'0');
+ const prog=dpXmlProgressV346('S',f.id);
  const supplier=`<DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdFiscaleIVA><Anagrafica>${dpTagV314('Denominazione',descrizione)}</Anagrafica>${dpTagV314('RegimeFiscale',regime)}</DatiAnagrafici><Sede>${dpTagV314('Indirizzo',ind)}${dpTagV314('CAP',cap)}${dpTagV314('Comune',comune)}${dpTagV314('Provincia',prov)}<Nazione>IT</Nazione></Sede>`;
  const cId=`${/^\d{11}$/.test(cv)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',cv)}</IdFiscaleIVA>`:''}${cf?dpTagV314('CodiceFiscale',cf):''}`;
  const customer=`<DatiAnagrafici>${cId}<Anagrafica>${dpTagV314('Denominazione',cliente.ragione_sociale)}</Anagrafica></DatiAnagrafici><Sede>${dpTagV314('Indirizzo',cind)}${dpTagV314('CAP',ccap)}${dpTagV314('Comune',ccitta)}${dpTagV314('Provincia',cprov)}<Nazione>IT</Nazione></Sede>`;
@@ -15332,7 +15347,7 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const pec=dpValV314(cliente.pec);
  if(pec && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pec))throw new Error('PEC cliente non valida');
  if(dest==='0000000' && pec && paese==='IT' && !/^.{0,256}$/.test(pec))throw new Error('PEC oltre il limite consentito');
- const progressivo=String(tipo==='noleggio'?'N':'T')+String(f.id).padStart(5,'0');
+ const progressivo=dpXmlProgressV346(tipo==='noleggio'?'N':'T',f.id);
  const n=dpRequireV314(f.numero_display||f.numero,'numero fattura');
  const data=dpDateV314(f.data_fattura);
  // Prezzi aggregati: una riga riepilogativa; con aliquote diverse serve modello righe dedicato.
@@ -15394,7 +15409,7 @@ app.get('/fatturazione/xml/anteprima-scarica/:tipo/:id([0-9]+)',async(req,res)=>
   try{
     const {xml,filename}=await dpMakeInvoiceXmlV314(tipo,req.params.id);
     res.setHeader('Content-Type','application/xml; charset=utf-8');
-    res.setHeader('Content-Disposition','attachment; filename="VERIFICA_'+filename.replace(/[^a-zA-Z0-9_.-]/g,'')+'"');
+    res.setHeader('Content-Disposition','attachment; filename="'+filename.replace(/[^a-zA-Z0-9_.-]/g,'')+'"');
     res.setHeader('Cache-Control','no-store');
     return res.status(200).send(xml);
   }catch(err){return res.status(400).send(page('Anteprima XML non disponibile',`<div class="box"><h2>XML non disponibile</h2><p>${esc(err.message)}</p><a class="btn" href="/fatturazione/invii">Registro fatture</a></div>`));}
