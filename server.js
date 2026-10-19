@@ -14407,7 +14407,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
    all(`SELECT id,numero_display,cliente,data_documento AS data_fattura,totale,stato,'credito' AS settore FROM dp_note_credito ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
    all(`SELECT tipo,fattura_id,file_name,exported_at FROM dp_xml_exports`).catch(()=>[]),
    dpReadServiceInvoices(),
-   (async()=>{await dpFreeEnsure();return all("SELECT id,numero_fattura AS numero_display,cliente,data_documento AS data_fattura,totale,stato,'libere' AS settore FROM dp_fatture_libere_bozze WHERE stato IN ('REGISTRATA','PROVA')")})()
+   (async()=>{await dpFreeEnsure();return all("SELECT id,numero_fattura AS numero_display,cliente,data_documento AS data_fattura,totale,stato,'libere' AS settore FROM dp_fatture_libere_bozze WHERE stato IN ('REGISTRATA','PROVA') AND archiviata_at IS NULL")})()
   ]);
   const exported=new Set(exports.map(x=>String(x.tipo)+':'+x.fattura_id));
   const src=[...rent,...tr,...credit,...service,...libere].sort((a,b)=>String(b.data_fattura||'').localeCompare(String(a.data_fattura||''))||b.id-a.id);
@@ -14461,6 +14461,7 @@ async function dpFreeEnsure(){
   }
   if(!cols.some(c=>c.name==='regime_iva'))await run("ALTER TABLE dp_fatture_libere_bozze ADD COLUMN regime_iva TEXT NOT NULL DEFAULT 'ORDINARIA'");
   if(!cols.some(c=>c.name==='costo_acquisto'))await run("ALTER TABLE dp_fatture_libere_bozze ADD COLUMN costo_acquisto REAL");
+  if(!cols.some(c=>c.name==='archiviata_at'))await run("ALTER TABLE dp_fatture_libere_bozze ADD COLUMN archiviata_at TEXT");
   await run(`CREATE UNIQUE INDEX IF NOT EXISTS dp_libere_sezionale_numero ON dp_fatture_libere_bozze(anno_fattura,serie_fattura,numero_fattura)`);
 
 }
@@ -14557,7 +14558,9 @@ app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
 app.get('/fatturazione/libere',async(req,res)=>{
  try{
   await dpFreeEnsure();
-  const rows=await all('SELECT * FROM dp_fatture_libere_bozze ORDER BY id DESC LIMIT 300');
+  const showArchived=String(req.query.archiviate||'')==='1';
+  const rows=await all('SELECT * FROM dp_fatture_libere_bozze WHERE '+(showArchived?'archiviata_at IS NOT NULL':'archiviata_at IS NULL')+' ORDER BY id DESC LIMIT 300');
+  const archivedCount=(await get("SELECT COUNT(*) n FROM dp_fatture_libere_bozze WHERE archiviata_at IS NOT NULL"))?.n||0;
   const out=rows.map(r=>{
    const id=Number(r.id),registered=r.stato==='REGISTRATA';
    const u='/fatturazione/libere/'+id;
@@ -14567,21 +14570,43 @@ app.get('/fatturazione/libere',async(req,res)=>{
     <a class="btn btn2" href="${u}/pdf" target="_blank" rel="noopener">PDF</a>
     ${r.stato==='BOZZA'?`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`:''}
     <a class="btn btn2" href="${u}/xml-verifica">XML</a>
-    ${r.stato==='BOZZA'?`<form action="${u}/registra-prova" method="post" style="display:inline" onsubmit="return confirm('Crea simulazione TEST-L? Non è fattura fiscale e non verrà inviata.')"><button class="btn" type="submit">REGISTRA PROVA</button></form>`:''}
+    ${r.stato==='PROVA'?`<form action="${u}/${showArchived?'ripristina-prova':'archivia-prova'}" method="post" style="display:inline" onsubmit="return confirm('${showArchived?'Ripristinare la simulazione nel registro?':'Archiviare questa SIMULAZIONE TEST? Sarà nascosta ma non cancellata.'}')"><button class="btn btn2" type="submit">${showArchived?'RIPRISTINA':'ARCHIVIA TEST'}</button></form>`:''}
     ${r.stato==='BOZZA'?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`:''}
    </td></tr>`;
   }).join('');
   const registered=rows.filter(x=>x.stato==='REGISTRATA').length,tests=rows.filter(x=>x.stato==='PROVA').length,drafts=rows.length-registered-tests;
   res.send(page('Fatture libere',`<div class="box"><h2>🧾 FATTURE LIBERE — TRASPORTI DP S.R.L.</h2>
    <p>Archivio unico dei documenti manuali: clienti dall'anagrafica comune, righe multiple, PDF e XML.</p>
-   <p><b>Bozze: ${drafts} · Simulazioni: ${tests} · Registrate: ${registered}</b> · Nessun invio automatico allo SdI.</p>
+   <p><b>Bozze: ${drafts} · Simulazioni: ${tests} · Registrate: ${registered}</b> · Test archiviati: ${archivedCount}.</p>
+   <p style="color:#555">Le simulazioni si possono archiviare senza toccare fatture fiscali, numerazioni ufficiali o XML già depositati su Drive.</p>
    <a class="btn" href="/fatturazione/libere/nuova">＋ NUOVA FATTURA LIBERA</a>
    <a class="btn btn2" href="/fatturazione/invii">REGISTRO ELETTRONICO</a>
-   <a class="btn btn2" href="/fatturazione">FATTURAZIONE DP</a></div>
-   <div class="box" style="overflow-x:auto"><h2>📚 ARCHIVIO FATTURE LIBERE</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Imponibile</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${out||'<tr><td colspan="9">Nessun documento</td></tr>'}</table></div>`));
+   <a class="btn btn2" href="/fatturazione">FATTURAZIONE DP</a>
+   <a class="btn btn2" href="/fatturazione/libere${showArchived?'':'?archiviate=1'}">${showArchived?'VEDI DOCUMENTI ATTIVI':'VEDI TEST ARCHIVIATI ('+archivedCount+')'}</a>${!showArchived?`<form action="/fatturazione/libere/archivia-tutti-test" method="post" style="display:inline-block" onsubmit="return confirm('Nascondere TUTTE le simulazioni TEST-L dall’archivio e registro? Nessuna fattura fiscale viene cancellata.')"><button class="btn btn2" type="submit">PULISCI SIMULAZIONI TEST</button></form>`:''}</div>
+   <div class="box" style="overflow-x:auto"><h2>📚 ${showArchived?'SIMULAZIONI ARCHIVIATE':'ARCHIVIO FATTURE LIBERE'}</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Tipo</th><th>Imponibile</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${out||'<tr><td colspan="9">Nessun documento</td></tr>'}</table></div>`));
  }catch(e){res.status(500).send(page('Fatture libere',`<div class="box"><h2>Archivio non disponibile</h2><p>${esc(e.message)}</p></div>`))}
 });
 
+// Archiviazione massiva, conservativa e reversibile esclusivamente delle simulazioni TEST-L.
+app.post('/fatturazione/libere/archivia-tutti-test',async(req,res)=>{
+ try{await dpFreeEnsure();await run("UPDATE dp_fatture_libere_bozze SET archiviata_at=CURRENT_TIMESTAMP WHERE stato='PROVA' AND serie_fattura='TEST-L' AND archiviata_at IS NULL");res.redirect('/fatturazione/libere');}
+ catch(e){res.status(400).send(page('Pulizia non riuscita',`<div class="box"><h2>Nessun'altra modifica eseguita</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
+// V347: pulizia reversibile delle sole simulazioni TEST, mai delle fatture fiscali.
+app.post('/fatturazione/libere/:id/archivia-prova',async(req,res)=>{
+ try {await dpFreeEnsure();const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)throw new Error('ID non valido');
+  const r=await run("UPDATE dp_fatture_libere_bozze SET archiviata_at=CURRENT_TIMESTAMP WHERE id=? AND stato='PROVA' AND serie_fattura='TEST-L' AND archiviata_at IS NULL",[id]);
+  if(!r||r.changes!==1)throw new Error('Non archiviata: non è una simulazione TEST disponibile');
+  res.redirect('/fatturazione/libere');
+ }catch(e){res.status(400).send(page('Archiviazione non riuscita',`<div class="box"><h2>Documento non modificato</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
+app.post('/fatturazione/libere/:id/ripristina-prova',async(req,res)=>{
+ try {await dpFreeEnsure();const id=Number(req.params.id);if(!Number.isSafeInteger(id)||id<1)throw new Error('ID non valido');
+  const r=await run("UPDATE dp_fatture_libere_bozze SET archiviata_at=NULL WHERE id=? AND stato='PROVA' AND serie_fattura='TEST-L' AND archiviata_at IS NOT NULL",[id]);
+  if(!r||r.changes!==1)throw new Error('Non ripristinata: documento non ammesso');
+  res.redirect('/fatturazione/libere?archiviate=1');
+ }catch(e){res.status(400).send(page('Ripristino non riuscito',`<div class="box"><h2>Documento non modificato</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
 app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattura libera',dpFreeFormV326()));});
 app.post('/fatturazione/libere/nuova',async(req,res)=>{
  const b=req.body||{};
@@ -14848,7 +14873,7 @@ app.get('/fatturazione', async(req,res)=>{
   res.send(page('Fatturazione DP',`
   <style>
   .dp-fatt-layout{max-width:1080px;margin:0 auto;padding:10px 0 25px}
-  .dp-fatt-title{padding:26px 30px;border-radius:20px;background:linear-gradient(105deg,#15171b 48%,#ad0808);color:#fff}
+  .dp-fatt-title{padding:26px 30px;border-radius:20px;background:linear-gradient(115deg,#16191e 55%,#b51010);color:#fff}
   .dp-fatt-title h2{font-size:clamp(28px,4vw,42px);margin:0 0 6px;font-weight:900}
   .dp-fatt-title p{margin:0;font-weight:600;color:#ececec;font-size:16px}
   .dp-fatt-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
@@ -14856,7 +14881,10 @@ app.get('/fatturazione', async(req,res)=>{
   .dp-fatt-card:hover{transform:translateY(-2px)}
   .dp-fatt-card.rent{background:linear-gradient(120deg,#ce1515,#9d1010)}
   .dp-fatt-card.trans{background:linear-gradient(120deg,#162e52,#0b1d36)}
-  .dp-fatt-card.free{background:linear-gradient(120deg,#79261b,#b22416)}
+  .dp-fatt-card.free{background:linear-gradient(120deg,#96301e,#c1311b)}
+  .dp-fatt-card:focus-visible,.dp-fatt-folder:focus-visible,.dp-fatt-register:focus-visible{outline:4px solid #ffcf3d;outline-offset:3px}
+  .dp-fatt-card small{line-height:1.5}
+  .dp-fatt-section-note{font-size:14px;font-weight:700;color:#505b6b;margin:20px 0 0}
   .dp-fatt-card .dp-fatt-icon{font-size:32px;flex-shrink:0}
   .dp-fatt-card .dp-fatt-name{display:block;font-size:clamp(18px,2.1vw,25px);font-weight:850;line-height:1.2}
   .dp-fatt-card small{display:block;font-size:13px;font-weight:550;color:#f0f0f0;margin-top:5px}
@@ -14869,14 +14897,16 @@ app.get('/fatturazione', async(req,res)=>{
   @media(max-width:690px){.dp-fatt-grid,.dp-fatt-tools{grid-template-columns:1fr}.dp-fatt-title{padding:22px}.dp-fatt-card{min-height:96px}.dp-fatt-register{min-height:95px}}
   </style>
   <div class="dp-fatt-layout">
-   <header class="dp-fatt-title"><h2>🧾 FATTURAZIONE DP</h2><p>Noleggio · Officina · Trasporti · Vendita mezzi</p></header>
+   <header class="dp-fatt-title"><h2>🧾 FATTURAZIONE DP</h2><p>Un unico punto di accesso per documenti, archivi e controlli</p></header>
+   <p class="dp-fatt-section-note">SCEGLI COSA DEVI FARE</p>
    <section class="dp-fatt-grid" aria-label="Settori fatturazione">
     <a class="dp-fatt-card rent" href="/fatture-da-fare"><span class="dp-fatt-icon">🚙</span><span><span class="dp-fatt-name">Fatture DP RENT</span><small>Serie N · ${rent.tot||0} noleggi da fatturare</small></span></a>
     <a class="dp-fatt-card" href="/service/fatture"><span class="dp-fatt-icon">🔧</span><span><span class="dp-fatt-name">Fatture DP SERVICE</span><small>Serie S · ${serviceCount} fatture registrate</small></span></a>
     <a class="dp-fatt-card trans" href="/trasporti/fatturazione"><span class="dp-fatt-icon">🚛</span><span><span class="dp-fatt-name">Fatture TRASPORTI</span><small>Serie T · ${tr.tot||0} trasporti da fatturare</small></span></a>
     <a class="dp-fatt-card" href="/note-credito"><span class="dp-fatt-icon">↩️</span><span><span class="dp-fatt-name">Note di credito</span><small>Registro rettifiche · Tutti i settori</small></span></a>
-    <a class="dp-fatt-card free" href="/fatturazione/libere"><span class="dp-fatt-icon">🚗</span><span><span class="dp-fatt-name">Fatture libere / Vendita mezzi</span><small>Fatture manuali · Archivio · PDF · XML</small></span></a>
+    <a class="dp-fatt-card free" href="/fatturazione/libere"><span class="dp-fatt-icon">🧾</span><span><span class="dp-fatt-name">Fatture libere</span><small>Qualsiasi bene o servizio · IVA ordinaria o margine · Archivio e PDF</small></span></a>
    </section>
+   <p class="dp-fatt-section-note">REGISTRO E COLLEGAMENTO</p>
    <section class="dp-fatt-tools">
     <a class="dp-fatt-register" href="/fatturazione/invii"><span style="font-size:34px">📤</span><span><strong>Registro fatture elettroniche</strong><small>Tutti i settori · Contatori · Verifica XML · Preparazione invii</small></span></a>
     <a class="dp-fatt-folder" href="/fatturazione/drive-fatel">📁 Cartella XML Fatel</a>
