@@ -15408,7 +15408,12 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
       <a class="btn btn2" href="/fatturazione/xml/anteprima-scarica/${tipo}/${id}">⬇️ Scarica XML aggiornato (solo verifica)</a>
       ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}. Puoi scaricare una versione aggiornata senza esportarla.</p><a class="btn btn2" href="/fatturazione/xml/drive-verifica/${tipo}/${id}">🔎 Verifica file già esportato su Drive</a>`:
-      `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML su Drive</a>`}
+      `<form method="POST" action="/fatturazione/xml/${tipo}/${id}" style="margin-top:14px">
+       <p><b>Destinazione attiva:</b> ${esc(String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase()==='READY'?'FATEL - EFFETTIVA (attenzione!)':'TEST - non importare in FATEL')}</p>
+       <p><label><input type="checkbox" name="conferma_export" value="SI" required> Confermo il deposito su Drive e ho controllato destinatario, importi, numerazione e destinazione.</label></p>
+       ${String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase()==='READY'?'<p style="color:#b42318"><b>ATTENZIONE:</b> documento destinato a FATEL. Non usare per fatture fittizie. Per autorizzare scrivere FATTURA REALE:</p><input name="approvazione_fiscale" required autocomplete="off" placeholder="FATTURA REALE">':''}
+       <button class="btn btn2" type="submit">📤 Conferma esportazione XML su Drive</button>
+       </form>`}
       <a class="btn" href="${back}">Torna alle fatture</a></div>`));
   }catch(e){
     res.status(400).send(page('Controllo XML',`<div class="box">
@@ -15459,7 +15464,16 @@ app.get('/fatturazione/xml/drive-verifica/:tipo/:id([0-9]+)',async(req,res)=>{
  }catch(e){res.status(400).send(page('Drive XML',`<div class="box"><h2>Errore di verifica</h2><p>${esc(e.message)}</p></div>`));}
 });
 
-app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
+// Il deposito e' un'operazione con effetti esterni: mai tramite semplice visita GET.
+app.get('/fatturazione/xml/:tipo/:id([0-9]+)',(req,res)=>res.redirect(303,'/fatturazione/xml/check/'+encodeURIComponent(req.params.tipo)+'/'+encodeURIComponent(req.params.id)));
+app.post('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
+ if(String(req.body?.conferma_export||'')!=='SI')return res.status(400).send(page('Deposito non autorizzato','<div class="box"><h2>Deposito bloccato</h2><p>Conferma esplicita obbligatoria.</p></div>'));
+ const modeRequested=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
+ if(modeRequested==='READY'){
+   if(String(process.env.DP_FATEL_RELEASE_ENABLED||'NO').toUpperCase()!=='YES')return res.status(403).send(page('FATEL bloccato','<div class="box"><h2>Deposito FATEL disattivato</h2><p>Per sicurezza serve DP_FATEL_RELEASE_ENABLED=YES. Non attivare prima di aver messo in sicurezza la fattura di prova 1/S.</p></div>'));
+   if(String(req.body?.approvazione_fiscale||'').trim()!=='FATTURA REALE')return res.status(403).send(page('FATEL bloccato','<div class="box"><h2>Autorizzazione mancante</h2><p>Inserire esattamente FATTURA REALE.</p></div>'));
+ }
+
  try{
   const {f,xml,filename}=await dpMakeInvoiceXmlV314(req.params.tipo,req.params.id);
   await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
