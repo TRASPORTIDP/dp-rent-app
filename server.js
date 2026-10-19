@@ -15066,6 +15066,15 @@ app.post('/scadenzario-incassi/solleciti-massivi',async(req,res)=>{
 setTimeout(()=>dpBackfillMainReceivables().catch(e=>console.log('V311 scadenzario:',e.message)),5000).unref?.();
 
 
+// Correzione instradamento pulsante XML SERVICE.
+// Intercetta i percorsi legacy PRIMA del router /service, che altrimenti
+// potrebbe risolvere i link relativi al proprio prefisso.
+app.get(['/service/__DP_XML_SERVICE__/:id([0-9]+)',
+         '/service/fatturazione/xml/check/service/:id([0-9]+)',
+         '/service/service/fatturazione/xml/check/service/:id([0-9]+)'], (req,res) => {
+  return res.redirect(302, '/fatturazione/xml/check/service/' + encodeURIComponent(req.params.id));
+});
+
 // DP SERVICE - officina integrata nello stesso DP Gestionale
 const dpServiceRouter = require('./dp_service_module');
 app.use('/service', dpServiceRouter);
