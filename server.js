@@ -15395,7 +15395,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
     const xmlType=(xml.match(/<TipoDocumento>([^<]+)<\/TipoDocumento>/)||[])[1]||'';
     if(xmlType!=='TD01') throw new Error('Tipo documento non supportato da questo generatore.');
     // This check is diagnostic, not a full SdI XSD validation.
-    const saved=await get('SELECT file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]).catch(()=>null);
+    const saved=await get('SELECT file_name,file_id FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]).catch(()=>null);
     res.send(page('Anteprima XML',`<div class="box">
       <h2>🔎 Controllo preliminare XML per Fatel</h2>
       <p><b>Cliente:</b> ${esc(f.cliente||'')}</p>
@@ -15407,7 +15407,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p><b>Attenzione:</b> non è ancora una validazione ufficiale XSD/SdI. Verificare
       righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
       <a class="btn btn2" href="/fatturazione/xml/anteprima-scarica/${tipo}/${id}">⬇️ Scarica XML aggiornato (solo verifica)</a>
-      ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}. Puoi scaricare una versione aggiornata senza esportarla.</p>`:
+      ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}. Puoi scaricare una versione aggiornata senza esportarla.</p><a class="btn btn2" href="/fatturazione/xml/drive-verifica/${tipo}/${id}">🔎 Verifica file già esportato su Drive</a>`:
       `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML su Drive</a>`}
       <a class="btn" href="${back}">Torna alle fatture</a></div>`));
   }catch(e){
@@ -15429,6 +15429,34 @@ app.get('/fatturazione/xml/anteprima-scarica/:tipo/:id([0-9]+)',async(req,res)=>
     res.setHeader('Cache-Control','no-store');
     return res.status(200).send(xml);
   }catch(err){return res.status(400).send(page('Anteprima XML non disponibile',`<div class="box"><h2>XML non disponibile</h2><p>${esc(err.message)}</p><a class="btn" href="/fatturazione/invii">Registro fatture</a></div>`));}
+});
+
+// V349: verifica un export già registrato senza produrre altri XML o upload.
+app.get('/fatturazione/xml/drive-verifica/:tipo/:id([0-9]+)',async(req,res)=>{
+ const tipo=String(req.params.tipo||''), id=Number(req.params.id);
+ if(!['noleggio','trasporti','service'].includes(tipo))return res.status(400).send('Settore non supportato');
+ try{
+  const item=await get('SELECT file_id,file_name,exported_at FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]);
+  if(!item)return res.status(404).send(page('Drive XML',`<div class="box"><h2>Nessun export registrato</h2></div>`));
+  const fileId=String(item.file_id||'').trim();
+  const validId=/^[A-Za-z0-9_-]{15,}$/.test(fileId);
+  const direct=validId?'https://drive.google.com/file/d/'+encodeURIComponent(fileId)+'/view':'';
+  let status='Impossibile verificare con le credenziali Drive del server: controllare il file dal link diretto e l’account Google corretto.';
+  try{
+   ensureDriveClientV172();
+   if(validId&&drive){
+    const resp=await drive.files.get({fileId,fields:'id,name,mimeType,parents,webViewLink',supportsAllDrives:true});
+    const d=resp.data||{};
+    status=d.name===item.file_name?'Verificato sul Drive accessibile al server: nome file corrispondente.':'ATTENZIONE: il nome del file su Drive non corrisponde a quello registrato ('+String(d.name||'')+').';
+   }
+  }catch(e){status='Verifica diretta non riuscita: '+String(e.message||e).slice(0,180);}
+  res.send(page('Verifica XML Drive',`<div class="box"><h2>🔎 Verifica XML già esportato</h2>
+   <p><b>Documento:</b> ${esc(item.file_name)}</p><p><b>ID Drive ricevuto:</b> ${esc(fileId||'ASSENTE')}</p>
+   <p><b>Esito:</b> ${esc(status)}</p>
+   ${direct?`<p><a class="btn btn2" href="${esc(direct)}" target="_blank" rel="noopener">Apri file direttamente tramite ID</a></p>`:'<p>⚠️ ID file Drive assente/non valido: non possiamo confermare il deposito.</p>'}
+   <p>Se Google segnala file inesistente o accesso negato, non considerare completato il deposito. Verificare credenziali Apps Script e account Drive; non ripetere l’upload prima della diagnosi.</p>
+   <a class="btn" href="/fatturazione/xml/check/${tipo}/${id}">Torna al controllo XML</a></div>`));
+ }catch(e){res.status(400).send(page('Drive XML',`<div class="box"><h2>Errore di verifica</h2><p>${esc(e.message)}</p></div>`));}
 });
 
 app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
@@ -15455,9 +15483,9 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
      if(!process.env.DRIVE_WEBAPP_URL||!process.env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('Apps Script Drive non configurato per test');
      result=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
    }
-   if(!result)throw new Error('Caricamento Google Drive non confermato');
+   if(!result || !/^[A-Za-z0-9_-]{15,}$/.test(String(result.id||'')))throw new Error('Apps Script non ha restituito un ID file Google Drive valido: il deposito non è verificabile');
    await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[req.params.tipo,f.id,result.id||'',filename]);
-   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Deposito Google Drive: ${esc(mode)} / ${esc(mode==='READY'?'DP FATTURAZIONE XML - FATEL':folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
+   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Deposito Google Drive: ${esc(mode)} / ${esc(mode==='READY'?'DP FATTURAZIONE XML - FATEL':folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p><p><b>ID file Drive:</b> ${esc(result.id)}</p><p>Apps Script ha comunicato la creazione del file. La presenza effettiva va confermata aprendo il collegamento diretto con l'account Google che ha accesso alla cartella.</p><a class="btn" href="https://drive.google.com/file/d/${encodeURIComponent(result.id)}/view" target="_blank" rel="noopener">Apri file tramite ID</a><a class="btn btn2" href="/fatturazione/xml/drive-verifica/${req.params.tipo}/${f.id}">Verifica deposito</a><a class="btn btn2" href="/fatturazione">Torna</a></div>`));
   }finally{try{fs.unlinkSync(tempFile);}catch(_){}}
  }catch(e){res.status(400).send(page('Export XML non riuscito',`<div class="box"><h2>XML non esportato</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione">Torna</a></div>`));}
 });
