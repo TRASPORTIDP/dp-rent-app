@@ -14419,7 +14419,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
    if(x.settore==='libere' && String(x.stato||'').toUpperCase()==='PROVA')return 'Simulazione (non inviabile)';
    if(/ANNULLAT|BOZZA|PROVA/i.test(String(x.stato||'')))return 'Non pronta';
    if(x.settore==='credito')return 'Da verificare TD04';
-   if(x.settore==='service')return 'XML SERVICE da integrare';
+   if(x.settore==='service')return 'Da verificare XML';
    if(x.settore==='libere')return 'XML da validare';
    if(exported.has(x.settore+':'+x.id))return 'XML su Drive';
    if(/INVIATA_FIC/i.test(String(x.stato||'')))return 'Stato esterno da verificare';
@@ -14429,7 +14429,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
   for(const x of filtered){let t=state(x);if(t==='XML su Drive')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta'||t==='Simulazione (non inviabile)')c.nonpronte++;else c.da_verificare++;}
   const visible=filtered.slice(0,300);
   const rows=visible.map(x=>{
-   const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
+   const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML' && x.settore!=='service';
    const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/fatturazione/xml/check/service/${x.id}`:x.settore==='libere'?`/fatturazione/libere/${x.id}/dettaglio`:`/note-credito/${x.id}`;
    return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Simulazione (non inviabile)'||st==='Da verificare TD04'||st==='XML SERVICE da integrare'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='XML su Drive'?'<span style="color:#19744a;font-weight:bold">🟢 XML depositato (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
   }).join('');
@@ -14437,7 +14437,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
     <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
     <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
     <form method="get"><label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option><option value="libere" ${sector==='libere'?'selected':''}>Fatture libere</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
-    <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Le fatture SERVICE sono visibili ma non selezionabili per invio finché non sarà validato il loro XML.</p>
+    <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Le fatture SERVICE sono verificabili singolarmente, ma non selezionabili per preparazione massiva finché non sarà validato il loro XML.</p>
     <button class="btn btn2" type="button" id="inv-all">Seleziona disponibili</button> <button class="btn btn2" type="button" id="inv-clear">Deseleziona</button> <button class="btn" type="button" id="inv-demo">🧪 Simula preparazione massiva (0)</button>
     <p id="inv-msg" role="status" aria-live="polite"></p><a class="btn btn2" href="/fatturazione">Torna a fatturazione</a></div>
     <div class="box" style="overflow-x:auto"><table><tr><th>✓</th><th>Numero</th><th>Settore</th><th>Cliente</th><th>Data</th><th>Totale</th><th>Stato</th><th>Verifica</th></tr>${rows||'<tr><td colspan="8">Nessuna fattura trovata</td></tr>'}</table></div>
@@ -15366,6 +15366,13 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',progressivo)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${azienda}</CedentePrestatore><CessionarioCommittente>${client}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',n)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DettaglioLinee><NumeroLinea>1</NumeroLinea>${dpTagV314('Descrizione',label)}<Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imponibile))}${dpTagV314('PrezzoTotale',dpMoneyV314(imponibile))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee><DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imponibile))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo></DatiBeniServizi>${pagamentoXml}</FatturaElettronicaBody></p:FatturaElettronica>`;
  return {f,xml,filename:`IT${vat}_${progressivo}.xml`};
 }
+
+// Compatibilita' pulsante XML delle fatture SERVICE (modulo officina).
+// La vecchia interfaccia usa /service/__DP_XML_SERVICE__/:id come segnaposto;
+// reindirizza al controllo XML centrale, senza creare/esportare documenti.
+app.get('/service/__DP_XML_SERVICE__/:id([0-9]+)',(req,res)=>{
+  return res.redirect(302,'/fatturazione/xml/check/service/'+encodeURIComponent(req.params.id));
+});
 
 // V320: controllo fiscale di anteprima prima di qualsiasi esportazione XML.
 // Non scrive su database, non carica su Drive, non assegna numerazioni.
