@@ -15255,8 +15255,22 @@ async function dpMakeServiceXmlV337(id){
  const supplier=`<DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdFiscaleIVA><Anagrafica>${dpTagV314('Denominazione',descrizione)}</Anagrafica>${dpTagV314('RegimeFiscale',regime)}</DatiAnagrafici><Sede>${dpTagV314('Indirizzo',ind)}${dpTagV314('CAP',cap)}${dpTagV314('Comune',comune)}${dpTagV314('Provincia',prov)}<Nazione>IT</Nazione></Sede>`;
  const cId=`${/^\d{11}$/.test(cv)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',cv)}</IdFiscaleIVA>`:''}${cf?dpTagV314('CodiceFiscale',cf):''}`;
  const customer=`<DatiAnagrafici>${cId}<Anagrafica>${dpTagV314('Denominazione',cliente.ragione_sociale)}</Anagrafica></DatiAnagrafici><Sede>${dpTagV314('Indirizzo',cind)}${dpTagV314('CAP',ccap)}${dpTagV314('Comune',ccitta)}${dpTagV314('Provincia',cprov)}<Nazione>IT</Nazione></Sede>`;
- // Snapshot di fattura: l'imponibile totale viene riassunto senza cambiare quantità/prezzi dello storico.
- const row=`<DettaglioLinee><NumeroLinea>1</NumeroLinea><Descrizione>Interventi officina e ricambi - fattura ${dpXmlV314(numero)}</Descrizione><Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imp))}${dpTagV314('PrezzoTotale',dpMoneyV314(imp))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee>`;
+ // V355: usa rigorosamente le righe salvate al momento dell'emissione, non l'ordine aggiornabile.
+ // In caso di discrepanze blocca l'XML: mai creare una fattura diversa dal documento registrato.
+ const centsV355=x=>Math.round((Number(x)+Number.EPSILON)*100);
+ let sumCentsV355=0;
+ const detailRowsV355=righe.map((r,index)=>{
+   const desc=dpRequireV314(r.descrizione,'descrizione riga '+(index+1));
+   const qty=Number(r.quantita), price=Number(r.prezzo_unitario), rate=Number(r.iva);
+   if(!Number.isFinite(qty)||qty<=0||!Number.isFinite(price)||price<0||rate!==aliquota)
+     throw new Error('Riga SERVICE '+(index+1)+' con quantita, prezzo o IVA non validi');
+   const lineCents=centsV355(qty*price);
+   if(lineCents<0||!Number.isSafeInteger(lineCents))throw new Error('Importo riga SERVICE non valido');
+   sumCentsV355+=lineCents;
+   return `<DettaglioLinee>${dpTagV314('NumeroLinea',index+1)}${dpTagV314('Descrizione',desc.slice(0,1000))}${dpTagV314('Quantita',qty.toFixed(2))}${dpTagV314('PrezzoUnitario',price.toFixed(2))}${dpTagV314('PrezzoTotale',(lineCents/100).toFixed(2))}${dpTagV314('AliquotaIVA',dpMoneyV314(rate))}</DettaglioLinee>`;
+ });
+ if(sumCentsV355!==centsV355(imp))throw new Error('Le righe SERVICE non coincidono con l’imponibile della fattura: XML bloccato');
+ const row=detailRowsV355.join('');
  const summary=`<DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imp))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo>`;
  let payment='';
  if(/^(BO|BON)/i.test(dpValV314(f.codice_pagamento))||/bonifico/i.test(dpValV314(f.pagamento_descrizione))){
@@ -15361,6 +15375,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
     const xmlType=(xml.match(/<TipoDocumento>([^<]+)<\/TipoDocumento>/)||[])[1]||'';
     if(xmlType!=='TD01') throw new Error('Tipo documento non supportato da questo generatore.');
     // This check is diagnostic, not a full SdI XSD validation.
+    const recipientFallback=xml.includes('<CodiceDestinatario>0000000</CodiceDestinatario>')&&!xml.includes('<PECDestinatario>');
     const saved=await get('SELECT file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]).catch(()=>null);
     res.send(page('Anteprima XML',`<div class="box">
       <h2>🔎 Controllo preliminare XML per Fatel</h2>
@@ -15369,6 +15384,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p><b>Tipo documento:</b> ${esc(xmlType)} — Fattura ordinaria</p>
       <p><b>File previsto:</b> ${esc(filename)}</p>
       <p>✅ Controlli anagrafici e aritmetici di base superati.</p>
+      ${recipientFallback?'<p><b>⚠️ Destinatario XML:</b> codice 0000000 e nessuna PEC nel file. Verificare il recapito telematico scelto dal cliente prima di usare fiscalmente il documento.</p>':''}
       <p><b>Pagamento XML:</b> ${xml.includes('<DatiPagamento>')?'Bonifico (MP05), IBAN presente, importo totale':'Non indicato: metodo non riconosciuto; controllare la fattura'}.</p>
       <p><b>Attenzione:</b> non è ancora una validazione ufficiale XSD/SdI. Verificare
       righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
