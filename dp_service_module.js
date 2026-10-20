@@ -1421,7 +1421,7 @@ router.get('/fatture', async (req,res)=>{
   const rows=await all(`SELECT f.*,o.numero odl,v.targa,c.ragione_sociale FROM fatture_service f
     LEFT JOIN ordini_lavoro o ON o.id=f.ordine_id LEFT JOIN veicoli v ON v.id=o.veicolo_id LEFT JOIN clienti c ON c.id=o.cliente_id
     ORDER BY f.id DESC LIMIT 500`);
-  const safeRows=rows.map(x=>`<tr><td><b>${esc(x.numero)}/S</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><div class="actions"><a class="btn" href="/fatture/${x.id}">APRI</a><a class="btn dark" target="_blank" href="/fatture/${x.id}.pdf">PDF</a><a class="btn dark" href="/fatture/${x.id}/xml-verifica">XML (verifica)</a></div></td></tr>`).join('');
+  const safeRows=rows.map(x=>`<tr><td><b>${esc(x.numero)}/S</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><div class="actions"><a class="btn" href="/fatture/${x.id}">APRI</a><a class="btn dark" target="_blank" href="/fatture/${x.id}.pdf">PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${x.id}">XML (verifica)</a></div></td></tr>`).join('');
   res.send(page('Fatture serie S',`<div class="box"><h1>💶 Fatture DP SERVICE — Serie S</h1><p>Archivio officina, con numerazione distinta. L'XML è per controllo preliminare, non costituisce invio a Fatel o SdI.</p><div class="actions"><a class="btn dark" href="/__DP_MAIN__">🏠 Menu gestionale</a></div><div style="overflow-x:auto"><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th>Azioni</th></tr>${safeRows||'<tr><td colspan="6">Nessuna fattura SERVICE</td></tr>'}</table></div></div>`));
 });
 
@@ -1431,34 +1431,13 @@ router.get('/fatture/:id([0-9]+)', async (req,res)=>{
   const ph=dpPhone(d.o.telefono); const pdfUrl=dpServiceUrl(req,`/fatture/${f.id}.pdf`);
   const scad=dpServiceSchedule(f.codice_pagamento||f.pagamento,f.data,f.totale);
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo la fattura DP SERVICE n. ${f.numero}/S per la vettura ${d.o.targa||''}. Totale ${dpEuro(f.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatture/${f.id}/xml-verifica">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${f.id}">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
 });
 
 
 
-// V351: percorso XML SERVICE reale. Verifica i dati, NON crea né invia XML fiscali.
-// Il precedente segnaposto __DP_XML_SERVICE__ produceva errore Cannot GET.
-router.get('/fatture/:id([0-9]+)/xml-verifica', async (req,res)=>{
-  try {
-    const f=await get('SELECT * FROM fatture_service WHERE id=?',[req.params.id]);
-    if(!f) return res.status(404).send(page('Fattura non trovata','<div class="box"><h2>Fattura SERVICE non trovata</h2><a class="btn" href="/fatture">Torna alle fatture</a></div>'));
-    const d=await dpServiceDocData(f.ordine_id);
-    if(!d) return res.status(404).send(page('Ordine non trovato','<div class="box"><h2>Ordine associato non trovato</h2><a class="btn" href="/fatture">Torna alle fatture</a></div>'));
-    const errors=[];
-    if(!d.o.ragione_sociale) errors.push('Ragione sociale cliente assente');
-    if(!/^\d{11}$/.test(String(d.o.piva||'').replace(/^IT/i,'').trim()) && !/^[A-Z0-9]{11,16}$/.test(String(d.o.cf||'').trim().toUpperCase())) errors.push('P.IVA / codice fiscale cliente mancante o non valido');
-    if(!d.o.indirizzo || !d.o.citta) errors.push('Indirizzo o comune cliente assente');
-    if(!/^\d{11}$/.test(String(process.env.DP_XML_PIVA||'').replace(/^IT/i,'').trim())) errors.push('DP_XML_PIVA emittente mancante o non valida');
-    for(const k of ['DP_XML_RAGIONE_SOCIALE','DP_XML_INDIRIZZO','DP_XML_CAP','DP_XML_COMUNE','DP_XML_PROVINCIA']) if(!String(process.env[k]||'').trim()) errors.push('Configurazione emittente '+k+' assente');
-    const imp=Number(f.imponibile),iva=Number(f.iva),tot=Number(f.totale);
-    if(![imp,iva,tot].every(Number.isFinite)||imp<0||iva<0||Math.abs(imp+iva-tot)>.02) errors.push('Imponibile, IVA e totale non coerenti');
-    if(!(imp>0)) errors.push('Imponibile non positivo');
-    const vals=[['Numero fattura',String(f.numero)+'/S'],['Data',dpItDate(f.data)],['Cliente',d.o.ragione_sociale||'—'],['Partita IVA',d.o.piva||'—'],['Codice fiscale',d.o.cf||'—'],['Imponibile',dpEuro(f.imponibile)],['IVA',dpEuro(f.iva)],['Totale',dpEuro(f.totale)]];
-    const rows=vals.map(([k,v])=>`<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
-    const status=errors.length?'<h2 style="color:#ae1717">⚠️ Dati da completare</h2>':'<h2 style="color:#1c733b">✅ Controlli preliminari superati</h2>';
-    res.send(page('Verifica XML SERVICE',`<div class="box"><h1>🔎 Verifica XML DP SERVICE — ${esc(f.numero)}/S</h1>${status}<p><b>Attenzione:</b> questo controllo non genera un XML FatturaPA e non invia nulla a Google Drive, Fatel o SdI. La generazione XML SERVICE deve ancora essere collegata e verificata con tracciato XSD.</p>${errors.length?`<h3>Problemi rilevati</h3><ul>${errors.map(e=>`<li>${esc(e)}</li>`).join('')}</ul>`:''}<table>${rows}</table><div class="actions"><a class="btn" href="/fatture/${f.id}">Torna alla fattura</a><a class="btn dark" href="/fatture">Archivio SERVICE</a></div></div>`));
-  }catch(e){res.status(500).send(page('Verifica XML SERVICE',`<div class="box"><h2>Errore di verifica</h2><p>${esc(e.message)}</p><a class="btn" href="/fatture">Torna alle fatture</a></div>`));}
-});
+// V353: redirect legacy to actual central SERVICE FatturaPA check.
+router.get('/fatture/:id([0-9]+)/xml-verifica', (req,res)=>res.redirect(302,'/fatturazione/xml/check/service/'+req.params.id));
 
 router.post('/fatture/:id/email', async (req,res)=>{
   try{
