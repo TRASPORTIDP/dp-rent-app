@@ -1003,6 +1003,10 @@ router.post('/ordini/:id/elimina-v349',async(req,res)=>{
   try{
     if(!Number.isSafeInteger(id)||id<1||String(req.body.conferma||'')!==`ELIMINA ${id}`)
       throw new Error('Conferma non valida');
+    const target=await get('SELECT id FROM ordini_lavoro WHERE id=?',[id]);
+    if(!target)throw new Error('Ordine non trovato: potrebbe essere già stato eliminato');
+    const invoice=await get('SELECT id FROM fatture_service WHERE ordine_id=? LIMIT 1',[id]);
+    if(invoice)throw new Error('Questo ordine ha una fattura collegata: eliminazione bloccata');
     const backup=await dpServiceBackupBeforeDeleteV349();
     await dpServiceRemoveOrdersV349([id]);
     res.send(page('Ordine eliminato',`<div class="box"><h2>✅ Ordine eliminato</h2><p>Backup: ${esc(path.basename(backup))}</p><a class="btn" href="/ordini">Torna agli ordini</a></div>`));
@@ -1032,7 +1036,7 @@ router.get('/ordini', async (req,res)=>{
 
   const tabella=(arr)=>`
     <table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Veicolo</th><th>Km</th><th>Stato</th><th>Totale</th><th></th></tr>
-    ${arr.length ? arr.map(o=>`<tr><td><b>ODL ${o.numero||o.id}</b></td><td>${esc(o.data_apertura)}</td><td>${esc(o.ragione_sociale)}</td><td><b>${esc(o.targa)}</b><br>${esc(o.marca)} ${esc(o.modello)}</td><td>${o.km_ingresso||0}</td><td><b>${esc(o.stato)}</b></td><td>€ ${(Number(o.totale)||0).toFixed(2)}</td><td><a class="btn dark" href="/ordini/${o.id}">Apri</a></td></tr>`).join('') : `<tr><td colspan="8">Nessun ordine</td></tr>`}
+    ${arr.length ? arr.map(o=>`<tr><td><b>ODL ${o.numero||o.id}</b></td><td>${esc(o.data_apertura)}</td><td>${esc(o.ragione_sociale)}</td><td><b>${esc(o.targa)}</b><br>${esc(o.marca)} ${esc(o.modello)}</td><td>${o.km_ingresso||0}</td><td><b>${esc(o.stato)}</b></td><td>€ ${(Number(o.totale)||0).toFixed(2)}</td><td style="white-space:nowrap"><a class="btn dark" href="/ordini/${o.id}">Apri</a> <form method="post" action="/ordini/${o.id}/elimina-v349" style="display:inline" onsubmit="return confirm('Vuoi eliminare SOLO l’ordine ODL ${o.numero||o.id}/${o.anno}? Questa operazione elimina anche righe e preventivi collegati, ma non clienti e veicoli. Non si può annullare dalla schermata.');"><input type="hidden" name="conferma" value="ELIMINA ${o.id}"><button type="submit" class="btn" style="background:#b91c1c;color:#fff">Elimina</button></form></td></tr>`).join('') : `<tr><td colspan="8">Nessun ordine</td></tr>`}
     </table>`;
 
   res.send(page('Ordini di lavoro',`
@@ -1049,13 +1053,7 @@ router.get('/ordini', async (req,res)=>{
     </div>
     <div class="box"><h2>🔧 IN LAVORAZIONE (${aperti.length})</h2>${tabella(aperti)}</div>
     <div class="box" id="chiusi"><h2>✅ PRONTI / CHIUSI (${chiusi.length})</h2>${tabella(chiusi)}</div>
-    <div class="box" style="border:2px solid #a11"><h2>🗑️ Pulizia ordini di lavoro</h2>
-      <p>Elimina tutti gli ODL presenti, comprese le righe e i preventivi collegati. Non elimina clienti, veicoli e ricambi. Se ci sono fatture SERVICE l'operazione viene bloccata. Prima viene creato un backup SQLite.</p>
-      <form method="post" action="/ordini/elimina-tutti-v349" onsubmit="return confirm('Confermi la cancellazione di TUTTI gli ordini di lavoro?')">
-      <label>Scrivi ELIMINA TUTTI GLI ORDINI per confermare</label>
-      <input name="conferma" required autocomplete="off" placeholder="ELIMINA TUTTI GLI ORDINI">
-      <button class="btn" style="background:#a11;color:white">Elimina tutti gli ordini</button></form>
-    </div>
+
   `));
 });
 
