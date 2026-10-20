@@ -931,7 +931,7 @@ router.get('/veicoli/:id', async (req,res)=>{
     </div>
     <div class="box"><h2>🧾 Storico interventi</h2>
       <table><tr><th>N.</th><th>Data</th><th>Km</th><th>Lavoro</th><th>Stato</th><th>Totale</th><th></th></tr>
-      ${(await all('SELECT * FROM ordini_lavoro WHERE veicolo_id=? ORDER BY id DESC',[v.id])).map(o=>`<tr><td>${o.numero||o.id}/S</td><td>${esc(o.data_apertura)}</td><td>${o.km_ingresso||0}</td><td>${esc(o.descrizione_lavoro)}</td><td>${esc(o.stato)}</td><td>€ ${(Number(o.totale_ivato)||0).toFixed(2)}</td><td><a class="btn dark" href="/ordini/${o.id}">Apri</a></td></tr>`).join('')}
+      ${(await all('SELECT * FROM ordini_lavoro WHERE veicolo_id=? ORDER BY id DESC',[v.id])).map(o=>`<tr><td>${o.numero||o.id}/S</td><td>${esc(o.data_apertura)}</td><td>${o.km_ingresso||0}</td><td>${esc(o.descrizione_lavoro)}</td><td>${esc(o.stato)}</td><td>€ ${(Number(o.totale_ivato)||0).toFixed(2)}</td><td><a class="btn dark" href="/ordini/${o.id}">Apri</a> <form method="post" action="/ordini/${o.id}/elimina-v349" style="display:inline" onsubmit="return confirm('Eliminare definitivamente ODL ${o.numero}/${o.anno}?')"><input type="hidden" name="conferma" value="ELIMINA ${o.id}"><button class="btn" style="background:#a11;color:white">Elimina</button></form></td></tr>`).join('')}
       </table>
     </div>`));
 });
@@ -956,6 +956,58 @@ router.post('/veicoli/:id/modifica', async (req,res)=>{
   res.redirect('/veicoli/'+req.params.id);
 });
 
+
+
+// V349 - Pulizia ODL sicura; non modifica clienti, veicoli e listino.
+async function dpServiceBackupBeforeDeleteV349(){
+  const stamp=new Date().toISOString().replace(/[-:TZ.]/g,'').slice(0,14);
+  const suffix=crypto.randomBytes(3).toString('hex');
+  const file=path.join(dataDir,`backup_dp_service_prima_eliminazione_odl_${stamp}_${suffix}.sqlite`);
+  // SQLite crea uno snapshot consistente; una copia filesystem del DB attivo non è affidabile.
+  await run('VACUUM INTO ?', [file]);
+  return file;
+}
+async function dpServiceRemoveOrdersV349(ids){
+  await run('BEGIN IMMEDIATE');
+  try{
+    for(const id of ids){
+      const fatt=await get('SELECT id FROM fatture_service WHERE ordine_id=? LIMIT 1',[id]);
+      if(fatt) throw new Error('Ordine '+id+' collegato a una fattura: cancellazione bloccata');
+      const odl=await get('SELECT id FROM ordini_lavoro WHERE id=?',[id]);
+      if(!odl) throw new Error('Ordine '+id+' non trovato');
+    }
+    for(const id of ids){
+      await run('DELETE FROM righe_lavoro WHERE ordine_id=?',[id]);
+      await run('DELETE FROM preventivi_service WHERE ordine_id=?',[id]);
+      await run('DELETE FROM service_alerts WHERE ordine_id=?',[id]);
+      await run('UPDATE richieste_service SET ordine_id=NULL WHERE ordine_id=?',[id]);
+      await run('DELETE FROM ordini_lavoro WHERE id=?',[id]);
+    }
+    await run('COMMIT');
+  }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
+}
+router.post('/ordini/elimina-tutti-v349',async(req,res)=>{
+  try{
+    if(String(req.body.conferma||'').trim()!=='ELIMINA TUTTI GLI ORDINI')
+      return res.status(400).send(page('Pulizia ODL',`<div class="box"><h2>Conferma non valida</h2><a class="btn" href="/ordini">Torna</a></div>`));
+    const ids=(await all('SELECT id FROM ordini_lavoro ORDER BY id')).map(x=>x.id);
+    const n=await get('SELECT COUNT(*) n FROM fatture_service');
+    if(n.n) throw new Error('Ci sono '+n.n+' fatture SERVICE. Per sicurezza la pulizia totale è bloccata.');
+    const backup=await dpServiceBackupBeforeDeleteV349();
+    if(ids.length)await dpServiceRemoveOrdersV349(ids);
+    res.send(page('Pulizia ordini completata',`<div class="box"><h2>✅ Eliminati ${ids.length} ordini di lavoro</h2><p>Backup creato: ${esc(path.basename(backup))}</p><p>Clienti, veicoli e ricambi non cancellati.</p><a class="btn" href="/ordini">Torna agli ordini</a></div>`));
+  }catch(e){res.status(400).send(page('Pulizia bloccata',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/ordini">Torna</a></div>`));}
+});
+router.post('/ordini/:id/elimina-v349',async(req,res)=>{
+  const id=Number(req.params.id);
+  try{
+    if(!Number.isSafeInteger(id)||id<1||String(req.body.conferma||'')!==`ELIMINA ${id}`)
+      throw new Error('Conferma non valida');
+    const backup=await dpServiceBackupBeforeDeleteV349();
+    await dpServiceRemoveOrdersV349([id]);
+    res.send(page('Ordine eliminato',`<div class="box"><h2>✅ Ordine eliminato</h2><p>Backup: ${esc(path.basename(backup))}</p><a class="btn" href="/ordini">Torna agli ordini</a></div>`));
+  }catch(e){res.status(400).send(page('Eliminazione bloccata',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/ordini">Torna</a></div>`));}
+});
 
 router.get('/ordini', async (req,res)=>{
   const q=(req.query.q||'').trim();
@@ -997,6 +1049,13 @@ router.get('/ordini', async (req,res)=>{
     </div>
     <div class="box"><h2>🔧 IN LAVORAZIONE (${aperti.length})</h2>${tabella(aperti)}</div>
     <div class="box" id="chiusi"><h2>✅ PRONTI / CHIUSI (${chiusi.length})</h2>${tabella(chiusi)}</div>
+    <div class="box" style="border:2px solid #a11"><h2>🗑️ Pulizia ordini di lavoro</h2>
+      <p>Elimina tutti gli ODL presenti, comprese le righe e i preventivi collegati. Non elimina clienti, veicoli e ricambi. Se ci sono fatture SERVICE l'operazione viene bloccata. Prima viene creato un backup SQLite.</p>
+      <form method="post" action="/ordini/elimina-tutti-v349" onsubmit="return confirm('Confermi la cancellazione di TUTTI gli ordini di lavoro?')">
+      <label>Scrivi ELIMINA TUTTI GLI ORDINI per confermare</label>
+      <input name="conferma" required autocomplete="off" placeholder="ELIMINA TUTTI GLI ORDINI">
+      <button class="btn" style="background:#a11;color:white">Elimina tutti gli ordini</button></form>
+    </div>
   `));
 });
 
@@ -1104,7 +1163,9 @@ router.get('/ordini/:id', async (req,res)=>{
   const phone = wa.startsWith('39') ? wa : (wa ? '39'+wa : '');
   const text=encodeURIComponent(`Buongiorno ${o.ragione_sociale||''}, la sua vettura ${o.marca||''} ${o.modello||''} targa ${o.targa||''} è pronta per il ritiro presso DP SERVICE. Grazie.`);
   res.send(page(`ODL ${o.numero}/${o.anno}`,`
-    <div class="actions"><a class="btn dark" href="/ordini">Indietro</a><a class="btn" href="/veicoli/${o.veicolo_id}">Apri veicolo</a></div>
+    <div class="actions"><a class="btn dark" href="/ordini">Indietro</a><a class="btn" href="/veicoli/${o.veicolo_id}">Apri veicolo</a>
+    <form method="post" action="/ordini/${o.id}/elimina-v349" onsubmit="return confirm('Eliminare definitivamente questo ordine di lavoro?')">
+      <input type="hidden" name="conferma" value="ELIMINA ${o.id}"><button class="btn" style="background:#a11;color:white">🗑️ Elimina ordine</button></form></div>
     <div class="box">
       <h1>🧾 Ordine di lavoro ${o.numero}/${o.anno}</h1>
       <p><b>${esc(o.ragione_sociale)}</b><br>🚗 <b>${esc(o.targa)}</b> — ${esc(o.marca)} ${esc(o.modello)} ${esc(o.versione)}</p>
