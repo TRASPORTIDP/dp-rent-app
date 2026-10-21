@@ -12995,7 +12995,7 @@ app.get('/trasporti/ordine/:id',async(req,res)=>{
        <div><label>Data carico reale</label><input type="date" name="data_carico" value="${esc(o.data_carico||'')}"></div>
        <div><label>Data scarico reale</label><input type="date" name="data_scarico" value="${esc(o.data_scarico||'')}"></div>
        <div><label>Data consegna reale</label><input type="date" name="data_consegna" value="${esc(o.data_consegna||'')}"></div>
-       <div><label>Targa bisarca</label><select id="dp_bisarca_select" onchange="document.getElementById('dp_bisarca_custom').value=this.value==='__ALTRO__'?'':this.value; document.getElementById('dp_bisarca_custom').focus()"><option value="">Scegli bisarca o inserisci manualmente</option>${bisarcheScelta.map(b=>`<option value="${esc(b.targa||'')}" ${String(o.targa_bisarca||'')===String(b.targa||'')?'selected':''}>${esc(b.nome||b.targa)} — ${esc(b.targa||'')}</option>`).join('')}<option value="__ALTRO__">Inserimento manuale</option></select><input id="dp_bisarca_custom" name="targa_bisarca" value="${esc(o.targa_bisarca||'')}" placeholder="Targa effettiva, anche mezzo esterno"></div>
+       <div><label>Targa bisarca</label><select id="dp_bisarca_select" onchange="document.getElementById('dp_bisarca_custom').value=this.value==='__ALTRO__'?'':this.value; document.getElementById('dp_bisarca_custom').focus()"><option value="">Scegli bisarca o inserisci manualmente</option>${bisarcheScelta.map(b=>`<option value="${esc(b.targa||'')}" ${String(o.targa_bisarca||'')===String(b.targa||'')?'selected':''}>${esc((String(b.nome||'').trim().toUpperCase()===String(b.targa||'').trim().toUpperCase())?b.targa:(b.nome||b.targa)+' — '+b.targa)}</option>`).join('')}<option value="__ALTRO__">Inserimento manuale</option></select><input id="dp_bisarca_custom" name="targa_bisarca" value="${esc(o.targa_bisarca||'')}" placeholder="Targa effettiva, anche mezzo esterno"></div>
      </div>
      <label>Note interne DP</label><textarea name="note_interne">${esc(o.note_interne||'')}</textarea>
      <label>Note visibili al cliente</label><textarea name="note_cliente">${esc(o.note_cliente||o.note||'')}</textarea>
@@ -13768,12 +13768,20 @@ async function dpTCreateInvoiceFromIds(ids,{data_fattura,serie='T',numero,pagame
   const rows=await all(`SELECT * FROM trasporti_ordini WHERE id IN (${qs}) ORDER BY id`,ids);
   if(rows.length!==ids.length) throw new Error('Uno o più ordini non sono stati trovati.');
   if(rows.some(o=>String(o.num_fattura||'').trim() && String(o.num_fattura||'').trim()!=='0')) throw new Error('Uno degli ordini risulta già fatturato o già inserito in una fattura.');
+  // V360.2: fail closed; do not create fiscal draft from missing/invalid transport amounts.
+  for(const o of rows){
+    const price=Number(o.prezzo), vat=Number(o.iva ?? 22);
+    if(!Number.isFinite(price)||price<=0)throw new Error(`Ordine ${o.id}: prezzo trasporto mancante o pari a zero. Correggere il prezzo nell'ordine prima di fatturare.`);
+    if(!Number.isFinite(vat)||![0,4,5,10,22].includes(vat))throw new Error(`Ordine ${o.id}: aliquota IVA non valida.`);
+    if(vat===0)throw new Error(`Ordine ${o.id}: IVA zero richiede natura fiscale dedicata; fatturazione sospesa.`);
+  }
   const clienti=[...new Set(rows.map(o=>dpTClean(o.cliente).toUpperCase()))];
   if(clienti.length!==1) throw new Error('Una fattura può contenere solo ordini dello stesso cliente.');
   if(!immediata && rows.some(o=>!['CONSEGNATO','DA_FATTURARE'].includes(String(o.stato||'')))) throw new Error('Per la fatturazione normale puoi selezionare solo trasporti consegnati.');
   const data=data_fattura||new Date().toISOString().slice(0,10);
   const anno=Number(String(data).slice(0,4))||new Date().getFullYear();
   serie=dpTClean(serie||'T').toUpperCase()||'T';
+  if(numero!==undefined && numero!==null && String(numero).trim()!=='' && (!Number.isSafeInteger(Number(numero)) || Number(numero)<1))throw new Error('Numero fattura non valido');
   numero=Number(numero)||await dpTNextInvoiceNumber(anno,serie);
   const display=dpTFattNumero(numero,serie);
   const cli=await get(`SELECT * FROM trasporti_clienti WHERE UPPER(TRIM(ragione_sociale))=UPPER(TRIM(?)) LIMIT 1`,[rows[0].cliente]).catch(()=>null);
@@ -13816,8 +13824,8 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
   const gruppi={};for(const o of rows){const k=dpTClean(o.cliente)||'SENZA CLIENTE';(gruppi[k]||(gruppi[k]=[])).push(o);}
   const clientBoxes=Object.entries(gruppi).map(([cliente,os],idx)=>{
     const impon=os.reduce((a,o)=>a+Number(o.prezzo||0),0),iva=os.reduce((a,o)=>a+Number(o.prezzo||0)*Number(o.iva||22)/100,0);
-    const trs=os.map(o=>`<tr><td><input type="checkbox" name="ids" value="${o.id}" checked></td><td><a href="/trasporti/ordine/${o.id}"><b>${esc(o.modello)}</b><br>${esc(o.targa_telaio)}</a></td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>${esc(o.targa_bisarca||'')}<br><small>${esc(o.automezzo||'')}</small></td><td>${esc(dpTItDate(o.data_carico||''))}</td><td>${esc(dpTItDate(o.data_scarico||o.data_consegna||''))}</td><td>${esc(o.num_bolla||'')} ${o.data_bolla?'<br><small>'+esc(dpTItDate(o.data_bolla))+'</small>':''}</td><td>${esc(o.note_interne||'')}</td><td>${esc(o.note_cliente||o.note||'')}</td><td>€ ${euro(o.prezzo||0)}</td><td>${esc(String(o.iva||22))}%</td></tr>`).join('');
-    return `<form method="POST" action="/trasporti/fattura/crea"><div class="box" style="overflow:auto;border:2px solid #ddd"><h2>👤 ${esc(cliente)}</h2><p><b>${os.length} auto</b> • Imponibile € ${euro(impon)} • IVA € ${euro(iva)} • Totale € ${euro(impon+iva)}</p><table><tr><th>✓</th><th>Auto</th><th>Tratta</th><th>Bisarca</th><th>Carico</th><th>Scarico</th><th>DDT</th><th>Note interne</th><th>Note cliente</th><th>Imponibile</th><th>IVA</th></tr>${trs}</table><div class="grid" style="margin-top:12px"><div><label>Numero</label><input name="numero" type="number" min="1" value="${next+idx}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data fattura</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div><div><label>Pagamento</label>${dpTPaymentField(clientPayMap[dpTClean(cliente).toUpperCase()]||'BOIMM')}</div></div><label>Note fattura</label><textarea name="note"></textarea><button>CREA FATTURA PER ${esc(cliente)}</button></div></form>`;
+    const trs=os.map(o=>`<tr><td><input type="checkbox" name="ids" value="${o.id}" ${Number(o.prezzo)>0?'checked':'disabled title="Prezzo mancante: correggere ordine"'}></td><td><a href="/trasporti/ordine/${o.id}"><b>${esc(o.modello)}</b><br>${esc(o.targa_telaio)}</a></td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>${esc(o.targa_bisarca||'')}<br><small>${esc(o.automezzo||'')}</small></td><td>${esc(dpTItDate(o.data_carico||''))}</td><td>${esc(dpTItDate(o.data_scarico||o.data_consegna||''))}</td><td>${esc(o.num_bolla||'')} ${o.data_bolla?'<br><small>'+esc(dpTItDate(o.data_bolla))+'</small>':''}</td><td>${esc(o.note_interne||'')}</td><td>${esc(o.note_cliente||o.note||'')}</td><td>€ ${euro(o.prezzo||0)}${Number(o.prezzo)>0?'':'<br><strong style="color:#a00">PREZZO MANCANTE</strong>'}</td><td>${esc(String(o.iva??22))}%</td></tr>`).join('');
+    return `<form method="POST" action="/trasporti/fattura/crea"><div class="box" style="overflow:auto;border:2px solid #ddd"><h2>👤 ${esc(cliente)}</h2><p><b>${os.length} auto</b> • Imponibile € ${euro(impon)} • IVA € ${euro(iva)} • Totale € ${euro(impon+iva)}</p><table><tr><th>✓</th><th>Auto</th><th>Tratta</th><th>Bisarca</th><th>Carico</th><th>Scarico</th><th>DDT</th><th>Note interne</th><th>Note cliente</th><th>Imponibile</th><th>IVA</th></tr>${trs}</table>${os.some(o=>!(Number(o.prezzo)>0))?'<p style="color:#a00;font-weight:bold">Ordini a prezzo zero esclusi dalla selezione: correggere il prezzo prima di fatturare.</p>':''}<div class="grid" style="margin-top:12px"><div><label>Numero</label><input name="numero" type="number" min="1" value="${next+idx}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data fattura</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div><div><label>Pagamento</label>${dpTPaymentField(clientPayMap[dpTClean(cliente).toUpperCase()]||'BOIMM')}</div></div><label>Note fattura</label><textarea name="note"></textarea><button>CREA FATTURA PER ${esc(cliente)}</button></div></form>`;
   }).join('')||'<div class="box"><h3>Nessun trasporto da fatturare.</h3></div>';
   const histImm=history.filter(f=>String(f.tipo||'ORDINARIA').toUpperCase()==='IMMEDIATA');
   const histOrd=history.filter(f=>String(f.tipo||'ORDINARIA').toUpperCase()!=='IMMEDIATA');
@@ -13943,11 +13951,15 @@ app.post('/trasporti/fattura/:id/modifica',async(req,res)=>{
    let imponibile=0,ivaTot=0;
    for(const id of ids){
      const prezzo=Number(req.body[`prezzo_${id}`]||0), aliquota=Number(req.body[`iva_${id}`]||22);
+     if(!Number.isFinite(prezzo)||prezzo<=0)throw new Error(`Ordine ${id}: imponibile mancante o non positivo`);
+     if(![4,5,10,22].includes(aliquota))throw new Error(`Ordine ${id}: aliquota IVA non supportata`);
      imponibile+=prezzo;ivaTot+=prezzo*aliquota/100;
      await run(`UPDATE trasporti_ordini SET num_bolla=?,data_bolla=?,modello=?,targa_telaio=?,citta_carico=?,citta_scarico=?,prezzo=?,iva=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
        [dpTClean(req.body[`num_bolla_${id}`]),req.body[`data_bolla_${id}`]||'',dpTClean(req.body[`modello_${id}`]),dpTClean(req.body[`targa_${id}`]),dpTClean(req.body[`carico_${id}`]),dpTClean(req.body[`scarico_${id}`]),prezzo,aliquota,id]);
    }
+   if(!ids.length || imponibile<=0 || !Number.isFinite(imponibile)||!Number.isFinite(ivaTot))throw new Error('Righe fattura mancanti o importi non validi. Nessuna modifica salvata.');
    const numero=Number(req.body.numero||f.numero),serie=dpTClean(req.body.serie||'T').toUpperCase(),display=dpTFattNumero(numero,serie);
+   if(!Number.isSafeInteger(numero)||numero<1)throw new Error('Numero fattura non valido');
    await run(`UPDATE trasporti_fatture SET numero=?,serie=?,numero_display=?,data_fattura=?,cliente=?,imponibile=?,iva=?,totale=?,pagamento=?,note=?,tipo=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
      [numero,serie,display,req.body.data_fattura||f.data_fattura,dpTClean(req.body.cliente),imponibile,ivaTot,imponibile+ivaTot,dpTClean(req.body.pagamento)||'Bonifico vista fattura',dpTClean(req.body.note),String(req.body.tipo||f.tipo||'ORDINARIA').toUpperCase()==='IMMEDIATA'?'IMMEDIATA':'ORDINARIA',f.id]);
    await run(`UPDATE trasporti_ordini SET num_fattura=?,data_fattura=? WHERE id IN (SELECT ordine_id FROM trasporti_fattura_ordini WHERE fattura_id=?)`,[display,req.body.data_fattura||f.data_fattura,f.id]);
@@ -15505,11 +15517,21 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const n=dpRequireV314(f.numero_display||f.numero,'numero fattura');
  const data=dpDateV314(f.data_fattura);
  // Prezzi aggregati: una riga riepilogativa; con aliquote diverse serve modello righe dedicato.
- const label=tipo==='noleggio'?'Servizi di noleggio':'Servizi di trasporto';
+ let label=tipo==='noleggio'?'Servizi di noleggio':'Servizi di trasporto';
+ if(tipo==='trasporti'){
+   const details=await all(`SELECT o.* FROM trasporti_fattura_ordini fo JOIN trasporti_ordini o ON o.id=fo.ordine_id WHERE fo.fattura_id=? ORDER BY fo.posizione,o.id`,[id]);
+   if(!details.length)throw new Error('Fattura TRASPORTI senza ordini collegati: XML bloccato');
+   const net=details.reduce((x,o)=>x+Number(o.prezzo||0),0);
+   const tax=details.reduce((x,o)=>x+Number(o.prezzo||0)*Number(o.iva??22)/100,0);
+   if(Math.abs(net-imponibile)>.02||Math.abs(tax-iva)>.02)throw new Error('Importi ordine e fattura non allineati: verificare/modificare la fattura prima dell’XML');
+   if(details.some(o=>!(Number(o.prezzo)>0)))throw new Error('Ordine con prezzo mancante nella fattura: XML bloccato');
+   label=details.map(o=>`Trasporto ${dpValV314(o.modello)} ${dpValV314(o.targa_telaio)} - ${dpValV314(o.citta_carico)} / ${dpValV314(o.citta_scarico)}${o.num_bolla?' - DDT '+dpValV314(o.num_bolla):''}`).join('; ').slice(0,850)||label;
+ }
  // V336: dati di pagamento solo se esplicitamente riconoscibili; non inventare scadenze.
  const pagamentoTesto=dpValV314(f.pagamento||f.pagamento_descrizione).toLowerCase();
+ const pagamentoCode=dpValV314(f.codice_pagamento).toUpperCase();
  let pagamentoXml='';
- if(/bonifico|bancari|iban|\bbanca\b/.test(pagamentoTesto)){
+ if(pagamentoCode.startsWith('BO') || /bonifico|bancari|iban|\bbanca\b/.test(pagamentoTesto)){
    const iban=dpValV314(process.env.DP_XML_IBAN||DP_BANK_IBAN).replace(/\s/g,'').toUpperCase();
    if(!/^IT\d{2}[A-Z]\d{10}[A-Z0-9]{12}$/.test(iban))throw new Error('IBAN aziendale non valido per XML bonifico: verificare DP_XML_IBAN / DP_BANK_IBAN');
    pagamentoXml=`<DatiPagamento><CondizioniPagamento>TP02</CondizioniPagamento><DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento>${dpTagV314('ImportoPagamento',dpMoneyV314(totale))}${dpTagV314('IBAN',iban)}</DettaglioPagamento></DatiPagamento>`;
