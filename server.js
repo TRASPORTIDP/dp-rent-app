@@ -15345,6 +15345,26 @@ async function dpMakeInvoiceXmlV314(tipo,id){
   else if(matches.length>1 && !cliente)throw new Error('Più anagrafiche condivise con lo stesso nome: associare il cliente alla fattura');
  }
  if(cliente && invoiceName && dpValV314(cliente.ragione_sociale||cliente.azienda||[cliente.nome,cliente.cognome].filter(Boolean).join(' ')).toUpperCase()!==invoiceName)throw new Error('Il cliente collegato non corrisponde all’intestatario della fattura');
+ // V357: RENT può conservare i dati fiscali nel contratto anche quando il cliente
+ // non è presente nell'archivio unico. Recupero READ-ONLY, solo se l'intestatario
+ // corrisponde esattamente alla fattura: nessuna creazione o associazione automatica.
+ if(!cliente && tipo==='noleggio' && f.prenotazione_id){
+   const p=await get('SELECT * FROM prenotazioni WHERE id=?',[f.prenotazione_id]).catch(()=>null);
+   if(p){
+     const c=p.cliente_id?await get('SELECT * FROM clienti WHERE id=?',[p.cliente_id]).catch(()=>null):null;
+     const candidate={...(c||{}),...p};
+     candidate.ragione_sociale=dpValV314(p.ragione_sociale||c?.ragione_sociale||p.azienda||c?.azienda||[p.nome||c?.nome,p.cognome||c?.cognome].filter(Boolean).join(' '));
+     candidate.piva=dpValV314(p.partita_iva||p.piva||c?.piva||c?.partita_iva);
+     candidate.codice_fiscale=dpValV314(p.codice_fiscale||p.cf||c?.codice_fiscale||c?.cf);
+     candidate.indirizzo=dpValV314(p.indirizzo_fatturazione||p.indirizzo||c?.indirizzo_fatturazione||c?.indirizzo);
+     candidate.cap=dpValV314(p.cap_fatturazione||p.cap||c?.cap_fatturazione||c?.cap);
+     candidate.citta=dpValV314(p.citta_fatturazione||p.citta||c?.citta_fatturazione||c?.citta);
+     candidate.provincia=dpValV314(p.provincia_fatturazione||p.provincia||c?.provincia_fatturazione||c?.provincia);
+     candidate.sdi=dpValV314(p.codice_sdi||p.sdi||c?.codice_sdi||c?.sdi);
+     candidate.pec=dpValV314(p.pec||c?.pec);
+     if(candidate.ragione_sociale.toUpperCase()===invoiceName)cliente=candidate;
+   }
+ }
  if(!cliente)throw new Error('Cliente non trovato nelle anagrafiche: associare il cliente alla fattura');
  const cVat=dpValV314(cliente.piva||cliente.partita_iva).replace(/^IT/i,'').replace(/\s/g,'');
  const cCf=dpValV314(cliente.codice_fiscale||cliente.cf).toUpperCase();
