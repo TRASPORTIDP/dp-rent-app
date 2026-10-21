@@ -13504,12 +13504,13 @@ app.get('/trasporti/viaggi', async (req,res)=>{
   if(q.automezzo){wh.push(`v.automezzo=?`);pa.push(q.automezzo);}
   if(q.stato){wh.push(`v.stato=?`);pa.push(q.stato);}
   const viaggi=await all(`SELECT v.*,COUNT(vo.ordine_id) n FROM trasporti_viaggi v LEFT JOIN trasporti_viaggio_ordini vo ON vo.viaggio_id=v.id ${wh.length?'WHERE '+wh.join(' AND '):''} GROUP BY v.id HAVING COUNT(vo.ordine_id)>0 ORDER BY v.data_viaggio DESC,v.id DESC`,pa).catch(()=>[]);
-  const card=v=>`<div class="box"><h3>${esc(v.codice)} — ${esc(dpTItDate(v.data_viaggio))}</h3><p><b>${esc(v.automezzo)}</b> • ${esc(v.autista)} • ${v.n||0} auto • <b>${esc(v.stato)}</b></p><a class="btn" href="/trasporti/viaggio/${v.id}">Apri viaggio</a> <a class="btn btn2" target="_blank" href="/trasporti/viaggio/${v.id}/bordero.pdf">📄 Borderò PDF</a></div>`;
+  const card=v=>`<div class="box"><h3>${esc(v.codice)} — ${esc(dpTItDate(v.data_viaggio))}</h3><p><b>${esc(v.automezzo)}</b> • ${esc(v.autista)} • ${v.n||0} auto • <b>${esc(v.stato)}</b></p><a class="btn" href="/trasporti/viaggio/${v.id}">Apri viaggio</a> <a class="btn btn2" target="_blank" href="/trasporti/viaggio/${v.id}/bordero.pdf">📄 Borderò PDF</a> <form method="post" action="/trasporti/viaggio/${v.id}/elimina-v361" style="display:inline" onsubmit="return confirm('Eliminare il viaggio ${esc(v.codice)}? Gli ordini resteranno memorizzati.')"><input type="hidden" name="conferma" value="ELIMINA ${v.id}"><button type="submit" class="btn" style="background:#a11">Elimina viaggio</button></form></div>`;
   const attivi=viaggi.filter(v=>!['CONSEGNATO','COMPLETATO_PARZIALE','CHIUSO'].includes(String(v.stato||''))).map(card).join('')||'<div class="box">Nessun viaggio in corso.</div>';
   const chiusi=viaggi.filter(v=>['CONSEGNATO','COMPLETATO_PARZIALE','CHIUSO'].includes(String(v.stato||''))).map(card).join('')||'<div class="box">Nessun viaggio completato.</div>';
   const statoOpts=['ASSEGNATO','PARTITO','PARZIALE','COMPLETATO_PARZIALE','CONSEGNATO','CHIUSO'].map(x=>`<option value="${x}" ${q.stato===x?'selected':''}>${x}</option>`).join('');
 
   res.send(page('Viaggi trasporto',`
+    <div class="box"><a class="btn btn2" href="/trasporti">← Menu TRASPORTI</a> <a class="btn btn2" href="/dashboard">🏠 Dashboard DP</a></div>
     <div class="box"><h2>🔎 Cerca viaggio / Borderò</h2><form method="GET" action="/trasporti/viaggi"><div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px">
       <div><label>N. viaggio / Borderò</label><input name="codice" value="${esc(q.codice)}"></div><div><label>Data</label><input type="date" name="data" value="${esc(q.data)}"></div>
       <div><label>Autista</label><select name="autista"><option value="">Tutti</option>${autisti.map(x=>`<option value="${esc(x.nome)}" ${q.autista===x.nome?'selected':''}>${esc(x.nome)}</option>`).join('')}</select></div>
@@ -13526,6 +13527,41 @@ app.get('/trasporti/viaggi', async (req,res)=>{
       <div class="dp-viaggi-colonna"><h2>✅ COMPLETATI / CONSEGNATI</h2>${chiusi}</div>
     </div>`));
 });
+// V361: separa l'eliminazione del viaggio da quella degli ordini / DDT / fatture.
+// Se un ordine e' fatturato, non tocca il viaggio. Le consegne restano registrate sugli ordini.
+app.post('/trasporti/viaggio/:id/elimina-v361', async(req,res)=>{
+  const id=Number(req.params.id);
+  try{
+    if(!Number.isSafeInteger(id)||id<1||String(req.body.conferma||'')!==`ELIMINA ${id}`)throw new Error('Conferma non valida');
+    await run('BEGIN IMMEDIATE');
+    const viaggio=await get('SELECT * FROM trasporti_viaggi WHERE id=?',[id]);
+    if(!viaggio)throw new Error('Viaggio non trovato');
+    const links=await all('SELECT ordine_id FROM trasporti_viaggio_ordini WHERE viaggio_id=?',[id]);
+    for(const l of links){
+      const f=await get('SELECT id FROM trasporti_fattura_ordini WHERE ordine_id=? LIMIT 1',[l.ordine_id]);
+      if(f)throw new Error('Viaggio collegato a un ordine gia fatturato: cancellazione bloccata');
+      const o=await get('SELECT num_fattura FROM trasporti_ordini WHERE id=?',[l.ordine_id]);
+      if(String(o?.num_fattura||'').trim())throw new Error('Ordine con numero fattura presente: cancellazione bloccata');
+    }
+    for(const l of links){
+      const o=await get('SELECT stato,n_viaggio FROM trasporti_ordini WHERE id=?',[l.ordine_id]);
+      if(o && String(o.n_viaggio||'')===String(viaggio.codice||'')){
+        const delivered=['CONSEGNATO','CONSEGNATA','CHIUSO'].includes(String(o.stato||'').toUpperCase());
+        if(delivered){
+          await run('UPDATE trasporti_ordini SET n_viaggio=NULL,automezzo=NULL,autista=NULL,updated_at=CURRENT_TIMESTAMP WHERE id=?',[l.ordine_id]);
+        }else{
+          await run("UPDATE trasporti_ordini SET n_viaggio=NULL,automezzo=NULL,autista=NULL,stato='DA_ASSEGNARE',updated_at=CURRENT_TIMESTAMP WHERE id=?",[l.ordine_id]);
+        }
+      }
+    }
+    await run('UPDATE trasporti_movimenti SET viaggio_id=NULL WHERE viaggio_id=?',[id]);
+    await run('DELETE FROM trasporti_viaggio_ordini WHERE viaggio_id=?',[id]);
+    await run('DELETE FROM trasporti_viaggi WHERE id=?',[id]);
+    await run('COMMIT');
+    return res.redirect('/trasporti/viaggi');
+  }catch(e){await run('ROLLBACK').catch(()=>{});return res.status(400).send(page('Viaggio non eliminato',`<div class="box"><h2>Eliminazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/trasporti/viaggi">Torna ai viaggi</a></div>`));}
+});
+
 app.post('/trasporti/viaggio/crea', async (req,res)=>{
   try{
     let ids=req.body.ordine_id||req.body.ordine_ids||[];if(!Array.isArray(ids))ids=[ids];ids=ids.map(Number).filter(Boolean);if(!ids.length)throw new Error('Seleziona almeno un ordine');

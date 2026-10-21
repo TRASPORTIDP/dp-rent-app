@@ -325,7 +325,7 @@ th{background:#1d1d1f;color:white;padding:10px;text-align:left} td{padding:10px;
 .public-wrap{max-width:760px;margin:0 auto}
 .public-wrap .box{border-top:6px solid #e00000}
 @media(max-width:780px){.grid,.filters{grid-template-columns:1fr}header span{display:block;margin:6px 0 0}.card{font-size:22px}}
-</style></head><body><header><img src="/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/__DP_MAIN__">🏠 Menu DP Gestionale</a></div>${body}</main></body></html>`;
+</style></head><body><header><img src="/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/service">🔧 Menu SERVICE</a><a class="btn dark" href="/__DP_MAIN__">🏠 Menu DP Gestionale</a></div>${body}</main></body></html>`;
 }
 
 
@@ -833,7 +833,7 @@ router.get('/clienti/:id', async (req,res)=>{
     </div>
     <div class="box"><h2>🚗 Veicoli del cliente (${vs.length})</h2>
       <table><tr><th>Targa</th><th>Marca / Modello</th><th>Telaio</th><th>Km</th><th></th></tr>
-      ${vs.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a></td></tr>`).join('')}
+      ${vs.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a> <form method="post" action="/veicoli/${v.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare il veicolo ${esc(v.targa)}? Se ha ordini di lavoro la cancellazione sarà bloccata.')"><input type="hidden" name="conferma" value="ELIMINA ${v.id}"><button type="submit" class="btn" style="background:#a11">Elimina</button></form></td></tr>`).join('')}
       </table>
     </div>`));
 });
@@ -893,6 +893,20 @@ router.get('/veicoli', async (req,res)=>{
   <table><tr><th>Targa</th><th>Cliente</th><th>Veicolo</th><th>Telaio</th><th>Km</th><th></th></tr>
   ${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a></td></tr>`).join('')}
   </table></div>`));
+});
+
+// V361: elimina solo veicoli senza ordini; non modifica mai storico, clienti o fatture.
+router.post('/veicoli/:id/elimina', async(req,res)=>{
+  const id=Number(req.params.id);
+  try{
+    if(!Number.isSafeInteger(id)||id<1||String(req.body.conferma||'')!==`ELIMINA ${id}`)throw new Error('Conferma non valida');
+    const v=await get('SELECT id,targa FROM veicoli WHERE id=?',[id]);
+    if(!v)throw new Error('Veicolo non trovato');
+    const linked=await get('SELECT COUNT(*) n FROM ordini_lavoro WHERE veicolo_id=?',[id]);
+    if(Number(linked?.n||0)>0)throw new Error('Veicolo collegato a '+linked.n+' ordini di lavoro: eliminazione bloccata. Conservare lo storico.');
+    await run('DELETE FROM veicoli WHERE id=? AND NOT EXISTS (SELECT 1 FROM ordini_lavoro WHERE veicolo_id=?)',[id,id]);
+    return res.redirect('/veicoli');
+  }catch(e){return res.status(400).send(page('Eliminazione veicolo bloccata',`<div class="box"><h2>Eliminazione non eseguita</h2><p>${esc(e.message)}</p><a class="btn dark" href="/veicoli">Torna ai veicoli</a></div>`));}
 });
 
 router.get('/veicoli/nuovo', async (req,res)=>{
