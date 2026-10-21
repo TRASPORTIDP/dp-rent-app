@@ -14319,10 +14319,33 @@ app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(!f)return res.status(404).send('Fattura non trovata');
   const p=await dpNRentInvoiceData(f.prenotazione_id);
   const scad=dpPaymentSchedule(f.codice_pagamento||f.pagamento,f.data_fattura,f.totale);
-  res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>
+  const correctedName=dpNClienteLabel(p);
+  const showCorrection=(f.stato==='PRONTA_FIC'&&correctedName!=='Cliente'&&correctedName!==f.cliente);
+  const correctionHtml=showCorrection?`<div style="border:1px solid #d99;border-radius:10px;padding:12px;margin:12px 0"><b>Intestatario differente dal contratto aggiornato</b><p>In fattura: <b>${esc(f.cliente)}</b><br>Nel contratto: <b>${esc(correctedName)}</b></p><form method="POST" action="/noleggio/fattura/${f.id}/aggiorna-intestatario" onsubmit="return confirm('Aggiornare l’intestatario della fattura non inviata con quello del contratto?')"><input type="hidden" name="conferma" value="SI"><button type="submit">🔄 Allinea intestatario dalla pratica</button></form><small>Non modifica il contratto, i dati fiscali, i totali o le fatture gia inviate. Non usare se questa fattura e gia stata consegnata/inviata.</small></div>`:'';
+  res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>${correctionHtml}
     <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/noleggio/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura e rimettere il noleggio da fatturare?')"><button class="btn" style="background:#8b0000">ELIMINA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
+});
+
+// V359 - riallineamento MANUALE e tracciabile intestatario fattura RENT in bozza.
+// Non modificare documenti marcati come inviati, XML gia esportati o con numero emesso.
+app.post('/noleggio/fattura/:id/aggiorna-intestatario',async(req,res)=>{
+  try{
+    const f=await get('SELECT * FROM noleggio_fatture WHERE id=?',[req.params.id]);
+    if(!f)return res.status(404).send('Fattura non trovata');
+    if(String(f.stato||'')!=='PRONTA_FIC')throw new Error('Rettifica disponibile solo per fatture PRONTA_FIC');
+    const exportDone=await get("SELECT tipo FROM dp_xml_exports WHERE tipo IN ('noleggio','NOLEGGIO','N') AND fattura_id=? LIMIT 1",[f.id]).catch(()=>null);
+    if(exportDone)throw new Error('Esportazione XML gia registrata: non modificare automaticamente l’intestatario');
+    const p=await dpNRentInvoiceData(f.prenotazione_id);
+    if(!p)throw new Error('Contratto originale non trovato');
+    const corrected=dpNClienteLabel(p);
+    if(!corrected||corrected==='Cliente')throw new Error('Intestatario del contratto non compilato');
+    if(corrected===f.cliente)return res.redirect('/noleggio/fattura/'+f.id);
+    if(String(req.body.conferma||'')!=='SI')throw new Error('Conferma esplicita richiesta');
+    await run("UPDATE noleggio_fatture SET cliente=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND stato='PRONTA_FIC'",[corrected,f.id]);
+    res.redirect('/noleggio/fattura/'+f.id);
+  }catch(e){res.status(400).send(page('Rettifica intestatario',`<div class="box"><h2>Attenzione</h2><p>${esc(e.message)}</p><a class="btn" href="/noleggio/fattura/${esc(req.params.id)}">Torna alla fattura</a></div>`));}
 });
 
 app.get('/noleggio/fattura/:id/modifica',async(req,res)=>{
