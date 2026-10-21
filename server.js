@@ -2229,7 +2229,7 @@ header{position:relative!important;top:auto!important}
 function toggleAzienda(){
   var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return;
   var isAz=String(el.value||'').toLowerCase()==='azienda';
-  var names=['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'];
+  var names=['ragione_sociale','partita_iva','piva','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'];
   document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';});
   document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';});
   names.forEach(function(n){document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; var wrap=f.closest('label')||f.parentElement; if(wrap && !wrap.classList.contains('azienda-grid')) wrap.style.display=isAz?'block':'none'; if(!isAz) f.value=''; });});
@@ -4674,7 +4674,7 @@ function dpMasterForm(c={},action='/clienti-azienda',title='Cliente'){
     <div class="full"><label>Indirizzo</label><input name="indirizzo" value="${v('indirizzo')}"></div>
     <div><label>Città</label><input name="citta" value="${v('citta')}"></div><div><label>Provincia</label><input name="provincia" value="${v('provincia')}"></div><div><label>CAP</label><input name="cap" value="${v('cap')}"></div>
     <div><label>Telefono</label><input name="telefono" value="${v('telefono')}"></div><div><label>Email</label><input name="email" value="${v('email')}"></div>
-    <div><label>PEC</label><input name="pec" value="${v('pec')}"></div><div><label>SDI</label><input name="sdi" value="${v('sdi')}"></div>
+    <div><label>PEC (facoltativa se presente SDI)</label><input type="email" name="pec" value="${v('pec')}"></div><div><label>SDI</label><input name="sdi" value="${v('sdi')}"></div>
   </div>
   <h3>🧾 IVA e pagamento</h3>
   <div class="grid"><div><label>Codice IVA</label>${dpMasterSelect('codice_iva',c.codice_iva,DP_MASTER_IVA,'Scegli codice IVA')}</div>
@@ -6028,7 +6028,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 function toggleAzienda(){
   var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return;
   var isAz=String(el.value||'').toLowerCase()==='azienda';
-  var names=['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'];
+  var names=['ragione_sociale','partita_iva','piva','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione'];
   document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';});
   document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';});
   names.forEach(function(n){document.querySelectorAll('[name="'+n+'"]').forEach(function(f){ f.required=isAz; var wrap=f.closest('label')||f.parentElement; if(wrap && !wrap.classList.contains('azienda-grid')) wrap.style.display=isAz?'block':'none'; if(!isAz) f.value=''; });});
@@ -8016,7 +8016,7 @@ function publicClientePage(title, content) {
 *{box-sizing:border-box}body{margin:0;background:linear-gradient(180deg,#eef4ff,#f7f8fb);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;color:#0b1226;-webkit-text-size-adjust:100%;font-size:18px}main{max-width:900px;margin:0 auto;padding:16px 14px 38px}.client-hero{background:linear-gradient(135deg,#06183f,#173f9d);color:#fff;border-radius:0 0 30px 30px;padding:calc(28px + env(safe-area-inset-top)) 24px 30px;margin:0 -14px 22px;box-shadow:0 16px 40px rgba(0,0,0,.18)}.client-hero h1{font-size:44px;line-height:1;margin:0 0 14px;color:#fff;letter-spacing:.8px}.client-hero p{font-size:21px;line-height:1.35;margin:0;opacity:.96}.pill{display:inline-block;background:#fff;color:#173f9d;border-radius:999px;padding:11px 18px;margin:16px 8px 0 0;font-weight:900;font-size:20px}.card,.step-card,details.manual{background:#fff;border-radius:26px;padding:24px;margin:18px 0;box-shadow:0 14px 35px rgba(15,23,42,.10);border:1px solid #e3e7f2}.card h2,.step-card h2{font-size:34px;margin:0 0 16px;color:#0b1226}.grid,.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}label{display:block;font-weight:900;margin:10px 0 7px;color:#0b1226}input,select,textarea{width:100%;border:2px solid var(--line);border-radius:17px;padding:16px;font-size:20px;background:#fff;color:#111;font-weight:700;outline:none}textarea{min-height:110px}.notice{background:#fff8df;border:1px solid #f1d98a;border-radius:20px;padding:16px;line-height:1.35;font-size:18px}.okbox{background:#ecfff1;border:1px solid #b8efc4;border-radius:20px;padding:16px;line-height:1.35}.btn,button,.big-red{border:0;border-radius:20px;background:linear-gradient(135deg,#e21818,#a80d0d);color:#fff;padding:18px 24px;font-size:22px;font-weight:900;box-shadow:0 12px 25px rgba(210,0,0,.25);width:100%;margin-top:18px}.small{font-size:15px;color:#596275;font-weight:700}.upload-box{border:2px dashed #cbd5e1;border-radius:22px;padding:18px;background:#f8fafc}.upload-box label{font-size:20px}.upload-box input{font-size:18px;margin-top:12px}details.manual summary{font-size:30px;font-weight:900;cursor:pointer}.fixed-save{position:sticky;bottom:12px;z-index:9;background:rgba(255,255,255,.96);padding:12px;border-radius:24px;box-shadow:0 10px 30px rgba(0,0,0,.16)}@media(max-width:720px){main{padding-left:14px;padding-right:14px}.grid,.upload-grid{grid-template-columns:1fr}.client-hero h1{font-size:36px}.client-hero p{font-size:20px}.card,.step-card,details.manual{padding:20px;border-radius:24px}.card h2,.step-card h2{font-size:31px}input,select,textarea{font-size:19px}}
 </style>
 <script>
-function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var isAz=String(el.value||'').toLowerCase()==='azienda'; var names=['ragione_sociale','partita_iva','piva','pec','codice_sdi','sdi','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione']; document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';}); document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';}); names.forEach(function(n){document.querySelectorAll('[name="'+n+'"]').forEach(function(f){f.required=isAz; var wrap=f.closest('label')||f.parentElement; if(wrap && !wrap.classList.contains('azienda-grid')) wrap.style.display=isAz?'block':'none'; if(!isAz) f.value='';});});}
+function toggleAzienda(){var el=document.querySelector('[name="tipo_cliente"]'); if(!el) return; var isAz=String(el.value||'').toLowerCase()==='azienda'; var names=['ragione_sociale','partita_iva','piva','indirizzo_fatturazione','citta_fatturazione','provincia_fatturazione','cap_fatturazione']; document.querySelectorAll('.azienda-grid').forEach(function(box){box.style.display=isAz?'grid':'none';}); document.querySelectorAll('.azienda-only').forEach(function(box){box.style.display=isAz?'block':'none';}); names.forEach(function(n){document.querySelectorAll('[name="'+n+'"]').forEach(function(f){f.required=isAz; var wrap=f.closest('label')||f.parentElement; if(wrap && !wrap.classList.contains('azienda-grid')) wrap.style.display=isAz?'block':'none'; if(!isAz) f.value='';});});}
 window.addEventListener('DOMContentLoaded',function(){document.querySelectorAll('[name="tipo_cliente"]').forEach(function(el){el.addEventListener('change',toggleAzienda);}); toggleAzienda();});
 </script>
 </head><body><main>${content}</main><script id="DP-V274-BUTTON">
@@ -8618,7 +8618,7 @@ header{padding-top:max(22px, env(safe-area-inset-top));}
 
 </style>
 </head>
-<body><div class="client-header"><div class="client-brand">DP RENT</div><div class="client-sub">FIRMA CONTRATTO</div></div><main class="client-main"><div class="client-back"><button type="button" onclick="history.length>1?history.back():location.href='/firma-chiusa'">Indietro</button></div><div class="client-card">${content}</div></main><script id="DP-V274-BUTTON">
+<body><div class="client-header"><div class="client-brand">DP RENT</div><div class="client-sub">FIRMA CONTRATTO</div></div><main class="client-main"><div class="client-back"><button type="button" onclick="location.href='/firma-chiusa'">Chiudi procedura</button></div><div class="client-card">${content}</div></main><script id="DP-V274-BUTTON">
 document.addEventListener('DOMContentLoaded',function(){
  var m=location.pathname.match(/^\/trasporti\/viaggio\/(\d+)\/?$/);
  if(!m || document.getElementById('dpV274Edit')) return;
@@ -8637,10 +8637,12 @@ document.addEventListener('DOMContentLoaded',function(){
 
 
 app.get('/firma-chiusa', (req,res)=>{
-  res.send(publicFirmaPage('DP RENT', '<h2>Operazione annullata</h2><p>Puoi chiudere questa pagina o tornare al messaggio WhatsApp.</p>'));
+  res.send(publicFirmaPage('DP RENT', req.query.completata==='1' ? '<h2 class="ok">Procedura completata</h2><p>La firma era stata salvata. Puoi chiudere questa pagina; non serve firmare di nuovo.</p>' : '<h2>Procedura chiusa</h2><p>Puoi chiudere questa pagina o tornare al messaggio WhatsApp.</p>'));
 });
 
-app.get('/firma/:id', (req, res) => {
+app.get('/firma/:id', async (req, res) => {
+  const giaFirmato=await get('SELECT firma_path FROM prenotazioni WHERE id=?',[req.params.id]).catch(()=>null);
+  if(giaFirmato && giaFirmato.firma_path) return res.redirect('/contratto/'+req.params.id+'/firmato');
   res.send(publicFirmaPage('Firma contratto DP RENT', `
       <h2>Firma contratto</h2>
       <p class="muted">Firma nello spazio sotto e premi Salva firma. Non vedrai la dashboard interna DP RENT.</p>
@@ -8679,7 +8681,9 @@ app.get('/firma/:id', (req, res) => {
       canvas.addEventListener('touchmove', move, {passive:false});
       canvas.addEventListener('touchend', end, {passive:false});
       function clearCanvas() { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+      let firmaInCorso=false;
       async function saveFirma() {
+        if(firmaInCorso) return; firmaInCorso=true;
         const r = await fetch('/firma/${req.params.id}', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -8690,6 +8694,7 @@ app.get('/firma/:id', (req, res) => {
           catch(e) { location.href = '/contratto/${req.params.id}/firmato'; }
         } else {
           const dettaglio = (await r.text().catch(() => '')).slice(0, 240);
+          firmaInCorso=false;
           alert('Errore salvataggio firma' + (dettaglio ? ': ' + dettaglio : ' (HTTP ' + r.status + ')'));
         }
       }
@@ -8702,6 +8707,7 @@ app.post('/firma/:id', async (req, res) => {
     if (!/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(data)) return res.status(400).send('Firma mancante o formato non valido');
     const previous = await get(`SELECT firma_path, stato FROM prenotazioni WHERE id=?`, [req.params.id]);
     if (!previous) return res.status(404).send('Contratto non trovato');
+    if(previous.firma_path) return res.json({ok:true,redirect:'/contratto/'+req.params.id+'/firmato'});
     const base64 = data.split(',')[1];
     const file = path.join(firmeDir, `firma_${req.params.id}.png`);
     const oldImage = fs.existsSync(file) ? fs.readFileSync(file) : null;
@@ -15380,7 +15386,8 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  if(!/^[A-Z]{2}$/.test(paese))throw new Error('Nazione cliente non valida');
  const dest=dpValV314(cliente.sdi||cliente.codice_sdi)||'0000000';
  if(!/^[A-Z0-9]{7}$/.test(dest.toUpperCase()))throw new Error('Codice destinatario cliente deve essere di 7 caratteri');
- const pec=dpValV314(cliente.pec);
+ const pecRaw=dpValV314(cliente.pec);
+ const pec=(pecRaw==='@' ? '' : pecRaw);
  if(pec && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pec))throw new Error('PEC cliente non valida');
  if(dest==='0000000' && pec && paese==='IT' && !/^.{0,256}$/.test(pec))throw new Error('PEC oltre il limite consentito');
  const progressivo=dpXmlProgressivoV356(tipo==='noleggio'?'N':'T',f.id);
@@ -15901,7 +15908,7 @@ app.get('/contratto/:id/firmato', async (req,res)=>{
   if(!p) return res.send('Contratto non trovato');
   try { await generaPdfContratto(req.params.id, { forceDrive:false, skipDrive:true }); } catch(e) { console.log('V261 PDF locale firmato warning:', e.message); }
   const pdfLink = absoluteUrl(req, `/pdf/${req.params.id}`);
-  res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} &egrave; stato firmato e registrato da DP RENT.</p><a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a><p class="muted">Link pubblico DP RENT: non richiede accesso Google Drive.</p>`));
+  res.send(publicFirmaPage('Firma salvata DP RENT', `<h2 class="ok">Firma salvata correttamente</h2><p>Grazie. Il contratto ${esc(p.codice||p.id)} &egrave; stato firmato e registrato da DP RENT.</p><a class="btn btn3" target="_blank" href="${esc(pdfLink)}">Apri copia PDF</a><p class="muted">Link pubblico DP RENT: non richiede accesso Google Drive.</p><p><a class="btn btn2" href="/firma-chiusa?completata=1">Termina e chiudi</a></p>`));
 });
 
 
