@@ -1326,12 +1326,15 @@ router.post('/ordini/:id/fattura', async (req,res)=>{
   let f=await get('SELECT * FROM fatture_service WHERE ordine_id=?',[req.params.id]);
   if(!f){
     const anno=new Date().getFullYear();
-    const nx=await get("SELECT COALESCE(MAX(numero),0)+1 n FROM fatture_service WHERE anno=? AND serie='S'",[anno]);
+    const released=await dpServiceNumeroLiberato(anno);
+    const nx=released!==null?{n:released}:await get("SELECT COALESCE(MAX(numero),0)+1 n FROM fatture_service WHERE anno=? AND serie='S'",[anno]);
     const data=new Date().toISOString().slice(0,10);
     const payCode=dpServicePayCode(d.o.codice_pagamento||'BOIMM'),payDesc=dpServicePayLabel(payCode);
-    const r=await run(`INSERT INTO fatture_service(numero,serie,anno,ordine_id,data,imponibile,iva,totale,righe_json,pagamento,codice_pagamento,pagamento_descrizione,note) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
-      nx.n,'S',anno,req.params.id,data,d.calc.imponibile,d.calc.iva,d.calc.totale,JSON.stringify(d.righe),payDesc,payCode,payDesc,d.o.note||''
+    const r=await run(`INSERT INTO fatture_service(numero,serie,anno,ordine_id,data,imponibile,iva,totale,righe_json,pagamento,codice_pagamento,pagamento_descrizione,note,stato) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[
+      nx.n,'S',anno,req.params.id,data,d.calc.imponibile,d.calc.iva,d.calc.totale,JSON.stringify(d.righe),payDesc,payCode,payDesc,d.o.note||'','BOZZA'
     ]);
+    await dpServiceCancelEnsure();
+    await run("UPDATE dp_service_cancellazioni_bozze SET numero_riutilizzato_at=CURRENT_TIMESTAMP WHERE anno=? AND serie='S' AND numero=? AND numero_riutilizzato_at IS NULL",[anno,nx.n]);
     await run('UPDATE ordini_lavoro SET fatturato=1 WHERE id=?',[req.params.id]);
     f=await get('SELECT * FROM fatture_service WHERE id=?',[r.lastID]);
     await dpServiceUpsertScad(f,d);
@@ -1417,11 +1420,47 @@ router.get('/preventivi/:id.pdf', async (req,res)=>{
   const doc=new PDFDocument({size:'A4',margin:0,bufferPages:true}); doc.pipe(res); dpDrawServicePdf(doc,'PREVENTIVO',`N. ${p.numero}/P`,dpItDate(p.data),d); doc.end();
 });
 
+// V360: le nuove fatture SERVICE sono bozze fino ad invio confermato.
+async function dpServiceCancelEnsure(){
+ await run(`CREATE TABLE IF NOT EXISTS dp_service_cancellazioni_bozze (
+ id INTEGER PRIMARY KEY AUTOINCREMENT, fattura_id INTEGER NOT NULL, anno INTEGER, serie TEXT,
+ numero INTEGER, snapshot_json TEXT NOT NULL, attestazione TEXT NOT NULL,
+ cancellata_at TEXT DEFAULT CURRENT_TIMESTAMP, numero_riutilizzato_at TEXT)`);
+}
+async function dpServiceNumeroLiberato(anno){
+ await dpServiceCancelEnsure();
+ const r=await get(`SELECT x.numero FROM dp_service_cancellazioni_bozze x WHERE x.anno=? AND x.serie='S' AND x.numero_riutilizzato_at IS NULL AND NOT EXISTS (SELECT 1 FROM fatture_service f WHERE f.anno=x.anno AND f.serie='S' AND f.numero=x.numero) ORDER BY x.numero LIMIT 1`,[anno]);
+ return r?Number(r.numero):null;
+}
+router.post('/fatture/:id([0-9]+)/elimina-bozza',async(req,res)=>{
+ try{
+  const f=await get('SELECT * FROM fatture_service WHERE id=?',[req.params.id]);
+  if(!f)throw new Error('Fattura inesistente');
+  if(f.stato!=='BOZZA')throw new Error('Solo le fatture SERVICE in stato BOZZA possono essere eliminate. Le fatture precedenti EMESSA devono essere verificate separatamente.');
+  if(req.body.conferma!=='MAI_EMESSA')throw new Error('Attestazione obbligatoria');
+  const ex=await mainGet("SELECT 1 ok FROM dp_xml_exports WHERE fattura_id=? AND LOWER(tipo) IN ('service','s') LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
+  if(ex)throw new Error('XML gia depositato su Drive; cancellazione bloccata');
+  const paid=await mainGet("SELECT 1 ok FROM dp_scadenze_incassi WHERE modulo='SERVICE' AND fattura_id=? AND (stato='INCASSATA' OR incassata_at IS NOT NULL) LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
+  if(paid)throw new Error('Fattura associata a un incasso: cancellazione bloccata');
+  await dpServiceCancelEnsure();
+  await run('BEGIN IMMEDIATE');
+  try{
+   const current=await get('SELECT stato FROM fatture_service WHERE id=?',[f.id]);
+   if(!current||current.stato!=='BOZZA')throw new Error('Stato cambiato');
+   await run('INSERT INTO dp_service_cancellazioni_bozze(fattura_id,anno,serie,numero,snapshot_json,attestazione) VALUES(?,?,?,?,?,?)',[f.id,f.anno,f.serie,f.numero,JSON.stringify(f),'MAI_EMESSA']);
+   await run("DELETE FROM fatture_service WHERE id=? AND stato='BOZZA'",[f.id]);
+   await run('UPDATE ordini_lavoro SET fatturato=0 WHERE id=?',[f.ordine_id]);
+   await run('COMMIT');
+  }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
+  await mainRun("DELETE FROM dp_scadenze_incassi WHERE modulo='SERVICE' AND fattura_id=? AND stato<>'INCASSATA'",[f.id]).catch(e=>console.error('Pulizia scadenze SERVICE:',e.message));
+  res.redirect('/fatture');
+ }catch(e){res.status(400).send(page('Eliminazione non eseguita',`<div class="box"><h2>Cancellazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatture/${Number(req.params.id)}">Torna alla fattura</a></div>`));}
+});
 router.get('/fatture', async (req,res)=>{
   const rows=await all(`SELECT f.*,o.numero odl,v.targa,c.ragione_sociale FROM fatture_service f
     LEFT JOIN ordini_lavoro o ON o.id=f.ordine_id LEFT JOIN veicoli v ON v.id=o.veicolo_id LEFT JOIN clienti c ON c.id=o.cliente_id
     ORDER BY f.id DESC LIMIT 500`);
-  const safeRows=rows.map(x=>`<tr><td><b>${esc(x.numero)}/S</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><div class="actions"><a class="btn" href="/fatture/${x.id}">APRI</a><a class="btn dark" target="_blank" href="/fatture/${x.id}.pdf">PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${x.id}">XML (verifica)</a></div></td></tr>`).join('');
+  const safeRows=rows.map(x=>`<tr><td><b>${esc(x.numero)}/S</b></td><td>${dpItDate(x.data)}</td><td>${esc(x.ragione_sociale)}</td><td>${esc(x.targa)}</td><td>${dpEuro(x.totale)}</td><td><div class="actions"><a class="btn" href="/fatture/${x.id}">APRI</a><a class="btn dark" target="_blank" href="/fatture/${x.id}.pdf">PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${x.id}">XML (verifica)</a>${x.stato==='BOZZA'?`<a class="btn dark" href="/fatture/${x.id}">Gestisci bozza</a>`:`<span class="btn dark" title="Stato ${esc(x.stato||'sconosciuto')}: eliminazione non consentita">Protetta (${esc(x.stato||'?')})</span>`}</div></td></tr>`).join('');
   res.send(page('Fatture serie S',`<div class="box"><h1>💶 Fatture DP SERVICE — Serie S</h1><p>Archivio officina, con numerazione distinta. L'XML è per controllo preliminare, non costituisce invio a Fatel o SdI.</p><div class="actions"><a class="btn dark" href="/__DP_MAIN__">🏠 Menu gestionale</a></div><div style="overflow-x:auto"><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Targa</th><th>Totale</th><th>Azioni</th></tr>${safeRows||'<tr><td colspan="6">Nessuna fattura SERVICE</td></tr>'}</table></div></div>`));
 });
 
@@ -1431,7 +1470,7 @@ router.get('/fatture/:id([0-9]+)', async (req,res)=>{
   const ph=dpPhone(d.o.telefono); const pdfUrl=dpServiceUrl(req,`/fatture/${f.id}.pdf`);
   const scad=dpServiceSchedule(f.codice_pagamento||f.pagamento,f.data,f.totale);
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo la fattura DP SERVICE n. ${f.numero}/S per la vettura ${d.o.targa||''}. Totale ${dpEuro(f.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${f.id}">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>Stato: ${esc(f.stato||"NON DEFINITO")}</b> — ${f.stato==="BOZZA"?"Bozza: può essere annullata solo se mai emessa, consegnata o esportata":"Documento protetto: eliminazione non disponibile da questa schermata"}</p><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${f.id}">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}${f.stato==='BOZZA'?`<form method="post" action="/fatture/${f.id}/elimina-bozza" style="display:inline" onsubmit="return confirm('Attesti che questa fattura non e MAI stata emessa, consegnata, importata in Fatel o trasmessa? La cancellazione resta registrata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn dark" type="submit">ELIMINA BOZZA</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
 });
 
 
@@ -1448,6 +1487,7 @@ router.post('/fatture/:id/email', async (req,res)=>{
     await dpServiceSendEmail(d.o.email,`Fattura DP SERVICE ${f.numero}/S`,
       `Buongiorno ${d.o.ragione_sociale||''},\nin allegato trova la fattura DP SERVICE ${f.numero}/S per ${d.o.targa||''}.\nTotale ${dpEuro(f.totale)}.`,
       [{filename:`Fattura_DP_SERVICE_${f.numero}_S.pdf`,content:buf,contentType:'application/pdf'}]);
+    await run("UPDATE fatture_service SET stato='EMESSA' WHERE id=?",[f.id]);
     res.redirect('/fatture/'+f.id);
   }catch(e){ res.status(500).send(page('Invio email',`<div class="box"><h1>Invio non riuscito</h1><p>${esc(e.message)}</p><a class="btn" href="/fatture/${req.params.id}">Indietro</a></div>`)); }
 });

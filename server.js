@@ -12973,6 +12973,7 @@ app.get('/trasporti/ordine/:id',async(req,res)=>{
  const gruppoAuto=o.ordine_gruppo?await all(`SELECT id,modello,targa_telaio,prezzo,stato FROM trasporti_ordini WHERE ordine_gruppo=? ORDER BY ordine_posizione,id`,[o.ordine_gruppo]).catch(()=>[]):[];
  const mov=await all(`SELECT m.*,v.codice FROM trasporti_movimenti m LEFT JOIN trasporti_viaggi v ON v.id=m.viaggio_id WHERE m.ordine_id=? ORDER BY m.id DESC LIMIT 50`,[o.id]).catch(()=>[]);
  const leg=await get(`SELECT vo.viaggio_id,vo.stato_auto,v.codice,v.autista,v.automezzo FROM trasporti_viaggio_ordini vo JOIN trasporti_viaggi v ON v.id=vo.viaggio_id WHERE vo.ordine_id=? ORDER BY vo.viaggio_id DESC LIMIT 1`,[o.id]).catch(()=>null);
+ const bisarcheScelta=await all(`SELECT nome,targa FROM trasporti_bisarche WHERE attiva=1 AND COALESCE(stato,'ATTIVO')='ATTIVO' ORDER BY nome`).catch(()=>[]);
  const card=(title,rag,ind,cit,prov,tel)=>`<div class="box"><h3>${title}</h3><p><b>${esc(rag||'')}</b><br>${esc(ind||'')}<br>${esc(cit||'')} ${esc(prov||'')}<br>${tel?'Tel: '+esc(tel):''}</p></div>`;
  const storico=mov.length?`<div class="box"><h3>🕘 Storico trasporto</h3>${mov.map(m=>`<p><b>${esc(m.stato)}</b> • ${esc(dpTItDate(m.data_movimento))}${m.codice?' • '+esc(m.codice):''}${m.localita?' • '+esc(m.localita):''}${m.autista?' • '+esc(m.autista):''}</p>`).join('')}</div>`:'';
  const bloccoFatt=o.stato==='FATTURATO'?'<p class="notice">⚠️ Ordine già fatturato: i dati fiscali non vanno modificati senza procedura amministrativa.</p>':'';
@@ -12992,9 +12993,9 @@ app.get('/trasporti/ordine/:id',async(req,res)=>{
        <div><label>Numero DDT</label><input name="num_bolla" value="${esc(o.num_bolla||'')}"></div>
        <div><label>Data DDT</label><input type="date" name="data_bolla" value="${esc(o.data_bolla||'')}"></div>
        <div><label>Data carico reale</label><input type="date" name="data_carico" value="${esc(o.data_carico||'')}"></div>
-       <div><label>Data scarico reale</label><input type="date" name="data_scarico" value="${esc(o.data_scarico||o.data_consegna||'')}"></div>
+       <div><label>Data scarico reale</label><input type="date" name="data_scarico" value="${esc(o.data_scarico||'')}"></div>
        <div><label>Data consegna reale</label><input type="date" name="data_consegna" value="${esc(o.data_consegna||'')}"></div>
-       <div><label>Targa bisarca</label><input name="targa_bisarca" value="${esc(o.targa_bisarca||'')}"></div>
+       <div><label>Targa bisarca</label><select id="dp_bisarca_select" onchange="document.getElementById('dp_bisarca_custom').value=this.value==='__ALTRO__'?'':this.value; document.getElementById('dp_bisarca_custom').focus()"><option value="">Scegli bisarca o inserisci manualmente</option>${bisarcheScelta.map(b=>`<option value="${esc(b.targa||'')}" ${String(o.targa_bisarca||'')===String(b.targa||'')?'selected':''}>${esc(b.nome||b.targa)} — ${esc(b.targa||'')}</option>`).join('')}<option value="__ALTRO__">Inserimento manuale</option></select><input id="dp_bisarca_custom" name="targa_bisarca" value="${esc(o.targa_bisarca||'')}" placeholder="Targa effettiva, anche mezzo esterno"></div>
      </div>
      <label>Note interne DP</label><textarea name="note_interne">${esc(o.note_interne||'')}</textarea>
      <label>Note visibili al cliente</label><textarea name="note_cliente">${esc(o.note_cliente||o.note||'')}</textarea>
@@ -13720,10 +13721,43 @@ app.get('/trasporti/viaggio/:id/bordero.pdf', async (req,res)=>{
 });
 
 
+// V360: registro interno dei soli numeri liberati da documenti NON emessi.
+// Il registro conserva la copia del documento cancellato per controllo/audit.
+async function dpInvoiceReleaseEnsure(){
+ await run(`CREATE TABLE IF NOT EXISTS dp_invoice_draft_cancellations (
+   id INTEGER PRIMARY KEY AUTOINCREMENT, settore TEXT NOT NULL, fattura_id INTEGER NOT NULL,
+   anno INTEGER, serie TEXT, numero INTEGER, documento_json TEXT NOT NULL,
+   attestazione TEXT NOT NULL, cancellata_at TEXT DEFAULT CURRENT_TIMESTAMP,
+   numero_riutilizzato_at TEXT
+ )`);
+}
+async function dpInvoiceReleasedNumber(settore,anno,serie,table){
+ await dpInvoiceReleaseEnsure();
+ const r=await get(`SELECT c.numero FROM dp_invoice_draft_cancellations c WHERE c.settore=? AND c.anno=? AND c.serie=? AND c.numero_riutilizzato_at IS NULL AND NOT EXISTS (SELECT 1 FROM ${table} f WHERE f.anno=c.anno AND f.serie=c.serie AND f.numero=c.numero) ORDER BY c.numero LIMIT 1`,[settore,anno,serie]);
+ return r?Number(r.numero):null;
+}
+async function dpInvoiceMarkNumberReused(settore,anno,serie,numero){
+ await dpInvoiceReleaseEnsure();
+ await run('UPDATE dp_invoice_draft_cancellations SET numero_riutilizzato_at=CURRENT_TIMESTAMP WHERE settore=? AND anno=? AND serie=? AND numero=? AND numero_riutilizzato_at IS NULL',[settore,anno,serie,numero]);
+}
+async function dpInvoiceNoExport(tipo,id){
+ await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
+ const arr=tipo==='noleggio'?['noleggio','n']:tipo==='trasporti'?['trasporti','t']:['libere','libera','l'];
+ const x=await get(`SELECT 1 ok FROM dp_xml_exports WHERE fattura_id=? AND LOWER(tipo) IN (${arr.map(()=>'?').join(',')}) LIMIT 1`,[id,...arr]);
+ if(x)throw new Error('XML gia esportato su Drive: controllare acquisizione Fatel, cancellazione bloccata.');
+}
+async function dpInvoiceNoCollected(modulo,id){
+ await dpReceivablesEnsure();
+ const x=await get("SELECT 1 ok FROM dp_scadenze_incassi WHERE modulo=? AND fattura_id=? AND (stato='INCASSATA' OR incassata_at IS NOT NULL) LIMIT 1",[modulo,id]);
+ if(x)throw new Error('Esiste una scadenza gia incassata: cancellazione bloccata.');
+}
+
 function dpTFattNumero(displayNumero,serie){
   return `${Number(displayNumero)||0}/${dpTClean(serie||'T').toUpperCase()}`;
 }
 async function dpTNextInvoiceNumber(anno,serie='T'){
+  const released=await dpInvoiceReleasedNumber('trasporti',Number(anno),dpTClean(serie).toUpperCase(),'trasporti_fatture');
+  if(released!==null)return released;
   const r=await get(`SELECT COALESCE(MAX(numero),0)+1 n FROM trasporti_fatture WHERE anno=? AND serie=?`,[Number(anno),dpTClean(serie).toUpperCase()]).catch(()=>({n:1}));
   return Number(r?.n||1);
 }
@@ -13754,6 +13788,7 @@ async function dpTCreateInvoiceFromIds(ids,{data_fattura,serie='T',numero,pagame
     const ins=await run(`INSERT INTO trasporti_fatture (anno,numero,serie,numero_display,data_fattura,cliente,cliente_id,imponibile,iva,totale,pagamento,codice_pagamento,pagamento_descrizione,note,stato,tipo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [anno,numero,serie,display,data,rows[0].cliente,cli?.id||null,imponibile,iva,totale,payDesc,payCode,payDesc,dpTClean(note),'PRONTA_FIC',immediata?'IMMEDIATA':'ORDINARIA']);
     const fid=ins.lastID;
+    await dpInvoiceMarkNumberReused('trasporti',anno,serie,numero);
     let pos=0;
     for(const o of rows){
       pos++;
@@ -13878,7 +13913,7 @@ app.get('/trasporti/fattura/:id([0-9]+)',async(req,res)=>{
     <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/trasporti/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">✏️ MODIFICA FATTURA</a>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che questa fattura è stata emessa/inviata in Fatture in Cloud?')"><button class="btn dp-green">☁️ SEGNA INVIATA FATTURE IN CLOUD</button></form>`:''}
-    ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Annullare questa fattura interna e rimettere gli ordini da fatturare?')"><button class="btn btn2">Annulla fattura interna</button></form>`:''}
+    ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn btn2">Elimina bozza non emessa</button></form>`:''}
     </div><div class="box" style="overflow:auto"><table><tr><th>DDT</th><th>Auto</th><th>Tratta</th><th>Imponibile</th><th>IVA</th></tr>${rows}</table>
     <h3>Imponibile € ${euro(f.imponibile)}<br>IVA € ${euro(f.iva)}<br>Totale € ${euro(f.totale)}</h3></div>`));
 });
@@ -13936,21 +13971,31 @@ app.post('/trasporti/fattura/:id/inviata-fic',async(req,res)=>{
 });
 
 app.post('/trasporti/fattura/:id/annulla',async(req,res)=>{
-  const f=await get(`SELECT * FROM trasporti_fatture WHERE id=?`,[req.params.id]).catch(()=>null);
-  if(!f)return res.redirect('/trasporti/fatturazione');
-  if(f.stato==='INVIATA_FIC')return res.status(400).send(page('Non annullabile',`<div class="box"><h2>Fattura già segnata come inviata in Fatture in Cloud.</h2><a class="btn" href="/trasporti/fattura/${f.id}">Torna</a></div>`));
-  const ids=(await all(`SELECT ordine_id FROM trasporti_fattura_ordini WHERE fattura_id=?`,[f.id]).catch(()=>[])).map(x=>x.ordine_id);
-  await run('BEGIN');
+ try{
+  const f=await get('SELECT * FROM trasporti_fatture WHERE id=?',[req.params.id]);
+  if(!f)throw new Error('Fattura inesistente');
+  if(String(f.stato||'').toUpperCase()!=='PRONTA_FIC')throw new Error('La fattura non e una bozza PRONTA_FIC: cancellazione bloccata');
+  if(String(req.body.conferma||'')!=='MAI_EMESSA')throw new Error('Confermare esplicitamente che la fattura non e mai stata emessa, consegnata o importata altrove');
+  await dpInvoiceNoExport('trasporti',f.id);
+  await dpInvoiceNoCollected('TRASPORTI',f.id);
+  const links=await all('SELECT * FROM trasporti_fattura_ordini WHERE fattura_id=?',[f.id]);
+  await dpInvoiceReleaseEnsure();
+  await run('BEGIN IMMEDIATE');
   try{
-    if(ids.length){
-      const qs=ids.map(()=>'?').join(',');
-      await run(`UPDATE trasporti_ordini SET stato=CASE WHEN COALESCE(data_consegna,'')<>'' THEN 'DA_FATTURARE' ELSE 'DA_ASSEGNARE' END,num_fattura='',data_fattura='',updated_at=CURRENT_TIMESTAMP WHERE id IN (${qs})`,ids);
-    }
-    await run(`DELETE FROM trasporti_fattura_ordini WHERE fattura_id=?`,[f.id]);
-    await run(`DELETE FROM trasporti_fatture WHERE id=?`,[f.id]);
-    await run('COMMIT');
-    res.redirect('/trasporti/fatturazione');
-  }catch(e){await run('ROLLBACK').catch(()=>{});res.status(500).send(e.message);}
+   const q=await get('SELECT stato FROM trasporti_fatture WHERE id=?',[f.id]);
+   if(!q||q.stato!=='PRONTA_FIC')throw new Error('Stato cambiato: riprovare');
+   await dpInvoiceNoExport('trasporti',f.id);
+   await dpInvoiceNoCollected('TRASPORTI',f.id);
+   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',['trasporti',f.id,f.anno,f.serie,f.numero,JSON.stringify({fattura:f,ordini:links}),'MAI_EMESSA']);
+   const ids=links.map(x=>x.ordine_id);
+   if(ids.length){const qs=ids.map(()=>'?').join(',');await run(`UPDATE trasporti_ordini SET stato=CASE WHEN COALESCE(data_consegna,'')<>'' THEN 'DA_FATTURARE' ELSE 'DA_ASSEGNARE' END,num_fattura='',data_fattura='',updated_at=CURRENT_TIMESTAMP WHERE id IN (${qs})`,ids);}
+   await run('DELETE FROM trasporti_fattura_ordini WHERE fattura_id=?',[f.id]);
+   await run('DELETE FROM trasporti_fatture WHERE id=?',[f.id]);
+   await run("DELETE FROM dp_scadenze_incassi WHERE modulo='TRASPORTI' AND fattura_id=? AND stato<>'INCASSATA'",[f.id]);
+   await run('COMMIT');
+  }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
+  res.redirect('/trasporti/fatturazione');
+ }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/trasporti/fattura/${Number(req.params.id)}">Torna</a></div>`));}
 });
 
 app.get('/trasporti/fattura/:id.pdf',async(req,res)=>{
@@ -14251,6 +14296,8 @@ function dpNFattNumero(numero,serie='N'){
   return `${Number(numero)||0}/${String(serie||'N').trim().toUpperCase()||'N'}`;
 }
 async function dpNNextInvoiceNumber(anno,serie='N'){
+  const released=await dpInvoiceReleasedNumber('noleggio',Number(anno),String(serie||'N').trim().toUpperCase(),'noleggio_fatture');
+  if(released!==null)return released;
   const r=await get(`SELECT COALESCE(MAX(numero),0)+1 n FROM noleggio_fatture WHERE anno=? AND serie=?`,[Number(anno),String(serie||'N').trim().toUpperCase()]).catch(()=>({n:1}));
   return Number(r?.n||1);
 }
@@ -14308,6 +14355,7 @@ app.post('/noleggio/fattura/crea/:id',async(req,res)=>{
     const totale=dpNRentGross(p),imponibile=totale/1.22,iva=totale-imponibile,cliente=dpNClienteLabel(p);
     const payCode=dpPayCode(req.body.pagamento||p.codice_pagamento||'BOIMM'),payDesc=DP_PAYMENT_LABELS[payCode]||payCode;
     const ins=await run(`INSERT INTO noleggio_fatture (anno,numero,serie,numero_display,data_fattura,prenotazione_id,cliente,cliente_id,imponibile,iva,totale,pagamento,codice_pagamento,pagamento_descrizione,note,stato) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,[anno,numero,serie,display,data,p.id,cliente,p.cliente_id||null,imponibile,iva,totale,payDesc,payCode,payDesc,String(req.body.note||'').trim(),'PRONTA_FIC']);
+    await dpInvoiceMarkNumberReused('noleggio',anno,serie,numero);
     await run(`UPDATE prenotazioni SET fattura_stato='pronta_fic',fattura_numero=?,fattura_metodo=?,fattura_note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[display,String(req.body.pagamento||'Bonifico vista fattura').trim(),String(req.body.note||'').trim(),p.id]).catch(()=>{});
     await dpUpsertReceivables({modulo:'NOLEGGIO',fattura_id:ins.lastID,numero_fattura:display,data_fattura:data,cliente_nome:cliente,
       cliente_email:p.email||'',codice_pagamento:payCode,pagamento:payDesc,totale});
@@ -14324,7 +14372,7 @@ app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const correctionHtml=showCorrection?`<div style="border:1px solid #d99;border-radius:10px;padding:12px;margin:12px 0"><b>Intestatario differente dal contratto aggiornato</b><p>In fattura: <b>${esc(f.cliente)}</b><br>Nel contratto: <b>${esc(correctedName)}</b></p><form method="POST" action="/noleggio/fattura/${f.id}/aggiorna-intestatario" onsubmit="return confirm('Aggiornare l’intestatario della fattura non inviata con quello del contratto?')"><input type="hidden" name="conferma" value="SI"><button type="submit">🔄 Allinea intestatario dalla pratica</button></form><small>Non modifica il contratto, i dati fiscali, i totali o le fatture gia inviate. Non usare se questa fattura e gia stata consegnata/inviata.</small></div>`:'';
   res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>${correctionHtml}
     <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/noleggio/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
-    ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura e rimettere il noleggio da fatturare?')"><button class="btn" style="background:#8b0000">ELIMINA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
+    ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn" style="background:#8b0000">ELIMINA BOZZA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
 });
 
@@ -14358,8 +14406,30 @@ app.post('/noleggio/fattura/:id/modifica',async(req,res)=>{
   try{const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]);if(!f)throw new Error('Fattura non trovata');if(f.stato==='INVIATA_FIC')throw new Error('Fattura gia inviata');const numero=Number(req.body.numero||f.numero),serie=String(req.body.serie||'N').trim().toUpperCase(),display=dpNFattNumero(numero,serie);await run(`UPDATE noleggio_fatture SET numero=?,serie=?,numero_display=?,data_fattura=?,pagamento=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[numero,serie,display,req.body.data_fattura||f.data_fattura,String(req.body.pagamento||f.pagamento).trim(),String(req.body.note||'').trim(),f.id]);await run(`UPDATE prenotazioni SET fattura_numero=?,fattura_metodo=?,fattura_note=? WHERE id=?`,[display,String(req.body.pagamento||f.pagamento).trim(),String(req.body.note||'').trim(),f.prenotazione_id]).catch(()=>{});res.redirect(`/noleggio/fattura/${f.id}`);}catch(e){res.status(400).send(page('Errore',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}
 });
 app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
-  const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(!f)return res.redirect('/fatture-da-fare');if(f.stato==='INVIATA_FIC')return res.status(400).send('Fattura gia inviata fiscalmente');await run(`DELETE FROM noleggio_fatture WHERE id=?`,[f.id]);await run(`UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=0 WHERE id=?`,[f.prenotazione_id]).catch(()=>{});res.redirect('/fatture-da-fare');
+ try{
+  const f=await get('SELECT * FROM noleggio_fatture WHERE id=?',[req.params.id]);
+  if(!f)throw new Error('Fattura inesistente');
+  if(f.stato!=='PRONTA_FIC')throw new Error('Cancellazione ammessa soltanto per bozze PRONTA_FIC');
+  if(String(req.body.conferma||'')!=='MAI_EMESSA')throw new Error('Manca attestazione di mancata emissione/consegna');
+  await dpInvoiceNoExport('noleggio',f.id);
+  await dpInvoiceNoCollected('NOLEGGIO',f.id);
+  await dpInvoiceReleaseEnsure();
+  await run('BEGIN IMMEDIATE');
+  try{
+   const q=await get('SELECT stato FROM noleggio_fatture WHERE id=?',[f.id]);
+   if(!q||q.stato!=='PRONTA_FIC')throw new Error('Stato fattura cambiato');
+   await dpInvoiceNoExport('noleggio',f.id);
+   await dpInvoiceNoCollected('NOLEGGIO',f.id);
+   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',['noleggio',f.id,f.anno,f.serie,f.numero,JSON.stringify(f),'MAI_EMESSA']);
+   await run('DELETE FROM noleggio_fatture WHERE id=?',[f.id]);
+   await run("DELETE FROM dp_scadenze_incassi WHERE modulo='NOLEGGIO' AND fattura_id=? AND stato<>'INCASSATA'",[f.id]);
+   await run("UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=0 WHERE id=?",[f.prenotazione_id]);
+   await run('COMMIT');
+  }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
+  res.redirect('/fatture-da-fare');
+ }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/noleggio/fattura/${Number(req.params.id)}">Torna</a></div>`));}
 });
+
 app.post('/noleggio/fattura/:id/inviata-fic',async(req,res)=>{
   const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(f){await run(`UPDATE noleggio_fatture SET stato='INVIATA_FIC',updated_at=CURRENT_TIMESTAMP WHERE id=?`,[f.id]);await run(`UPDATE prenotazioni SET fattura_stato='emessa',fattura_numero=? WHERE id=?`,[f.numero_display,f.prenotazione_id]).catch(()=>{});}res.redirect(`/noleggio/fattura/${req.params.id}`);
 });
@@ -14600,6 +14670,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
     ${r.stato==='BOZZA'?`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`:''}
     <a class="btn btn2" href="${u}/xml-verifica">XML</a>
     ${r.stato==='PROVA'?`<form action="${u}/${showArchived?'ripristina-prova':'archivia-prova'}" method="post" style="display:inline" onsubmit="return confirm('${showArchived?'Ripristinare la simulazione nel registro?':'Archiviare questa SIMULAZIONE TEST? Sarà nascosta ma non cancellata.'}')"><button class="btn btn2" type="submit">${showArchived?'RIPRISTINA':'ARCHIVIA TEST'}</button></form>`:''}
+    ${['BOZZA','PROVA'].includes(r.stato)?`<form action="${u}/elimina-bozza" method="post" style="display:inline" onsubmit="return confirm('Confermi che e solo una prova MAI emessa ne consegnata? Rimozione tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn btn2" type="submit">ELIMINA BOZZA</button></form>`:''}
     ${r.stato==='BOZZA'?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`:''}
    </td></tr>`;
   }).join('');
@@ -14635,6 +14706,23 @@ app.post('/fatturazione/libere/:id/ripristina-prova',async(req,res)=>{
   if(!r||r.changes!==1)throw new Error('Non ripristinata: documento non ammesso');
   res.redirect('/fatturazione/libere?archiviate=1');
  }catch(e){res.status(400).send(page('Ripristino non riuscito',`<div class="box"><h2>Documento non modificato</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
+// V360: cancellazione sicura di bozze e simulazioni, non fatture gia registrate.
+app.post('/fatturazione/libere/:id/elimina-bozza',async(req,res)=>{
+ try{
+  await dpFreeEnsure();await dpInvoiceReleaseEnsure();
+  const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
+  if(!f||!['BOZZA','PROVA'].includes(f.stato)||f.emessa_at)throw new Error('Solo bozze o simulazioni mai registrate possono essere eliminate');
+  if(req.body.conferma!=='MAI_EMESSA')throw new Error('Conferma mancante');
+  await dpInvoiceNoExport('libere',f.id);
+  await run('BEGIN IMMEDIATE');
+  try{
+   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',['libere',f.id,f.anno_fattura||null,f.serie_fattura||'',null,JSON.stringify(f),'MAI_EMESSA']);
+   await run("DELETE FROM dp_fatture_libere_bozze WHERE id=? AND stato IN ('BOZZA','PROVA') AND emessa_at IS NULL",[f.id]);
+   await run('COMMIT');
+  }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
+  res.redirect('/fatturazione/libere');
+ }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
 });
 app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattura libera',dpFreeFormV326()));});
 app.post('/fatturazione/libere/nuova',async(req,res)=>{
