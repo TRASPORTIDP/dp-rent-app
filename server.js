@@ -13538,7 +13538,7 @@ app.post('/trasporti/viaggio/:id/elimina-v361', async(req,res)=>{
     if(!viaggio)throw new Error('Viaggio non trovato');
     const links=await all('SELECT ordine_id FROM trasporti_viaggio_ordini WHERE viaggio_id=?',[id]);
     for(const l of links){
-      const f=await get('SELECT id FROM trasporti_fattura_ordini WHERE ordine_id=? LIMIT 1',[l.ordine_id]);
+      const f=await get('SELECT fattura_id FROM trasporti_fattura_ordini WHERE ordine_id=? LIMIT 1',[l.ordine_id]);
       if(f)throw new Error('Viaggio collegato a un ordine gia fatturato: cancellazione bloccata');
       const o=await get('SELECT num_fattura FROM trasporti_ordini WHERE id=?',[l.ordine_id]);
       if(String(o?.num_fattura||'').trim())throw new Error('Ordine con numero fattura presente: cancellazione bloccata');
