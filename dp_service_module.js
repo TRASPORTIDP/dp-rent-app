@@ -29,7 +29,7 @@ router.use((req,res,next)=>{
   const originalSend=res.send.bind(res);
   res.send=(body)=>{
     if(typeof body==='string'){
-      body=body.replace(/\b(href|action|src)=([\"'])\/(?!service\/|fatturazione\/)/g,'$1=$2/service/');
+      body=body.replace(/\b(href|action|src)=([\"'])\/(?!service\/|service(?=['"])|fatturazione\/)/g,'$1=$2/service/');
       // Link speciali che devono restare FUORI dal prefisso /service.
       body=body.replace(/([\"'])\/service\/clienti-azienda(?=\/|[\"'])/g,'$1/clienti-azienda');
       // Link speciale per tornare al menu principale DP GESTIONALE.
@@ -41,7 +41,7 @@ router.use((req,res,next)=>{
   res.redirect=(...args)=>{
     if(args.length){
       const i=args.length-1;
-      if(typeof args[i]==='string' && args[i].startsWith('/') && !args[i].startsWith('/service/') && !args[i].startsWith('/clienti-azienda') && !args[i].startsWith('/fatturazione/')) args[i]='/service'+args[i];
+      if(typeof args[i]==='string' && args[i].startsWith('/') && args[i]!=='/service' && !args[i].startsWith('/service/') && !args[i].startsWith('/clienti-azienda') && !args[i].startsWith('/fatturazione/')) args[i]='/service'+args[i];
     }
     return originalRedirect(...args);
   };
