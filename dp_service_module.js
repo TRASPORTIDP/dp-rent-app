@@ -120,7 +120,7 @@ async function initDb(){
   const ccols = await all(`PRAGMA table_info(clienti)`);
   const have = new Set(ccols.map(x => x.name));
   for (const [name, type] of [
-    ['cf','TEXT'],['indirizzo','TEXT'],['citta','TEXT'],['provincia','TEXT'],
+    ['cf','TEXT'],['indirizzo','TEXT'],['citta','TEXT'],['provincia','TEXT'],['cap','TEXT'],
     ['pec','TEXT'],['sdi','TEXT'],['note','TEXT'],['created_at','TEXT'],['codice','TEXT'],['source_main_id','INTEGER'],['source_key','TEXT'],
     ['codice_iva','TEXT'],['codice_pagamento','TEXT'],['banca_cliente','TEXT'],['banca_codice','TEXT'],['banca_conto','TEXT'],
     ['banca_abi','TEXT'],['banca_cab','TEXT'],['banca_paese','TEXT'],['banca_cin_eur','TEXT'],['banca_cin_it','TEXT'],['banca_valuta','TEXT'],
@@ -1180,7 +1180,7 @@ router.get('/ordini/:id', async (req,res)=>{
       <input type="hidden" name="conferma" value="ELIMINA ${o.id}"><button class="btn" style="background:#a11;color:white">🗑️ Elimina ordine</button></form></div>
     <div class="box">
       <h1>🧾 Ordine di lavoro ${o.numero}/${o.anno}</h1>
-      <p><b>${esc(o.ragione_sociale)}</b><br>🚗 <b>${esc(o.targa)}</b> — ${esc(o.marca)} ${esc(o.modello)} ${esc(o.versione)}</p>
+      <p><b>${esc(o.ragione_sociale)}</b> <a class="btn dark" href="/ordini/${o.id}/cliente-fiscale">🪪 Completa dati fiscali cliente</a><br>🚗 <b>${esc(o.targa)}</b> — ${esc(o.marca)} ${esc(o.modello)} ${esc(o.versione)}</p>
       <p><b>Data ingresso:</b> ${esc(o.data_apertura)} &nbsp; <b>Km:</b> ${o.km_ingresso||0}</p>
       ${o.lavorazioni_eseguite?`<div class="box" style="border-left:6px solid #159447"><h3>🔧 Lavorazioni registrate dai meccanici</h3><div style="white-space:pre-wrap">${esc(o.lavorazioni_eseguite)}</div></div>`:''}
       <form method="post" action="/ordini/${o.id}/dettagli" style="margin:14px 0">
@@ -1266,6 +1266,74 @@ router.get('/ordini/:id', async (req,res)=>{
 });
 
 
+// V366: aggiornamento fiscale contestuale all'ODL, senza creare un nuovo cliente.
+router.get('/ordini/:id/cliente-fiscale', async(req,res)=>{
+  const o=await get('SELECT id,cliente_id FROM ordini_lavoro WHERE id=?',[req.params.id]);
+  if(!o) return res.status(404).send('Ordine non trovato');
+  const c=await get('SELECT * FROM clienti WHERE id=?',[o.cliente_id]);
+  if(!c) return res.status(404).send('Cliente non trovato: verificare anagrafica');
+  res.send(page('Dati fiscali cliente ODL',`
+    <div class="actions"><a class="btn dark" href="/ordini/${o.id}">← Torna all'ordine</a></div>
+    <div class="box"><h1>🪪 Completa dati fiscali cliente</h1>
+    <p>ODL ${esc(o.id)} — i dati saranno aggiornati sull'anagrafica esistente, senza duplicarla.</p>
+    <form method="post" action="/ordini/${o.id}/cliente-fiscale">
+      <label>Nome e cognome / ragione sociale</label><input name="ragione_sociale" required value="${esc(c.ragione_sociale||'')}">
+      <label>Tipo cliente</label><select name="tipo_cliente" id="tipoCli" onchange="document.getElementById('cfHint').textContent=this.value==='privato'?'Codice fiscale del privato (16 caratteri)':'Codice fiscale azienda se disponibile'">
+        <option value="privato" ${!String(c.piva||'').trim()?'selected':''}>Privato (senza partita IVA)</option>
+        <option value="azienda" ${String(c.piva||'').trim()?'selected':''}>Azienda</option>
+      </select>
+      <label>Codice fiscale <small id="cfHint">${!String(c.piva||'').trim()?'Codice fiscale del privato (16 caratteri)':'Codice fiscale azienda se disponibile'}</small></label><input name="cf" maxlength="16" value="${esc(c.cf||'')}">
+      <label>Partita IVA (solo aziende)</label><input name="piva" maxlength="11" value="${esc(c.piva||'')}">
+      <label>Via / numero civico</label><input name="indirizzo" required value="${esc(c.indirizzo||'')}">
+      <label>CAP</label><input name="cap" inputmode="numeric" maxlength="5" required value="${esc(c.cap||'')}">
+      <label>Comune</label><input name="citta" required value="${esc(c.citta||'')}">
+      <label>Provincia (2 lettere)</label><input name="provincia" maxlength="2" required value="${esc(c.provincia||'')}">
+      <label>PEC (facoltativa)</label><input name="pec" value="${esc(c.pec||'')}">
+      <label>SDI (facoltativo per il privato)</label><input name="sdi" maxlength="7" value="${esc(c.sdi||'')}">
+      <button class="btn green" type="submit">💾 Salva e torna all'ordine</button>
+    </form></div>`));
+});
+
+router.post('/ordini/:id/cliente-fiscale', async(req,res)=>{
+  const o=await get('SELECT id,cliente_id FROM ordini_lavoro WHERE id=?',[req.params.id]);
+  if(!o) return res.status(404).send('Ordine non trovato');
+  const c=await get('SELECT * FROM clienti WHERE id=?',[o.cliente_id]);
+  if(!c) return res.status(404).send('Cliente non trovato');
+  const b=req.body||{};
+  const privato=b.tipo_cliente==='privato';
+  const nome=String(b.ragione_sociale||'').trim();
+  const cf=String(b.cf||'').toUpperCase().trim();
+  const piva=privato?'':String(b.piva||'').trim();
+  const cap=String(b.cap||'').trim();
+  const provincia=String(b.provincia||'').toUpperCase().trim();
+  const indirizzo=String(b.indirizzo||'').trim();
+  const citta=String(b.citta||'').trim();
+  const problems=[];
+  if(!nome)problems.push('Nome / ragione sociale');
+  if(privato && !/^[A-Z0-9]{16}$/.test(cf)) problems.push('Codice fiscale privato di 16 caratteri');
+  if(!privato && !/^\d{11}$/.test(piva)) problems.push('Partita IVA aziendale di 11 cifre');
+  if(!indirizzo)problems.push('Indirizzo');
+  if(!/^\d{5}$/.test(cap))problems.push('CAP a 5 cifre');
+  if(!citta)problems.push('Comune');
+  if(!/^[A-Z]{2}$/.test(provincia))problems.push('Provincia a 2 lettere');
+  if(problems.length)return res.status(400).send(page('Dati fiscali incompleti',`<div class="box"><h1>⚠️ Controlla i dati</h1><p>${problems.map(esc).join(', ')}</p><a class="btn" href="/ordini/${o.id}/cliente-fiscale">Correggi dati</a></div>`));
+  try{
+    // Mantiene la stessa anagrafica locale collegata all'ODL.
+    await run('UPDATE clienti SET ragione_sociale=?,cf=?,piva=?,indirizzo=?,cap=?,citta=?,provincia=?,pec=?,sdi=? WHERE id=?',[
+      nome,cf,piva,indirizzo,cap,citta,provincia,String(b.pec||'').trim(),String(b.sdi||'').trim(),c.id
+    ]);
+    // Allinea l'anagrafica condivisa, senza duplicarla quando esiste il collegamento.
+    const masterId=await dpServiceSaveToMaster(c.id,{ragione_sociale:nome,cf,piva,indirizzo,citta,provincia,pec:String(b.pec||'').trim(),sdi:String(b.sdi||'').trim()});
+    if(masterId){
+      await mainRun('UPDATE dp_clienti_master SET cap=?,updated_at=CURRENT_TIMESTAMP WHERE id=?',[cap,masterId]);
+    }
+    res.redirect('/ordini/'+o.id);
+  }catch(e){
+    console.error('V366 dati fiscali:',e);
+    res.status(500).send(page('Dati non salvati',`<div class="box"><h1>Salvataggio non completato</h1><p>I dati richiedono una verifica tecnica prima di procedere.</p><a class="btn" href="/ordini/${o.id}/cliente-fiscale">Torna al cliente</a></div>`));
+  }
+});
+
 router.post('/ordini/:id/dettagli', async (req,res)=>{
   await run(`UPDATE ordini_lavoro SET descrizione_lavoro=?,diagnosi=?,note=COALESCE(?,note) WHERE id=?`,
     [String(req.body.descrizione_lavoro||''),String(req.body.diagnosi||''),req.body.note||null,req.params.id]);
@@ -1339,6 +1407,16 @@ router.post('/ordini/:id/fattura', async (req,res)=>{
   if(!d.righe.length) return res.status(400).send(page('Fattura',`<div class="box"><h1>⚠️ Fattura vuota</h1><p>Prima aggiungi le lavorazioni/ricambi nell'ordine.</p><a class="btn" href="/ordini/${req.params.id}">Torna all'ordine</a></div>`));
   let f=await get('SELECT * FROM fatture_service WHERE ordine_id=?',[req.params.id]);
   if(!f){
+    const c=await get('SELECT * FROM clienti WHERE id=?',[d.o.cliente_id]);
+    const hasPiva=/^\d{11}$/.test(String(c?.piva||'').trim());
+    const hasCf=/^[A-Z0-9]{16}$/.test(String(c?.cf||'').trim().toUpperCase());
+    const missing=[];
+    if(!hasPiva&&!hasCf)missing.push('Codice fiscale privato o partita IVA azienda');
+    if(!String(c?.indirizzo||'').trim())missing.push('Indirizzo');
+    if(!/^\d{5}$/.test(String(c?.cap||'').trim()))missing.push('CAP');
+    if(!String(c?.citta||'').trim())missing.push('Comune');
+    if(!/^[A-Za-z]{2}$/.test(String(c?.provincia||'').trim()))missing.push('Provincia');
+    if(missing.length)return res.status(400).send(page('Completa dati cliente',`<div class="box"><h1>⚠️ Prima completa i dati fiscali</h1><p>${missing.map(esc).join(', ')}</p><p>Nessuna nuova fattura è stata creata e nessun numero è stato assegnato.</p><a class="btn" href="/ordini/${req.params.id}/cliente-fiscale">🪪 Completa cliente</a></div>`));
     const anno=new Date().getFullYear();
     const released=await dpServiceNumeroLiberato(anno);
     const nx=released!==null?{n:released}:await get("SELECT COALESCE(MAX(numero),0)+1 n FROM fatture_service WHERE anno=? AND serie='S'",[anno]);
