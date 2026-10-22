@@ -891,7 +891,7 @@ router.get('/veicoli', async (req,res)=>{
   <div class="box"><h1>🚗 Veicoli clienti (${rows.length})</h1>
   <form class="filters"><input name="q" placeholder="Targa, cliente, marca, modello, telaio" value="${esc(q)}"><span></span><span></span><button class="btn">Filtra</button></form>
   <table><tr><th>Targa</th><th>Cliente</th><th>Veicolo</th><th>Telaio</th><th>Km</th><th></th></tr>
-  ${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a></td></tr>`).join('')}
+  ${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a> <form method="post" action="/veicoli/${v.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare il veicolo ${esc(v.targa)}? Gli ordini collegati bloccano l’eliminazione.')"><input type="hidden" name="conferma" value="ELIMINA ${v.id}"><button type="submit" class="btn" style="background:#a11">Elimina</button></form></td></tr>`).join('')}
   </table></div>`));
 });
 
