@@ -833,7 +833,7 @@ router.get('/clienti/:id', async (req,res)=>{
     </div>
     <div class="box"><h2>🚗 Veicoli del cliente (${vs.length})</h2>
       <table><tr><th>Targa</th><th>Marca / Modello</th><th>Telaio</th><th>Km</th><th></th></tr>
-      ${vs.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a> <form method="post" action="/veicoli/${v.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare il veicolo ${esc(v.targa)}? Se ha ordini di lavoro la cancellazione sarà bloccata.')"><input type="hidden" name="conferma" value="ELIMINA ${v.id}"><button type="submit" class="btn" style="background:#a11">Elimina</button></form></td></tr>`).join('')}
+      ${vs.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a> <form method="post" action="/veicoli/${v.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare il veicolo ${esc(v.targa)}? Se ha ordini di lavoro la cancellazione sarà bloccata.')"><input type="hidden" name="conferma" value="ELIMINA ${v.id}"><button type="submit" class="btn" style="display:inline-block;background:#b00000;color:#fff;width:auto;min-width:90px;margin-left:6px">Elimina</button></form></td></tr>`).join('')}
       </table>
     </div>`));
 });
@@ -887,11 +887,11 @@ router.get('/veicoli', async (req,res)=>{
   if(q){ where='WHERE v.targa LIKE ? OR v.marca LIKE ? OR v.modello LIKE ? OR v.versione LIKE ? OR v.telaio LIKE ? OR c.ragione_sociale LIKE ?'; params.push(...Array(6).fill(`%${q}%`)); }
   const rows=await all(`SELECT v.*,c.ragione_sociale FROM veicoli v LEFT JOIN clienti c ON c.id=v.cliente_id ${where} ORDER BY v.targa LIMIT 500`,params);
   res.send(page('Veicoli',`
-  <div class="actions"><a class="btn dark" href="/__DP_MAIN__">🏠 Menu DP Gestionale</a><a class="btn" href="/veicoli/nuovo">+ Nuovo veicolo</a></div>
-  <div class="box"><h1>🚗 Veicoli clienti (${rows.length})</h1>
+  <div class="actions"><a class="btn" href="/veicoli/nuovo">+ Nuovo veicolo</a></div>
+  <div class="box"><h1>🚗 Veicoli clienti (${rows.length}) <small style="font-size:12px;color:#666;vertical-align:middle">V364</small></h1>
   <form class="filters"><input name="q" placeholder="Targa, cliente, marca, modello, telaio" value="${esc(q)}"><span></span><span></span><button class="btn">Filtra</button></form>
-  <table><tr><th>Targa</th><th>Cliente</th><th>Veicolo</th><th>Telaio</th><th>Km</th><th></th></tr>
-  ${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a> <form method="post" action="/veicoli/${v.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare il veicolo ${esc(v.targa)}? Gli ordini collegati bloccano l’eliminazione.')"><input type="hidden" name="conferma" value="ELIMINA ${v.id}"><button type="submit" class="btn" style="background:#a11">Elimina</button></form></td></tr>`).join('')}
+  <table><tr><th>Targa</th><th>Cliente</th><th>Veicolo</th><th>Telaio</th><th>Km</th><th>Azioni</th></tr>
+  ${rows.map(v=>`<tr><td><b>${esc(v.targa)}</b></td><td>${esc(v.ragione_sociale)}</td><td>${esc(v.marca)} ${esc(v.modello)}<br>${esc(v.versione)}</td><td>${esc(v.telaio)}</td><td>${v.km||0}</td><td><a class="btn dark" href="/veicoli/${v.id}">Apri</a> <form method="post" action="/veicoli/${v.id}/elimina" style="display:inline" onsubmit="return confirm('Eliminare il veicolo ${esc(v.targa)}? Gli ordini collegati bloccano l’eliminazione.')"><input type="hidden" name="conferma" value="ELIMINA ${v.id}"><button type="submit" class="btn" style="display:inline-block;background:#b00000;color:#fff;width:auto;min-width:90px;margin-left:6px">Elimina</button></form></td></tr>`).join('')}
   </table></div>`));
 });
 
