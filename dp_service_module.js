@@ -507,7 +507,7 @@ function dpServicePdfBuffer(tipo,numero,data,d,opts={}){
 
 async function dpServiceDocData(ordineId){
   const o=await get(`SELECT o.*,v.targa,v.marca,v.modello,v.versione,v.telaio,
-      c.ragione_sociale,c.piva,c.cf,c.indirizzo,c.citta,c.provincia,c.telefono,c.email,c.pec,c.sdi,c.codice_pagamento,c.codice_iva
+      c.ragione_sociale,c.piva,c.cf,c.indirizzo,c.cap,c.citta,c.provincia,c.telefono,c.email,c.pec,c.sdi,c.codice_pagamento,c.codice_iva
     FROM ordini_lavoro o
     LEFT JOIN veicoli v ON v.id=o.veicolo_id
     LEFT JOIN clienti c ON c.id=o.cliente_id
@@ -553,6 +553,11 @@ function dpPdfHeader(doc, tipo, numeroLabel, dataLabel){
 
   doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(11.5)
     .text(numeroLabel,bx,106,{width:bw,align:'center'});
+  if(!isPrev && String(tipo||'').toUpperCase()==='FATTURA_BOZZA'){
+    // Stato visibile anche sulla copia stampata; nessun effetto sulla numerazione.
+    doc.fillColor('#ffbdbd').font('Helvetica-Bold').fontSize(8)
+      .text('BOZZA - NON EMESSA',bx-22,147,{width:bw+44,align:'center'});
+  }
   doc.fillColor('#d6d6d6').font('Helvetica').fontSize(8.5)
     .text(dataLabel,bx,125,{width:bw,align:'center'});
 
@@ -584,9 +589,14 @@ function dpDrawServicePdf(doc, tipo, numeroLabel, dataLabel, d, extra={}){
   doc.rect(L,y,bw,24).fill('#d70b12');
   doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(9).text('CLIENTE / DESTINATARIO',L+10,y+7);
   doc.fillColor('#111111').font('Helvetica-Bold').fontSize(10).text(o.ragione_sociale||'',L+12,y+34,{width:bw-24});
-  doc.font('Helvetica').fontSize(8.5).text(`${o.indirizzo||''} ${o.citta||''} ${o.provincia||''}`,L+12,y+51,{width:bw-24});
-  doc.text(`P.IVA: ${o.piva||'-'}   C.F.: ${o.cf||'-'}`,L+12,y+68,{width:bw-24});
-  doc.text(`SDI: ${o.sdi||'-'}   PEC: ${o.pec||'-'}`,L+12,y+83,{width:bw-24});
+  const clientStreet=String(o.indirizzo||'').trim();
+  const clientCity=[o.cap,o.citta,o.provincia?`(${o.provincia})`:null].filter(Boolean).join(' ');
+  doc.font('Helvetica').fontSize(8.2).text(clientStreet,L+12,y+49,{width:bw-24,height:13,ellipsis:true});
+  doc.text(clientCity,L+12,y+62,{width:bw-24,height:13,ellipsis:true});
+  const fiscalLine=[o.piva?`P.IVA: ${o.piva}`:null,o.cf?`C.F.: ${o.cf}`:null].filter(Boolean).join('   ');
+  if(fiscalLine)doc.text(fiscalLine,L+12,y+75,{width:bw-24,height:12,ellipsis:true});
+  const destLine=[o.sdi?`SDI: ${o.sdi}`:null,o.pec?`PEC: ${o.pec}`:null].filter(Boolean).join('   ');
+  if(destLine)doc.text(destLine,L+12,y+88,{width:bw-24,height:12,ellipsis:true});
 
   const R=L+bw+12;
   doc.roundedRect(R,y,bw,102,7).lineWidth(1).strokeColor('#d0d0d0').stroke();
@@ -605,7 +615,7 @@ function dpDrawServicePdf(doc, tipo, numeroLabel, dataLabel, d, extra={}){
   }
 
   const widths=[58,205,46,68,42,92];
-  const headers=['TIPO','DESCRIZIONE','Q.TÀ','PREZZO','IVA','TOTALE'];
+  const headers=['TIPO','DESCRIZIONE','Q.TÀ','PREZZO','IVA','IMPONIBILE'];
   function tableHeader(){
     doc.rect(L,y,W,22).fill('#17181a');
     let x=L;
@@ -1589,7 +1599,7 @@ router.get('/fatture/:id.pdf', async (req,res)=>{
   const d=await dpServiceDocData(f.ordine_id); if(!d) return res.status(404).send('Ordine non trovato');
   try{ const snap=JSON.parse(f.righe_json||'[]'); if(snap.length){d.righe=snap;d.calc=dpCalcRighe(snap);} }catch(e){}
   res.setHeader('Content-Type','application/pdf'); res.setHeader('Content-Disposition',`inline; filename="Fattura_DP_SERVICE_${f.numero}_S.pdf"`);
-  const doc=new PDFDocument({size:'A4',margin:0,bufferPages:true}); doc.pipe(res); dpDrawServicePdf(doc,'FATTURA',`N. ${f.numero}/S`,dpItDate(f.data),d,{pagamento:f.pagamento,codice_pagamento:f.codice_pagamento,data_fattura:f.data}); doc.end();
+  const doc=new PDFDocument({size:'A4',margin:0,bufferPages:true}); doc.pipe(res); dpDrawServicePdf(doc,String(f.stato||'').toUpperCase()==='BOZZA'?'FATTURA_BOZZA':'FATTURA',`N. ${f.numero}/S`,dpItDate(f.data),d,{pagamento:f.pagamento,codice_pagamento:f.codice_pagamento,data_fattura:f.data}); doc.end();
 });
 
 router.get('/ricambi', async (req,res)=>{
