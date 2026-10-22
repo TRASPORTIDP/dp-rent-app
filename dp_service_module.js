@@ -80,7 +80,7 @@ async function dpServiceSaveToMaster(localId,b){
   const local=await get(`SELECT * FROM clienti WHERE id=?`,[localId]).catch(()=>null);
   const data={
     codice:String(b.codice||local?.codice||'').trim(),ragione_sociale:String(b.ragione_sociale||local?.ragione_sociale||'').trim(),
-    piva:String(b.piva||local?.piva||'').trim(),codice_fiscale:String(b.cf||b.codice_fiscale||local?.cf||'').trim(),
+    piva:String(b.piva||local?.piva||'').trim(),codice_fiscale:String(Object.prototype.hasOwnProperty.call(b,'cf')?b.cf:(Object.prototype.hasOwnProperty.call(b,'codice_fiscale')?b.codice_fiscale:(local?.cf||''))).trim(),
     indirizzo:String(b.indirizzo||local?.indirizzo||'').trim(),citta:String(b.citta||local?.citta||'').trim(),provincia:String(b.provincia||local?.provincia||'').trim(),
     telefono:String(b.telefono||local?.telefono||'').trim(),email:String(b.email||local?.email||'').trim(),pec:String(b.pec||local?.pec||'').trim(),sdi:String(b.sdi||local?.sdi||'').trim(),
     codice_iva:String(b.codice_iva||local?.codice_iva||'').trim(),codice_pagamento:String(b.codice_pagamento||local?.codice_pagamento||'').trim(),
@@ -1275,14 +1275,14 @@ router.get('/ordini/:id/cliente-fiscale', async(req,res)=>{
   res.send(page('Dati fiscali cliente ODL',`
     <div class="actions"><a class="btn dark" href="/ordini/${o.id}">← Torna all'ordine</a></div>
     <div class="box"><h1>🪪 Completa dati fiscali cliente</h1>
-    <p>ODL ${esc(o.id)} — i dati saranno aggiornati sull'anagrafica esistente, senza duplicarla.</p>
+    <p>ODL ${esc(o.id)} — i dati saranno aggiornati sull'anagrafica esistente, senza duplicarla.</p><p><b>Il codice fiscale può rimanere vuoto per salvare il cliente.</b> Sarà richiesto prima di creare una nuova fattura per un privato e prima dell'esportazione XML.</p>
     <form method="post" action="/ordini/${o.id}/cliente-fiscale">
       <label>Nome e cognome / ragione sociale</label><input name="ragione_sociale" required value="${esc(c.ragione_sociale||'')}">
-      <label>Tipo cliente</label><select name="tipo_cliente" id="tipoCli" onchange="document.getElementById('cfHint').textContent=this.value==='privato'?'Codice fiscale del privato (16 caratteri)':'Codice fiscale azienda se disponibile'">
+      <label>Tipo cliente</label><select name="tipo_cliente" id="tipoCli" onchange="document.getElementById('cfHint').textContent=this.value==='privato'?'Codice fiscale (facoltativo ora, necessario prima dell’XML)':'Codice fiscale azienda se disponibile'">
         <option value="privato" ${!String(c.piva||'').trim()?'selected':''}>Privato (senza partita IVA)</option>
         <option value="azienda" ${String(c.piva||'').trim()?'selected':''}>Azienda</option>
       </select>
-      <label>Codice fiscale <small id="cfHint">${!String(c.piva||'').trim()?'Codice fiscale del privato (16 caratteri)':'Codice fiscale azienda se disponibile'}</small></label><input name="cf" maxlength="16" value="${esc(c.cf||'')}">
+      <label>Codice fiscale <small id="cfHint">${!String(c.piva||'').trim()?'Codice fiscale (facoltativo ora, necessario prima dell’XML)':'Codice fiscale azienda se disponibile'}</small></label><input name="cf" maxlength="16" value="${esc(c.cf||'')}">
       <label>Partita IVA (solo aziende)</label><input name="piva" maxlength="11" value="${esc(c.piva||'')}">
       <label>Via / numero civico</label><input name="indirizzo" required value="${esc(c.indirizzo||'')}">
       <label>CAP</label><input name="cap" inputmode="numeric" maxlength="5" required value="${esc(c.cap||'')}">
@@ -1310,7 +1310,7 @@ router.post('/ordini/:id/cliente-fiscale', async(req,res)=>{
   const citta=String(b.citta||'').trim();
   const problems=[];
   if(!nome)problems.push('Nome / ragione sociale');
-  if(privato && !/^[A-Z0-9]{16}$/.test(cf)) problems.push('Codice fiscale privato di 16 caratteri');
+  if(privato && cf && !/^[A-Z0-9]{16}$/.test(cf)) problems.push('Se inserito, il codice fiscale del privato deve avere 16 caratteri');
   if(!privato && !/^\d{11}$/.test(piva)) problems.push('Partita IVA aziendale di 11 cifre');
   if(!indirizzo)problems.push('Indirizzo');
   if(!/^\d{5}$/.test(cap))problems.push('CAP a 5 cifre');
