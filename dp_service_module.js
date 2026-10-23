@@ -1577,29 +1577,23 @@ async function dpServiceCancelEnsure(){
 async function dpServiceTrashExportedXmlV370(ex){
  const fileId=String(ex.file_id||'').trim();
  const expectedName=String(ex.file_name||'').trim();
- if(!/^[A-Za-z0-9_-]{15,}$/.test(fileId) || !/^IT[0-9]{11}_[A-Za-z0-9]{1,5}\.xml$/.test(expectedName))
-   throw new Error('XML depositato senza identificativo/nome Drive sicuro: eliminazione automatica non consentita.');
- let google;
- try{google=require('googleapis').google;}catch(e){throw new Error('Modulo Google Drive non disponibile: '+e.message);}
- const email=process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL||process.env.GOOGLE_CLIENT_EMAIL||'';
- const key=String(process.env.GOOGLE_PRIVATE_KEY||'').replace(/\\n/g,'\n');
- if(!email||!key)throw new Error('Per eliminare XML da Drive occorrono le credenziali del service account; bozza invariata.');
- const auth=new google.auth.JWT(email,null,key,['https://www.googleapis.com/auth/drive']);
- const api=google.drive({version:'v3',auth});
- let meta;
- try{const r=await api.files.get({fileId,fields:'id,name,mimeType,parents,trashed',supportsAllDrives:true});meta=r.data;}
- catch(e){throw new Error('Impossibile verificare il file XML su Drive: '+e.message);}
- if(!meta||meta.name!==expectedName||!String(meta.mimeType||'').includes('xml'))
-   throw new Error('File Drive diverso dall’XML registrato: cancellazione bloccata.');
- // Un file gia nel cestino, con identita verificata, puo essere considerato rimosso.
- if(!meta.trashed){
-   try{await api.files.update({fileId,requestBody:{trashed:true},fields:'id,trashed',supportsAllDrives:true});}
-   catch(e){throw new Error('Rimozione XML da Drive non riuscita (nessun dato locale cancellato): '+e.message);}
- }
- const verify=(await api.files.get({fileId,fields:'id,trashed',supportsAllDrives:true})).data;
- if(!verify||verify.trashed!==true)throw new Error('Drive non ha confermato lo spostamento nel cestino: cancellazione locale bloccata.');
+ if(!/^[A-Za-z0-9_-]{15,}$/.test(fileId)||!/^IT[0-9]{11}_[A-Za-z0-9]{1,5}\.xml$/.test(expectedName))
+   throw new Error('ID o nome XML non valido: cancellazione bloccata.');
+ const url=String(process.env.DRIVE_WEBAPP_URL||'').trim();
+ const secret=String(process.env.DP_FATEL_DELETE_TOKEN||'').trim();
+ if(!/^https:\/\/script\.google\.com\//.test(url)||secret.length<32)
+   throw new Error('Cancellazione Drive non configurata: impostare DP_FATEL_DELETE_TOKEN (almeno 32 caratteri) e Apps Script V371. Bozza invariata.');
+ let response,data;
+ try{
+   response=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({action:'trashFatelXml',token:secret,fileId,expectedName})});
+   const raw=await response.text();
+   try{data=JSON.parse(raw);}catch(_){throw new Error('Risposta non JSON da Apps Script. Verificare il nuovo deployment V371.');}
+ }catch(e){throw new Error('Verifica cancellazione su Drive fallita: '+e.message);}
+ if(!response.ok||!data||data.ok!==true||data.trashed!==true||data.fileId!==fileId||data.name!==expectedName)
+   throw new Error('Rimozione XML da Drive non riuscita (nessun dato locale cancellato): '+String(data&&data.error||'Risposta non confermata'));
  return {fileId,name:expectedName};
 }
+
 async function dpServiceNumeroLiberato(anno){
  await dpServiceCancelEnsure();
  const r=await get(`SELECT x.numero FROM dp_service_cancellazioni_bozze x WHERE x.anno=? AND x.serie='S' AND x.numero_riutilizzato_at IS NULL AND NOT EXISTS (SELECT 1 FROM fatture_service f WHERE f.anno=x.anno AND f.serie='S' AND f.numero=x.numero) ORDER BY x.numero LIMIT 1`,[anno]);
