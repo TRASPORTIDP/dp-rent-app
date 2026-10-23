@@ -15508,46 +15508,67 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  if(!/^RF(?:0[1-9]|1[0-9]|20)$/.test(regime))throw new Error('DP_XML_REGIME non valido: indicare il codice fiscale RF corretto in Render');
  if(!/^\d{5}$/.test(cap))throw new Error('CAP aziendale non valido');
  if(!/^[A-Z]{2}$/.test(prov.toUpperCase()))throw new Error('Provincia aziendale non valida');
- // V315: ogni settore usa la sua anagrafica; l'archivio condiviso è la fonte aggiornata.
+ // V372: per RENT l'anagrafica unica aggiornata è la fonte fiscale primaria.
+ // La fattura/contratto sono snapshot storici; non sovrascrivono dati master validi.
  let cliente=null;
- if(tipo==='trasporti'){
-  if(f.cliente_id){
-   cliente=await get('SELECT * FROM dp_clienti_master WHERE trasporto_cliente_id=?',[f.cliente_id]).catch(()=>null);
-   if(!cliente)cliente=await get('SELECT * FROM trasporti_clienti WHERE id=?',[f.cliente_id]).catch(()=>null);
-  }
- }else if(f.cliente_id){
-  cliente=await get('SELECT * FROM dp_clienti_master WHERE rent_cliente_id=?',[f.cliente_id]).catch(()=>null);
-  if(!cliente)cliente=await get('SELECT * FROM clienti WHERE id=?',[f.cliente_id]).catch(()=>null);
- }
- // Per fatture storiche prive di associazione o con archivio non sincronizzato,
- // usare solo una corrispondenza UNIVOCA della ragione sociale nell'archivio condiviso.
  const invoiceName=dpValV314(f.cliente).toUpperCase();
- if(invoiceName){
-  const matches=await all('SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale))=? LIMIT 2',[invoiceName]).catch(()=>[]);
-  if(matches.length===1)cliente=matches[0];
-  else if(matches.length>1 && !cliente)throw new Error('Più anagrafiche condivise con lo stesso nome: associare il cliente alla fattura');
- }
- if(cliente && invoiceName && dpValV314(cliente.ragione_sociale||cliente.azienda||[cliente.nome,cliente.cognome].filter(Boolean).join(' ')).toUpperCase()!==invoiceName)throw new Error('Il cliente collegato non corrisponde all’intestatario della fattura');
- // V357: RENT può conservare i dati fiscali nel contratto anche quando il cliente
- // non è presente nell'archivio unico. Recupero READ-ONLY, solo se l'intestatario
- // corrisponde esattamente alla fattura: nessuna creazione o associazione automatica.
- if(!cliente && tipo==='noleggio' && f.prenotazione_id){
-   const p=await get('SELECT * FROM prenotazioni WHERE id=?',[f.prenotazione_id]).catch(()=>null);
-   if(p){
-     const c=p.cliente_id?await get('SELECT * FROM clienti WHERE id=?',[p.cliente_id]).catch(()=>null):null;
-     const candidate={...(c||{}),...p};
-     candidate.ragione_sociale=dpValV314(p.ragione_sociale||c?.ragione_sociale||p.azienda||c?.azienda||[p.nome||c?.nome,p.cognome||c?.cognome].filter(Boolean).join(' '));
-     candidate.piva=dpValV314(p.partita_iva||p.piva||c?.piva||c?.partita_iva);
-     candidate.codice_fiscale=dpValV314(p.codice_fiscale||p.cf||c?.codice_fiscale||c?.cf);
-     candidate.indirizzo=dpValV314(p.indirizzo_fatturazione||p.indirizzo||c?.indirizzo_fatturazione||c?.indirizzo);
-     candidate.cap=dpValV314(p.cap_fatturazione||p.cap||c?.cap_fatturazione||c?.cap);
-     candidate.citta=dpValV314(p.citta_fatturazione||p.citta||c?.citta_fatturazione||c?.citta);
-     candidate.provincia=dpValV314(p.provincia_fatturazione||p.provincia||c?.provincia_fatturazione||c?.provincia);
-     candidate.sdi=dpValV314(p.codice_sdi||p.sdi||c?.codice_sdi||c?.sdi);
-     candidate.pec=dpValV314(p.pec||c?.pec);
-     if(candidate.ragione_sociale.toUpperCase()===invoiceName)cliente=candidate;
+ if(tipo==='trasporti'){
+   if(f.cliente_id){
+     cliente=await get('SELECT * FROM dp_clienti_master WHERE trasporto_cliente_id=?',[f.cliente_id]).catch(()=>null);
+     if(!cliente)cliente=await get('SELECT * FROM trasporti_clienti WHERE id=?',[f.cliente_id]).catch(()=>null);
    }
+ } else if(tipo==='noleggio'){
+   const p=f.prenotazione_id?await get('SELECT * FROM prenotazioni WHERE id=?',[f.prenotazione_id]).catch(()=>null):null;
+   const rentId=Number(f.cliente_id||p?.cliente_id)||0;
+   const c=rentId?await get('SELECT * FROM clienti WHERE id=?',[rentId]).catch(()=>null):null;
+   let master=rentId?await get('SELECT * FROM dp_clienti_master WHERE rent_cliente_id=?',[rentId]).catch(()=>null):null;
+   const fiscalVat=dpValV314(c?.piva||c?.partita_iva||p?.piva||p?.partita_iva).replace(/^IT/i,'');
+   // Clienti storici senza rent_cliente_id: associare solo se la P.IVA è UNIVOCA.
+   if(!master && fiscalVat){
+     const found=await all("SELECT * FROM dp_clienti_master WHERE REPLACE(UPPER(TRIM(piva)),'IT','')=? LIMIT 2",[fiscalVat]).catch(()=>[]);
+     if(found.length===1)master=found[0];
+   }
+   if(!master && invoiceName){
+     const found=await all('SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale))=? LIMIT 2',[invoiceName]).catch(()=>[]);
+     if(found.length===1)master=found[0];
+     if(found.length>1 && !c)throw new Error('Più anagrafiche con lo stesso nome: collegare il cliente RENT prima di esportare');
+   }
+   // La P.IVA evita di prelevare i dati di un omonimo o cliente diverso.
+   const masterVat=dpValV314(master?.piva).replace(/^IT/i,'');
+   if(master && fiscalVat && masterVat && fiscalVat!==masterVat)
+     throw new Error('P.IVA del cliente RENT non corrisponde all’anagrafica unica: verificare il collegamento');
+   if(master && invoiceName && dpValV314(master.ragione_sociale).toUpperCase()!==invoiceName)
+     throw new Error('Intestatario RENT differente dall’anagrafica unica: verificare il collegamento');
+   const contractName=dpValV314(p?.ragione_sociale||p?.azienda||c?.ragione_sociale||c?.azienda||[p?.nome||c?.nome,p?.cognome||c?.cognome].filter(Boolean).join(' ')).toUpperCase();
+   if(!master && !c && contractName!==invoiceName)throw new Error('Contratto e intestatario fattura RENT differenti');
+   if(!master && c){
+     const name=dpValV314(c.ragione_sociale||c.azienda||[c.nome,c.cognome].filter(Boolean).join(' ')).toUpperCase();
+     if(name!==invoiceName)throw new Error('Cliente RENT e intestatario fattura differenti');
+   }
+   const first=(...values)=>values.map(dpValV314).find(Boolean)||'';
+   // Un campo provinciale master errato/vuoto non deve oscurare il valore RM valido
+   // nell'anagrafica RENT. Non inferiamo mai province da un indirizzo o comune.
+   const validProvince=(...values)=>values.map(v=>dpValV314(v).toUpperCase()).find(v=>/^[A-Z]{2}$/.test(v))||'';
+   if(master || c || p){
+     cliente={...(p||{}),...(c||{}),...(master||{})};
+     cliente.ragione_sociale=first(master?.ragione_sociale,c?.ragione_sociale,c?.azienda,p?.ragione_sociale,p?.azienda);
+     cliente.piva=first(master?.piva,c?.piva,c?.partita_iva,p?.piva,p?.partita_iva);
+     cliente.codice_fiscale=first(master?.codice_fiscale,c?.codice_fiscale,c?.cf,p?.codice_fiscale,p?.cf);
+     cliente.indirizzo=first(master?.indirizzo,c?.indirizzo_fatturazione,c?.indirizzo,p?.indirizzo_fatturazione,p?.indirizzo);
+     cliente.cap=first(master?.cap,c?.cap_fatturazione,c?.cap,p?.cap_fatturazione,p?.cap);
+     cliente.citta=first(master?.citta,c?.citta_fatturazione,c?.citta,p?.citta_fatturazione,p?.citta);
+     cliente.provincia=validProvince(master?.provincia,c?.provincia_fatturazione,c?.provincia,p?.provincia_fatturazione,p?.provincia);
+     cliente.sdi=first(master?.sdi,c?.sdi,c?.codice_sdi,p?.sdi,p?.codice_sdi);
+     cliente.pec=first(master?.pec,c?.pec,p?.pec);
+   }
+ } 
+ if(tipo==='trasporti' && invoiceName){
+   const matches=await all('SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale))=? LIMIT 2',[invoiceName]).catch(()=>[]);
+   if(matches.length===1)cliente=matches[0];
+   else if(matches.length>1 && !cliente)throw new Error('Più anagrafiche condivise con lo stesso nome: associare il cliente alla fattura');
  }
+ if(cliente && invoiceName && dpValV314(cliente.ragione_sociale||cliente.azienda||[cliente.nome,cliente.cognome].filter(Boolean).join(' ')).toUpperCase()!==invoiceName)
+   throw new Error('Il cliente collegato non corrisponde all’intestatario della fattura');
  if(!cliente)throw new Error('Cliente non trovato nelle anagrafiche: associare il cliente alla fattura');
  const cVat=dpValV314(cliente.piva||cliente.partita_iva).replace(/^IT/i,'').replace(/\s/g,'');
  const cCf=dpValV314(cliente.codice_fiscale||cliente.cf).toUpperCase();
