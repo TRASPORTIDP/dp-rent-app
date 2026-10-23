@@ -1572,6 +1572,34 @@ async function dpServiceCancelEnsure(){
  numero INTEGER, snapshot_json TEXT NOT NULL, attestazione TEXT NOT NULL,
  cancellata_at TEXT DEFAULT CURRENT_TIMESTAMP, numero_riutilizzato_at TEXT)`);
 }
+// V370: il servizio di pulizia XML usa il file_id registrato, mai il solo nome.
+// Se le credenziali non consentono la rimozione il sistema BLOCCA la fattura.
+async function dpServiceTrashExportedXmlV370(ex){
+ const fileId=String(ex.file_id||'').trim();
+ const expectedName=String(ex.file_name||'').trim();
+ if(!/^[A-Za-z0-9_-]{15,}$/.test(fileId) || !/^IT[0-9]{11}_[A-Za-z0-9]{1,5}\.xml$/.test(expectedName))
+   throw new Error('XML depositato senza identificativo/nome Drive sicuro: eliminazione automatica non consentita.');
+ let google;
+ try{google=require('googleapis').google;}catch(e){throw new Error('Modulo Google Drive non disponibile: '+e.message);}
+ const email=process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL||process.env.GOOGLE_CLIENT_EMAIL||'';
+ const key=String(process.env.GOOGLE_PRIVATE_KEY||'').replace(/\\n/g,'\n');
+ if(!email||!key)throw new Error('Per eliminare XML da Drive occorrono le credenziali del service account; bozza invariata.');
+ const auth=new google.auth.JWT(email,null,key,['https://www.googleapis.com/auth/drive']);
+ const api=google.drive({version:'v3',auth});
+ let meta;
+ try{const r=await api.files.get({fileId,fields:'id,name,mimeType,parents,trashed',supportsAllDrives:true});meta=r.data;}
+ catch(e){throw new Error('Impossibile verificare il file XML su Drive: '+e.message);}
+ if(!meta||meta.name!==expectedName||!String(meta.mimeType||'').includes('xml'))
+   throw new Error('File Drive diverso dall’XML registrato: cancellazione bloccata.');
+ // Un file gia nel cestino, con identita verificata, puo essere considerato rimosso.
+ if(!meta.trashed){
+   try{await api.files.update({fileId,requestBody:{trashed:true},fields:'id,trashed',supportsAllDrives:true});}
+   catch(e){throw new Error('Rimozione XML da Drive non riuscita (nessun dato locale cancellato): '+e.message);}
+ }
+ const verify=(await api.files.get({fileId,fields:'id,trashed',supportsAllDrives:true})).data;
+ if(!verify||verify.trashed!==true)throw new Error('Drive non ha confermato lo spostamento nel cestino: cancellazione locale bloccata.');
+ return {fileId,name:expectedName};
+}
 async function dpServiceNumeroLiberato(anno){
  await dpServiceCancelEnsure();
  const r=await get(`SELECT x.numero FROM dp_service_cancellazioni_bozze x WHERE x.anno=? AND x.serie='S' AND x.numero_riutilizzato_at IS NULL AND NOT EXISTS (SELECT 1 FROM fatture_service f WHERE f.anno=x.anno AND f.serie='S' AND f.numero=x.numero) ORDER BY x.numero LIMIT 1`,[anno]);
@@ -1583,20 +1611,26 @@ router.post('/fatture/:id([0-9]+)/elimina-bozza',async(req,res)=>{
   if(!f)throw new Error('Fattura inesistente');
   if(f.stato!=='BOZZA')throw new Error('Solo le fatture SERVICE in stato BOZZA possono essere eliminate. Le fatture precedenti EMESSA devono essere verificate separatamente.');
   if(req.body.conferma!=='MAI_EMESSA')throw new Error('Attestazione obbligatoria');
-  const ex=await mainGet("SELECT 1 ok FROM dp_xml_exports WHERE fattura_id=? AND LOWER(tipo) IN ('service','s') LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
-  if(ex)throw new Error('XML gia depositato su Drive; cancellazione bloccata');
+  const ex=await mainGet("SELECT tipo,fattura_id,file_id,file_name FROM dp_xml_exports WHERE fattura_id=? AND LOWER(tipo) IN ('service','s') LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
   const paid=await mainGet("SELECT 1 ok FROM dp_scadenze_incassi WHERE modulo='SERVICE' AND fattura_id=? AND (stato='INCASSATA' OR incassata_at IS NOT NULL) LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
   if(paid)throw new Error('Fattura associata a un incasso: cancellazione bloccata');
+  // Non cancellare file gia importati da Zucchetti/Fatel o inviati a SdI.
+  // La conferma dell'operatore attesta che e solo una PROVA MAI EMESSA.
+  let removedXml=null;
+  if(ex) removedXml=await dpServiceTrashExportedXmlV370(ex);
   await dpServiceCancelEnsure();
   await run('BEGIN IMMEDIATE');
   try{
    const current=await get('SELECT stato FROM fatture_service WHERE id=?',[f.id]);
    if(!current||current.stato!=='BOZZA')throw new Error('Stato cambiato');
-   await run('INSERT INTO dp_service_cancellazioni_bozze(fattura_id,anno,serie,numero,snapshot_json,attestazione) VALUES(?,?,?,?,?,?)',[f.id,f.anno,f.serie,f.numero,JSON.stringify(f),'MAI_EMESSA']);
+   await run('INSERT INTO dp_service_cancellazioni_bozze(fattura_id,anno,serie,numero,snapshot_json,attestazione) VALUES(?,?,?,?,?,?)',[f.id,f.anno,f.serie,f.numero,JSON.stringify({...f,xmlRimossoDaDrive:removedXml}),'MAI_EMESSA']);
    await run("DELETE FROM fatture_service WHERE id=? AND stato='BOZZA'",[f.id]);
    await run('UPDATE ordini_lavoro SET fatturato=0 WHERE id=?',[f.ordine_id]);
    await run('COMMIT');
   }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
+  if(ex){
+   await mainRun("DELETE FROM dp_xml_exports WHERE tipo=? AND fattura_id=? AND file_id=?",[ex.tipo,ex.fattura_id,ex.file_id]);
+  }
   await mainRun("DELETE FROM dp_scadenze_incassi WHERE modulo='SERVICE' AND fattura_id=? AND stato<>'INCASSATA'",[f.id]).catch(e=>console.error('Pulizia scadenze SERVICE:',e.message));
   res.redirect('/fatture');
  }catch(e){res.status(400).send(page('Eliminazione non eseguita',`<div class="box"><h2>Cancellazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatture/${Number(req.params.id)}">Torna alla fattura</a></div>`));}
@@ -1615,7 +1649,7 @@ router.get('/fatture/:id([0-9]+)', async (req,res)=>{
   const ph=dpPhone(d.o.telefono); const pdfUrl=dpServiceUrl(req,`/fatture/${f.id}.pdf`);
   const scad=dpServiceSchedule(f.codice_pagamento||f.pagamento,f.data,f.totale);
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo la fattura DP SERVICE n. ${f.numero}/S per la vettura ${d.o.targa||''}. Totale ${dpEuro(f.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>Stato: ${esc(f.stato||"NON DEFINITO")}</b> — ${f.stato==="BOZZA"?"Bozza: può essere annullata solo se mai emessa, consegnata o esportata":"Documento protetto: eliminazione non disponibile da questa schermata"}</p><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${f.id}">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}${f.stato==='BOZZA'?`<form method="post" action="/fatture/${f.id}/elimina-bozza" style="display:inline" onsubmit="return confirm('Attesti che questa fattura non e MAI stata emessa, consegnata, importata in Fatel o trasmessa? La cancellazione resta registrata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn dark" type="submit">ELIMINA BOZZA</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>Stato: ${esc(f.stato||"NON DEFINITO")}</b> — ${f.stato==="BOZZA"?"Bozza: può essere annullata solo se mai emessa, consegnata o esportata":"Documento protetto: eliminazione non disponibile da questa schermata"}</p><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${f.id}">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}${f.stato==='BOZZA'?`<form method="post" action="/fatture/${f.id}/elimina-bozza" style="display:inline" onsubmit="return confirm('Solo PROVA mai emessa/importata/inviata. Se XML presente verra spostato nel CESTINO Drive prima della cancellazione della bozza e il numero fattura verra liberato. Confermi?')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn dark" type="submit">ELIMINA BOZZA</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
 });
 
 
