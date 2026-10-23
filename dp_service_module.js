@@ -325,7 +325,50 @@ th{background:#1d1d1f;color:white;padding:10px;text-align:left} td{padding:10px;
 .public-wrap{max-width:760px;margin:0 auto}
 .public-wrap .box{border-top:6px solid #e00000}
 @media(max-width:780px){.grid,.filters{grid-template-columns:1fr}header span{display:block;margin:6px 0 0}.card{font-size:22px}}
-</style></head><body><header><img src="/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/service">🔧 Menu SERVICE</a><a class="btn dark" href="/__DP_MAIN__">🏠 Menu DP Gestionale</a></div>${body}</main></body></html>`;
+</style></head><body><header><img src="/public/dp_service_logo.png" alt="DP SERVICE"><b>DP SERVICE</b><span>Officina • Veicoli • Ricambi • Fatturazione</span></header><main><div class="topnav"><a class="btn dark" href="/service">🔧 Menu SERVICE</a><a class="btn dark" href="/__DP_MAIN__">🏠 Menu DP Gestionale</a></div>${body}</main><script>
+(function(){
+  document.querySelectorAll('select[name="cliente_id"]').forEach(function(select){
+    if(select.dataset.dpSearchReady)return;
+    select.dataset.dpSearchReady='1';
+    var field=document.createElement('input');field.type='search';field.autocomplete='off';
+    field.placeholder='Scrivi nome, cognome o partita IVA per cercare';
+    field.setAttribute('aria-label','Cerca cliente');
+    field.style.margin='6px 0 10px';
+    var menu=document.createElement('div');menu.setAttribute('role','listbox');
+    menu.style.cssText='max-height:230px;overflow:auto;border:1px solid #ddd;border-radius:10px;background:#fff;display:none;margin-bottom:8px';
+    var options=Array.from(select.options).filter(function(o){return o.value;});
+    // Conserviamo il select reale per il POST e tutti i suoi option.
+    select.style.display='none';
+    select.parentNode.insertBefore(field,select);
+    select.parentNode.insertBefore(menu,select);
+    var chosen=select.options[select.selectedIndex];
+    if(chosen && chosen.value)field.value=chosen.textContent.trim();
+    function show(){
+      var q=field.value.trim().toLocaleLowerCase('it');
+      menu.textContent='';
+      if(!q){menu.style.display='none';return;}
+      var count=0;
+      options.forEach(function(o){
+        if(count>=35||!o.textContent.toLocaleLowerCase('it').includes(q))return;
+        count++;
+        var b=document.createElement('button');b.type='button';b.setAttribute('role','option');
+        b.style.cssText='display:block;width:100%;text-align:left;border:0;border-bottom:1px solid #eee;padding:13px;background:#fff;color:#111;font-size:16px';
+        b.textContent=o.textContent.trim();
+        b.addEventListener('click',function(){select.value=o.value;field.value=o.textContent.trim();menu.style.display='none';select.dispatchEvent(new Event('change',{bubbles:true}));});
+        menu.appendChild(b);
+      });
+      if(!count){var note=document.createElement('p');note.style.padding='10px';note.textContent='Nessun cliente corrispondente';menu.appendChild(note);}
+      menu.style.display='block';
+    }
+    field.addEventListener('input',function(){select.value='';show();});
+    field.addEventListener('focus',show);
+    var form=select.closest('form');
+    if(form)form.addEventListener('submit',function(e){if(!select.value){e.preventDefault();field.focus();show();alert('Seleziona un cliente dai risultati della ricerca.');}});
+    var link=document.createElement('a');link.href='/clienti-azienda';link.textContent='+ Nuovo cliente (anagrafica condivisa)';link.style.cssText='display:inline-block;margin:5px 0 12px;color:#b00000;font-weight:bold';
+    select.parentNode.insertBefore(link,select.nextSibling);
+  });
+})();
+</script></body></html>`;
 }
 
 

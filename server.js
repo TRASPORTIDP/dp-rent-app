@@ -15393,6 +15393,22 @@ function dpRequireV314(v,label){if(!dpValV314(v))throw new Error('Dato fiscale m
 function dpDateV314(v){const d=dpValV314(v).slice(0,10);if(!/^\d{4}-\d{2}-\d{2}$/.test(d))throw new Error('Data fattura non valida');return d;}
 // V337: XML SERVICE con snapshot fattura, cliente da anagrafica collegata;
 // blocco sui casi non rappresentabili correttamente (IVA mista/zero e dati mancanti).
+// V369: controllo formale del CF italiano (incluso carattere di controllo).
+// Non prova l'attribuzione a una persona: la titolarità va comunque verificata.
+function dpCfChecksumV369(input){
+ const s=String(input||'').trim().toUpperCase();
+ if(!/^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-EHLMPRST][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$/.test(s))return false;
+ const even='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+ const odd={0:1,1:0,2:5,3:7,4:9,5:13,6:15,7:17,8:19,9:21,A:1,B:0,C:5,D:7,E:9,F:13,G:15,H:17,I:19,J:21,K:2,L:4,M:18,N:20,O:11,P:3,Q:6,R:8,S:12,T:14,U:16,V:10,W:22,X:25,Y:24,Z:23};
+ let sum=0;
+ for(let i=0;i<15;i++){
+   const c=s[i];
+   if(i%2===0)sum+=odd[c];
+   else sum+=/^[0-9]$/.test(c)?Number(c):even.indexOf(c);
+ }
+ return s[15]===even[sum%26];
+}
+
 async function dpMakeServiceXmlV337(id){
  const dbFile=path.join(DATA_DIR,'dp_service.sqlite');
  if(!fs.existsSync(dbFile))throw new Error('Database DP SERVICE non trovato');
@@ -15417,8 +15433,10 @@ async function dpMakeServiceXmlV337(id){
  const comune=dpRequireV314(process.env.DP_XML_COMUNE,'comune emittente');
  const prov=dpRequireV314(process.env.DP_XML_PROVINCIA,'provincia emittente');
  const cv=dpValV314(cliente.piva).replace(/^IT/i,'');
- const cf=dpValV314(cliente.codice_fiscale);
- if(!/^\d{11}$/.test(cv)&&!/^[A-Z0-9]{11,16}$/.test(cf))throw new Error('Cliente senza P.IVA o CF valido');
+ const cf=dpValV314(cliente.codice_fiscale).toUpperCase();
+ if(cf && !dpCfChecksumV369(cf))throw new Error('Codice fiscale non valido: correggere i dati del cliente prima di generare XML');
+ if(!/^\d{11}$/.test(cv)&&!dpCfChecksumV369(cf))throw new Error('Cliente senza partita IVA o codice fiscale formalmente valido');
+ if(!/^\d{11}$/.test(cv)&&cf&&!dpCfChecksumV369(cf))throw new Error('Codice fiscale cliente non valido: controllare i 16 caratteri e la lettera di controllo');
  const cind=dpRequireV314(cliente.indirizzo,'indirizzo cliente');
  const ccap=dpRequireV314(cliente.cap,'CAP cliente');
  const ccitta=dpRequireV314(cliente.citta,'città cliente');
