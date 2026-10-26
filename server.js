@@ -15759,12 +15759,12 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
     if(!['TD01','TD24'].includes(xmlType)) throw new Error('Tipo documento non supportato da questo generatore.');
     // This check is diagnostic, not a full SdI XSD validation.
     const recipientFallback=xml.includes('<CodiceDestinatario>0000000</CodiceDestinatario>')&&!xml.includes('<PECDestinatario>');
-    const saved=await get('SELECT file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]).catch(()=>null);
+    const saved=await get('SELECT file_id,file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]).catch(()=>null);
     res.send(page('Anteprima XML',`<div class="box">
       <h2>🔎 Controllo preliminare XML per Fatel</h2>
       <p><b>Cliente:</b> ${esc(f.cliente||'')}</p>
       <p><b>Fattura:</b> ${esc(f.numero_display||f.numero||'')}</p>
-      <p><b>Tipo documento:</b> ${esc(xmlType)} — Fattura ordinaria</p>
+      <p><b>Tipo documento:</b> ${esc(xmlType)} — ${xmlType==='TD24'?'Fattura differita':'Fattura immediata'}</p>
       <p><b>File previsto:</b> ${esc(filename)}</p>
       <p>✅ Controlli anagrafici e aritmetici di base superati.</p>
       ${recipientFallback?'<p><b>⚠️ Destinatario XML:</b> codice 0000000 e nessuna PEC nel file. Verificare il recapito telematico scelto dal cliente prima di usare fiscalmente il documento.</p>':''}
@@ -15772,8 +15772,11 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p><b>Attenzione:</b> non è ancora una validazione ufficiale XSD/SdI. Verificare
       righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
       <a class="btn btn2" href="/fatturazione/xml/anteprima-zip/${tipo}/${id}">⬇️ Scarica ZIP per controllo Agenzia (XML con nome corretto)</a>
-      ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}. Puoi scaricare una versione aggiornata senza esportarla.</p>`:
+      ${saved?`<p>⚠️ <b>XML già esportato:</b> ${esc(saved.file_name)}. Il file presente su Drive potrebbe contenere una versione precedente della fattura (ad esempio TD01 prima del cambio a TD24). Lo ZIP di verifica NON aggiorna Drive.</p>
+      ${saved.file_id && /^[A-Za-z0-9_-]{15,}$/.test(String(saved.file_id)) ? `<a class="btn btn2" target="_blank" rel="noopener noreferrer" href="https://drive.google.com/file/d/${encodeURIComponent(saved.file_id)}/view">📂 APRI XML SU DRIVE</a>`:''}`:
       `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML su Drive</a>`}
+      ${tipo==='trasporti'?`<a class="btn btn2" href="/trasporti/fattura/${Number(id)}">🧾 APRI FATTURA ${esc(f.numero_display||f.numero||'')}</a>
+      ${String(f.stato||'').toUpperCase()==='PRONTA_FIC'?`<form method="POST" action="/trasporti/fattura/${Number(id)}/annulla" style="display:inline" onsubmit="return confirm('Solo per una BOZZA MAI EMESSA, CONSEGNATA, IMPORTATA in Fatel o INVIATA a SdI. Confermi la richiesta di eliminazione e lo spostamento dell XML nel cestino Drive?')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn" style="background:#8b0000" type="submit">🗑️ ELIMINA BOZZA E XML DRIVE</button></form>`:''}`:''}
       <a class="btn" href="${back}">Torna alle fatture</a></div>`));
   }catch(e){
     res.status(400).send(page('Controllo XML',`<div class="box">
