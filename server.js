@@ -13878,8 +13878,8 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
       <a class="btn btn2" target="_blank" href="/trasporti/fattura/${f.id}.pdf?v=301">PDF</a>
       <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">NOTA DI CREDITO</a>
       ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">MODIFICA</a>
-      <form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Eliminare questa fattura interna e rimettere gli ordini disponibili?')">
-        <button class="btn" style="background:#8b0000">ELIMINA</button>
+      <form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che questa fattura e soltanto una bozza MAI emessa, consegnata, acquisita da Fatel o inviata allo SdI? L XML su Drive verra spostato nel cestino prima della cancellazione.')">
+        <input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn" style="background:#8b0000">ELIMINA BOZZA</button>
       </form>`:''}
     </td>
   </tr>`;
@@ -14018,23 +14018,34 @@ app.post('/trasporti/fattura/:id/inviata-fic',async(req,res)=>{
   res.redirect(`/trasporti/fattura/${req.params.id}`);
 });
 
+// V378: cancellazione delle sole bozze TRASPORTI; stesso protocollo Drive di RENT.
 app.post('/trasporti/fattura/:id/annulla',async(req,res)=>{
+ let driveTrashed=false;
  try{
   const f=await get('SELECT * FROM trasporti_fatture WHERE id=?',[req.params.id]);
   if(!f)throw new Error('Fattura inesistente');
   if(String(f.stato||'').toUpperCase()!=='PRONTA_FIC')throw new Error('La fattura non e una bozza PRONTA_FIC: cancellazione bloccata');
   if(String(req.body.conferma||'')!=='MAI_EMESSA')throw new Error('Confermare esplicitamente che la fattura non e mai stata emessa, consegnata o importata altrove');
-  await dpInvoiceNoExport('trasporti',f.id);
   await dpInvoiceNoCollected('TRASPORTI',f.id);
-  const links=await all('SELECT * FROM trasporti_fattura_ordini WHERE fattura_id=?',[f.id]);
   await dpInvoiceReleaseEnsure();
+  await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
+  const aliases=['trasporti','TRASPORTI','T'];
+  const rows=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
+  if(rows.length>1)throw new Error('Piu XML associati alla fattura: verifica manuale necessaria, nessuna cancellazione');
+  if(rows.length&&(!rows[0].file_id||!rows[0].file_name))throw new Error('XML privo di file ID o nome: nessuna cancellazione');
+  if(rows.length&&String(process.env.DP_FATEL_DELETE_TOKEN||'').length<32)throw new Error('DP_FATEL_DELETE_TOKEN non configurato: nessuna cancellazione');
+  const links=await all('SELECT * FROM trasporti_fattura_ordini WHERE fattura_id=?',[f.id]);
   await run('BEGIN IMMEDIATE');
   try{
    const q=await get('SELECT stato FROM trasporti_fatture WHERE id=?',[f.id]);
-   if(!q||q.stato!=='PRONTA_FIC')throw new Error('Stato cambiato: riprovare');
-   await dpInvoiceNoExport('trasporti',f.id);
+   if(!q||q.stato!=='PRONTA_FIC')throw new Error('Stato fattura cambiato: riprovare');
    await dpInvoiceNoCollected('TRASPORTI',f.id);
-   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',['trasporti',f.id,f.anno,f.serie,f.numero,JSON.stringify({fattura:f,ordini:links}),'MAI_EMESSA']);
+   const current=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
+   if(current.length!==rows.length||current.some((x,i)=>x.file_id!==rows[i].file_id||x.file_name!==rows[i].file_name))throw new Error('XML cambiato nel frattempo: riprovare');
+   if(current.length){await dpV377TrashRentXml(current[0]);driveTrashed=true;}
+   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',
+     ['trasporti',f.id,f.anno,f.serie,f.numero,JSON.stringify({fattura:f,ordini:links}),'MAI_EMESSA']);
+   if(current.length)await run(`DELETE FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
    const ids=links.map(x=>x.ordine_id);
    if(ids.length){const qs=ids.map(()=>'?').join(',');await run(`UPDATE trasporti_ordini SET stato=CASE WHEN COALESCE(data_consegna,'')<>'' THEN 'DA_FATTURARE' ELSE 'DA_ASSEGNARE' END,num_fattura='',data_fattura='',updated_at=CURRENT_TIMESTAMP WHERE id IN (${qs})`,ids);}
    await run('DELETE FROM trasporti_fattura_ordini WHERE fattura_id=?',[f.id]);
@@ -14043,7 +14054,7 @@ app.post('/trasporti/fattura/:id/annulla',async(req,res)=>{
    await run('COMMIT');
   }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
   res.redirect('/trasporti/fatturazione');
- }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/trasporti/fattura/${Number(req.params.id)}">Torna</a></div>`));}
+ }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p>${driveTrashed?'<p><strong>Attenzione: XML gia spostato nel cestino Drive, ma DB non aggiornato. Non riprovare: serve riconciliazione manuale.</strong></p>':''}<a class="btn" href="/trasporti/fattura/${Number(req.params.id)}">Torna</a></div>`));}
 });
 
 app.get('/trasporti/fattura/:id.pdf',async(req,res)=>{
