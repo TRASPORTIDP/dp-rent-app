@@ -15586,7 +15586,16 @@ async function dpMakeInvoiceXmlV314(tipo,id){
    const masterVat=dpValV314(master?.piva).replace(/^IT/i,'');
    if(master && fiscalVat && masterVat && fiscalVat!==masterVat)
      throw new Error('P.IVA del cliente RENT non corrisponde all’anagrafica unica: verificare il collegamento');
-   if(master && invoiceName && !sameRentHolder(master.ragione_sociale))
+   // V375: quando la ricerca ha identificato UN solo cliente tramite CF,
+   // il nominativo puo' essere registrato in modo diverso nel campo ragione_sociale.
+   // Accettiamo tale situazione esclusivamente se il CF coincide e il nome/cognome
+   // della prenotazione corrisponde all'intestatario fattura. Non e' una ricerca per omonimia.
+   const cfIdentitaCerta=!!(matchedRentByCf && bookingCf && masterCf && bookingCf===masterCf &&
+     sameRentHolder(prenHolder));
+   const masterNomeCognome=[master?.nome,master?.cognome].filter(Boolean).join(' ');
+   const intestatarioMasterVerificato=!!(master && (sameRentHolder(master.ragione_sociale)||
+     sameRentHolder(masterNomeCognome)||cfIdentitaCerta));
+   if(master && invoiceName && !intestatarioMasterVerificato)
      throw new Error('Intestatario RENT differente dall’anagrafica unica: verificare il collegamento');
    const contractName=dpValV314(p?.ragione_sociale||p?.azienda||c?.ragione_sociale||c?.azienda||[p?.nome||c?.nome,p?.cognome||c?.cognome].filter(Boolean).join(' ')).toUpperCase();
    if(!master && !c && !sameRentHolder(contractName))throw new Error('Contratto e intestatario fattura RENT differenti');
@@ -15600,7 +15609,11 @@ async function dpMakeInvoiceXmlV314(tipo,id){
    const validProvince=(...values)=>values.map(v=>dpValV314(v).toUpperCase()).find(v=>/^[A-Z]{2}$/.test(v))||'';
    if(master || c || p){
      cliente={...(p||{}),...(c||{}),...(master||{})};
-     cliente.ragione_sociale=first(master?.ragione_sociale,c?.ragione_sociale,c?.azienda,p?.ragione_sociale,p?.azienda);
+     // Se il collegamento via CF e' certo, il nome sul documento rimane quello della fattura.
+     // Il CF/indirizzo/provincia provengono dall'anagrafica verificata.
+     cliente.ragione_sociale=cfIdentitaCerta?invoiceName:first(master?.ragione_sociale,c?.ragione_sociale,c?.azienda,p?.ragione_sociale,p?.azienda);
+     if(master && !cfIdentitaCerta && !sameRentHolder(cliente.ragione_sociale) && sameRentHolder(masterNomeCognome))
+       cliente.ragione_sociale=invoiceName;
      cliente.piva=first(master?.piva,c?.piva,c?.partita_iva,p?.piva,p?.partita_iva);
      cliente.codice_fiscale=first(master?.codice_fiscale,c?.codice_fiscale,c?.cf,p?.codice_fiscale,p?.cf);
      cliente.indirizzo=first(master?.indirizzo,c?.indirizzo_fatturazione,c?.indirizzo,p?.indirizzo_fatturazione,p?.indirizzo);
