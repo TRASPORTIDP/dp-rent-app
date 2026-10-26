@@ -13797,7 +13797,9 @@ async function dpTNextInvoiceNumber(anno,serie='T'){
   const r=await get(`SELECT COALESCE(MAX(numero),0)+1 n FROM trasporti_fatture WHERE anno=? AND serie=?`,[Number(anno),dpTClean(serie).toUpperCase()]).catch(()=>({n:1}));
   return Number(r?.n||1);
 }
-async function dpTCreateInvoiceFromIds(ids,{data_fattura,serie='T',numero,pagamento,note,immediata=false}={}){
+async function dpTCreateInvoiceFromIds(ids,{data_fattura,serie='T',numero,pagamento,note,immediata=false,tipo_documento='TD24'}={}){
+  tipo_documento=String(tipo_documento||'TD24').trim().toUpperCase();
+  if(!['TD01','TD24'].includes(tipo_documento))throw new Error('Tipo documento TRASPORTI non valido: scegliere TD01 o TD24');
   ids=(ids||[]).map(Number).filter(Boolean);
   if(!ids.length) throw new Error('Seleziona almeno un trasporto.');
   const qs=ids.map(()=>'?').join(',');
@@ -13830,7 +13832,7 @@ async function dpTCreateInvoiceFromIds(ids,{data_fattura,serie='T',numero,pagame
     const payCode=dpPayCode(dpTClean(pagamento)||cli?.codice_pagamento||'BOIMM');
     const payDesc=DP_PAYMENT_LABELS[payCode]||payCode;
     const ins=await run(`INSERT INTO trasporti_fatture (anno,numero,serie,numero_display,data_fattura,cliente,cliente_id,imponibile,iva,totale,pagamento,codice_pagamento,pagamento_descrizione,note,stato,tipo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      [anno,numero,serie,display,data,rows[0].cliente,cli?.id||null,imponibile,iva,totale,payDesc,payCode,payDesc,dpTClean(note),'PRONTA_FIC',immediata?'IMMEDIATA':'ORDINARIA']);
+      [anno,numero,serie,display,data,rows[0].cliente,cli?.id||null,imponibile,iva,totale,payDesc,payCode,payDesc,dpTClean(note),'PRONTA_FIC',tipo_documento==='TD01'?'IMMEDIATA':'DIFFERITA']);
     const fid=ins.lastID;
     await dpInvoiceMarkNumberReused('trasporti',anno,serie,numero);
     let pos=0;
@@ -13861,7 +13863,7 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
   const clientBoxes=Object.entries(gruppi).map(([cliente,os],idx)=>{
     const impon=os.reduce((a,o)=>a+Number(o.prezzo||0),0),iva=os.reduce((a,o)=>a+Number(o.prezzo||0)*Number(o.iva||22)/100,0);
     const trs=os.map(o=>`<tr><td><input type="checkbox" name="ids" value="${o.id}" ${Number(o.prezzo)>0?'checked':'disabled title="Prezzo mancante: correggere ordine"'}></td><td><a href="/trasporti/ordine/${o.id}"><b>${esc(o.modello)}</b><br>${esc(o.targa_telaio)}</a></td><td>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}</td><td>${esc(o.targa_bisarca||o.automezzo||'')}${o.automezzo && String(o.automezzo).trim().toUpperCase() !== String(o.targa_bisarca||'').trim().toUpperCase() ? '<br><small>'+esc(o.automezzo)+'</small>' : ''}</td><td>${esc(dpTItDate(o.data_carico||''))}</td><td>${esc(dpTItDate(o.data_scarico||o.data_consegna||''))}</td><td>${esc(o.num_bolla||'')} ${o.data_bolla?'<br><small>'+esc(dpTItDate(o.data_bolla))+'</small>':''}</td><td>${esc(o.note_interne||'')}</td><td>${esc(o.note_cliente||o.note||'')}</td><td>€ ${euro(o.prezzo||0)}${Number(o.prezzo)>0?'':'<br><strong style="color:#a00">PREZZO MANCANTE</strong>'}</td><td>${esc(String(o.iva??22))}%</td></tr>`).join('');
-    return `<form method="POST" action="/trasporti/fattura/crea"><div class="box" style="overflow:auto;border:2px solid #ddd"><h2>👤 ${esc(cliente)}</h2><p><b>${os.length} auto</b> • Imponibile € ${euro(impon)} • IVA € ${euro(iva)} • Totale € ${euro(impon+iva)}</p><table><tr><th>✓</th><th>Auto</th><th>Tratta</th><th>Bisarca</th><th>Carico</th><th>Scarico</th><th>DDT</th><th>Note interne</th><th>Note cliente</th><th>Imponibile</th><th>IVA</th></tr>${trs}</table>${os.some(o=>!(Number(o.prezzo)>0))?'<p style="color:#a00;font-weight:bold">Ordini a prezzo zero esclusi dalla selezione: correggere il prezzo prima di fatturare.</p>':''}<div class="grid" style="margin-top:12px"><div><label>Numero</label><input name="numero" type="number" min="1" value="${next+idx}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data fattura</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div><div><label>Pagamento</label>${dpTPaymentField(clientPayMap[dpTClean(cliente).toUpperCase()]||'BOIMM')}</div></div><label>Note fattura</label><textarea name="note"></textarea><button>CREA FATTURA PER ${esc(cliente)}</button></div></form>`;
+    return `<form method="POST" action="/trasporti/fattura/crea"><div class="box" style="overflow:auto;border:2px solid #ddd"><h2>👤 ${esc(cliente)}</h2><p><b>${os.length} auto</b> • Imponibile € ${euro(impon)} • IVA € ${euro(iva)} • Totale € ${euro(impon+iva)}</p><table><tr><th>✓</th><th>Auto</th><th>Tratta</th><th>Bisarca</th><th>Carico</th><th>Scarico</th><th>DDT</th><th>Note interne</th><th>Note cliente</th><th>Imponibile</th><th>IVA</th></tr>${trs}</table>${os.some(o=>!(Number(o.prezzo)>0))?'<p style="color:#a00;font-weight:bold">Ordini a prezzo zero esclusi dalla selezione: correggere il prezzo prima di fatturare.</p>':''}<div class="grid" style="margin-top:12px"><div><label>Numero</label><input name="numero" type="number" min="1" value="${next+idx}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data fattura</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div><div><label>Pagamento</label>${dpTPaymentField(clientPayMap[dpTClean(cliente).toUpperCase()]||'BOIMM')}</div><div><label>Tipo fattura</label><select name="tipo_documento"><option value="TD24" selected>TD24 — Differita (predefinita)</option><option value="TD01">TD01 — Immediata</option></select><small>TD24: documenti di trasporto con numero e data obbligatori per XML</small></div></div><label>Note fattura</label><textarea name="note"></textarea><button>CREA FATTURA PER ${esc(cliente)}</button></div></form>`;
   }).join('')||'<div class="box"><h3>Nessun trasporto da fatturare.</h3></div>';
   const histImm=history.filter(f=>String(f.tipo||'ORDINARIA').toUpperCase()==='IMMEDIATA');
   const histOrd=history.filter(f=>String(f.tipo||'ORDINARIA').toUpperCase()!=='IMMEDIATA');
@@ -13899,12 +13901,12 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
 
     <div class="box" style="overflow:auto;border:3px solid #d71920">
       <h2>⚡ FATTURE IMMEDIATE</h2>
-      <p>Fatture create direttamente dal singolo ordine.</p>
+      <p>Fatture classificate TD01. Anche da un singolo ordine si puo scegliere TD24.</p>
       ${tableF(histImm,'Nessuna fattura immediata.')}
     </div>
 
     <div class="box" style="overflow:auto">
-      <h2>📚 FATTURE ORDINARIE / RIEPILOGATIVE</h2>
+      <h2>📚 FATTURE DIFFERITE / STORICHE RIEPILOGATIVE</h2><p>Le fatture storiche ORDINARIA mantengono il precedente tracciato TD01; le nuove DIFFERITA generano TD24 con documenti di riferimento.</p>
       ${tableF(histOrd,'Nessuna fattura ordinaria.')}
     </div>`));
 });
@@ -13913,7 +13915,7 @@ app.post('/trasporti/fattura/crea', async(req,res)=>{
     let ids=req.body.ids||[];if(!Array.isArray(ids))ids=[ids];
     const fid=await dpTCreateInvoiceFromIds(ids,{
       data_fattura:req.body.data_fattura,serie:req.body.serie,numero:req.body.numero,
-      pagamento:req.body.pagamento,note:req.body.note,immediata:false
+      pagamento:req.body.pagamento,note:req.body.note,immediata:false,tipo_documento:req.body.tipo_documento||'TD24'
     });
     res.redirect(`/trasporti/fattura/${fid}`);
   }catch(e){
@@ -13927,20 +13929,20 @@ app.get('/trasporti/fattura/immediata/:ordineId',async(req,res)=>{
   if(String(o.num_fattura||'').trim() && String(o.num_fattura||'').trim()!=='0')return res.send(page('Già fatturato',`<div class="box"><h2>Ordine già inserito in fattura ${esc(o.num_fattura)}</h2><a class="btn" href="/trasporti/ordine/${o.id}">Torna</a></div>`));
   const next=await dpTNextInvoiceNumber(new Date().getFullYear(),'T');
   const mc=await get(`SELECT codice_pagamento FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale))=UPPER(TRIM(?)) LIMIT 1`,[o.cliente]).catch(()=>null);
-  res.send(page('Fattura immediata',`<div class="box"><h2>⚡ Fattura immediata</h2>
+  res.send(page('Fattura da ordine',`<div class="box"><h2>🧾 Fattura da ordine (differita predefinita)</h2>
     <p><b>${esc(o.cliente)}</b><br>${esc(o.modello)} ${esc(o.targa_telaio)}<br>${esc(o.citta_carico)} → ${esc(o.citta_scarico)}<br>€ ${euro(o.prezzo||0)} + IVA ${esc(String(o.iva||22))}%</p>
     <form method="POST" action="/trasporti/fattura/immediata/${o.id}">
       <div class="grid"><div><label>Numero</label><input type="number" name="numero" value="${next}" required></div><div><label>Serie</label><input name="serie" value="T" required></div><div><label>Data</label><input type="date" name="data_fattura" value="${new Date().toISOString().slice(0,10)}" required></div></div>
-      <label>Pagamento</label>${dpTPaymentField(mc?.codice_pagamento||'BOIMM')}
+      <label>Tipo fattura</label><select name="tipo_documento"><option value="TD24" selected>TD24 — Differita (predefinita)</option><option value="TD01">TD01 — Immediata (scelta esplicita)</option></select><label>Pagamento</label>${dpTPaymentField(mc?.codice_pagamento||'BOIMM')}
       <label>Note</label><textarea name="note"></textarea>
-      <button>CREA FATTURA IMMEDIATA</button>
+      <button>CREA FATTURA CON IL TIPO SELEZIONATO</button>
     </form><a class="btn btn2" href="/trasporti/ordine/${o.id}">Annulla</a></div>`));
 });
 app.post('/trasporti/fattura/immediata/:ordineId',async(req,res)=>{
   try{
     const fid=await dpTCreateInvoiceFromIds([req.params.ordineId],{
       data_fattura:req.body.data_fattura,serie:req.body.serie,numero:req.body.numero,
-      pagamento:req.body.pagamento,note:req.body.note,immediata:true
+      pagamento:req.body.pagamento,note:req.body.note,immediata:true,tipo_documento:req.body.tipo_documento||'TD24'
     });
     res.redirect(`/trasporti/fattura/${fid}`);
   }catch(e){res.status(400).send(page('Errore fattura',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/trasporti/ordine/${req.params.ordineId}">Torna</a></div>`));}
@@ -13975,12 +13977,13 @@ app.get('/trasporti/fattura/:id/modifica',async(req,res)=>{
  res.send(page('Modifica fattura',`<form method="POST" action="/trasporti/fattura/${f.id}/modifica"><div class="box"><h2>✏️ Modifica fattura ${esc(f.numero_display)}</h2><div class="grid">
  <div><label>Numero</label><input type="number" name="numero" value="${Number(f.numero||0)}" required></div><div><label>Serie</label><input name="serie" value="${esc(f.serie||'T')}" maxlength="4" required></div>
  <div><label>Data fattura</label><input type="date" name="data_fattura" value="${esc(f.data_fattura||'')}" required></div><div><label>Cliente</label><input name="cliente" value="${esc(f.cliente||'')}" required></div>
- <div><label>Tipo fattura</label><select name="tipo"><option value="IMMEDIATA" ${String(f.tipo||'')==='IMMEDIATA'?'selected':''}>Immediata</option><option value="ORDINARIA" ${String(f.tipo||'ORDINARIA')!=='IMMEDIATA'?'selected':''}>Ordinaria / riepilogativa</option></select></div>
+ <div><label>Tipo fattura</label><select name="tipo"><option value="DIFFERITA" ${String(f.tipo||'')==='DIFFERITA'?'selected':''}>TD24 — Differita</option><option value="IMMEDIATA" ${String(f.tipo||'')==='IMMEDIATA'?'selected':''}>TD01 — Immediata</option><option value="ORDINARIA" ${String(f.tipo||'ORDINARIA')==='ORDINARIA'?'selected':''}>Storica ordinaria TD01</option></select></div>
  <div><label>Pagamento</label>${dpTPaymentField('pagamento',f.pagamento)}</div><div><label>Note / causale</label><input name="note" value="${esc(f.note||'')}"></div></div></div>${rr}<div class="box"><button class="btn">💾 SALVA E RICALCOLA FATTURA</button> <a class="btn btn2" href="/trasporti/fattura/${f.id}">Annulla</a></div></form>`));
 });
 app.post('/trasporti/fattura/:id/modifica',async(req,res)=>{
  const f=await get(`SELECT * FROM trasporti_fatture WHERE id=?`,[req.params.id]).catch(()=>null);if(!f)return res.status(404).send('Fattura non trovata');
  if(f.stato==='INVIATA_FIC')return res.status(400).send('Fattura già inviata: modifica bloccata');
+  if(await get('SELECT id FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',['trasporti',f.id]).catch(()=>null))return res.status(400).send('XML già esportato: modifica tipo fattura bloccata');
  let ids=req.body.ordine_id||[];if(!Array.isArray(ids))ids=[ids];ids=ids.map(Number).filter(Boolean);
  try{
    await run('BEGIN');
@@ -13997,7 +14000,7 @@ app.post('/trasporti/fattura/:id/modifica',async(req,res)=>{
    const numero=Number(req.body.numero||f.numero),serie=dpTClean(req.body.serie||'T').toUpperCase(),display=dpTFattNumero(numero,serie);
    if(!Number.isSafeInteger(numero)||numero<1)throw new Error('Numero fattura non valido');
    await run(`UPDATE trasporti_fatture SET numero=?,serie=?,numero_display=?,data_fattura=?,cliente=?,imponibile=?,iva=?,totale=?,pagamento=?,note=?,tipo=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,
-     [numero,serie,display,req.body.data_fattura||f.data_fattura,dpTClean(req.body.cliente),imponibile,ivaTot,imponibile+ivaTot,dpTClean(req.body.pagamento)||'Bonifico vista fattura',dpTClean(req.body.note),String(req.body.tipo||f.tipo||'ORDINARIA').toUpperCase()==='IMMEDIATA'?'IMMEDIATA':'ORDINARIA',f.id]);
+     [numero,serie,display,req.body.data_fattura||f.data_fattura,dpTClean(req.body.cliente),imponibile,ivaTot,imponibile+ivaTot,dpTClean(req.body.pagamento)||'Bonifico vista fattura',dpTClean(req.body.note),['IMMEDIATA','DIFFERITA','ORDINARIA'].includes(String(req.body.tipo||'').toUpperCase())?String(req.body.tipo).toUpperCase():String(f.tipo||'ORDINARIA').toUpperCase(),f.id]);
    await run(`UPDATE trasporti_ordini SET num_fattura=?,data_fattura=? WHERE id IN (SELECT ordine_id FROM trasporti_fattura_ordini WHERE fattura_id=?)`,[display,req.body.data_fattura||f.data_fattura,f.id]);
    await run('COMMIT');res.redirect(`/trasporti/fattura/${f.id}`);
  }catch(e){await run('ROLLBACK').catch(()=>{});res.status(400).send(page('Errore modifica fattura',`<div class="box"><h2 class="bad">${esc(e.message)}</h2><a class="btn" href="/trasporti/fattura/${f.id}/modifica">Torna</a></div>`));}
@@ -15707,6 +15710,8 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const data=dpDateV314(f.data_fattura);
  // Prezzi aggregati: una riga riepilogativa; con aliquote diverse serve modello righe dedicato.
  let label=tipo==='noleggio'?'Servizi di noleggio':'Servizi di trasporto';
+ let docType='TD01', documentReferences='';
+ if(tipo==='trasporti' && String(f.tipo||'').toUpperCase()==='DIFFERITA')docType='TD24';
  if(tipo==='trasporti'){
    const details=await all(`SELECT o.* FROM trasporti_fattura_ordini fo JOIN trasporti_ordini o ON o.id=fo.ordine_id WHERE fo.fattura_id=? ORDER BY fo.posizione,o.id`,[id]);
    if(!details.length)throw new Error('Fattura TRASPORTI senza ordini collegati: XML bloccato');
@@ -15714,7 +15719,16 @@ async function dpMakeInvoiceXmlV314(tipo,id){
    const tax=details.reduce((x,o)=>x+Number(o.prezzo||0)*Number(o.iva??22)/100,0);
    if(Math.abs(net-imponibile)>.02||Math.abs(tax-iva)>.02)throw new Error('Importi ordine e fattura non allineati: verificare/modificare la fattura prima dell’XML');
    if(details.some(o=>!(Number(o.prezzo)>0)))throw new Error('Ordine con prezzo mancante nella fattura: XML bloccato');
-   label=details.map(o=>`Trasporto ${dpValV314(o.modello)} ${dpValV314(o.targa_telaio)} - ${dpValV314(o.citta_carico)} / ${dpValV314(o.citta_scarico)}${o.num_bolla?' - DDT '+dpValV314(o.num_bolla):''}`).join('; ').slice(0,850)||label;
+    if(docType==='TD24'){
+      for(const o of details){
+        const numero=dpValV314(o.num_bolla);
+        const dataDDT=dpValV314(o.data_bolla);
+        if(!numero || !/^\d{4}-\d{2}-\d{2}$/.test(dataDDT) || !Number.isFinite(Date.parse(dataDDT)))
+          throw new Error('TD24 bloccato: compilare numero e data del documento di trasporto per ogni ordine (ordine '+o.id+').');
+        documentReferences+=`<DatiDDT>${dpTagV314('NumeroDDT',numero)}${dpTagV314('DataDDT',dataDDT)}</DatiDDT>`;
+      }
+    }
+    label=details.map(o=>`Trasporto ${dpValV314(o.modello)} ${dpValV314(o.targa_telaio)} - ${dpValV314(o.citta_carico)} / ${dpValV314(o.citta_scarico)}${o.num_bolla?' - DDT '+dpValV314(o.num_bolla):''}`).join('; ').slice(0,850)||label;
  }
  // V336: dati di pagamento solo se esplicitamente riconoscibili; non inventare scadenze.
  const pagamentoTesto=dpValV314(f.pagamento||f.pagamento_descrizione).toLowerCase();
@@ -15728,7 +15742,7 @@ async function dpMakeInvoiceXmlV314(tipo,id){
  const azienda=`<DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdFiscaleIVA><Anagrafica>${dpTagV314('Denominazione',denom)}</Anagrafica>${dpTagV314('RegimeFiscale',regime)}</DatiAnagrafici><Sede>${dpTagV314('Indirizzo',ind)}${dpTagV314('CAP',cap)}${dpTagV314('Comune',comune)}${dpTagV314('Provincia',prov)}<Nazione>IT</Nazione></Sede>`;
  const cId=`${/^\d{11}$/.test(cVat)?`<IdFiscaleIVA><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',cVat)}</IdFiscaleIVA>`:''}${cCf?dpTagV314('CodiceFiscale',cCf):''}`;
  const client=`<DatiAnagrafici>${cId}<Anagrafica>${dpTagV314('Denominazione',cName)}</Anagrafica></DatiAnagrafici><Sede>${dpTagV314('Indirizzo',cInd)}${dpTagV314('CAP',cCap)}${dpTagV314('Comune',cComune)}${cProv&&paese==='IT'?dpTagV314('Provincia',cProv):''}${dpTagV314('Nazione',paese)}</Sede>`;
- const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',progressivo)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${azienda}</CedentePrestatore><CessionarioCommittente>${client}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',n)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(totale))}</DatiGeneraliDocumento></DatiGenerali><DatiBeniServizi><DettaglioLinee><NumeroLinea>1</NumeroLinea>${dpTagV314('Descrizione',label)}<Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imponibile))}${dpTagV314('PrezzoTotale',dpMoneyV314(imponibile))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee><DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imponibile))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo></DatiBeniServizi>${pagamentoXml}</FatturaElettronicaBody></p:FatturaElettronica>`;
+ const xml=`<?xml version="1.0" encoding="UTF-8"?>\n<p:FatturaElettronica xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" versione="FPR12"><FatturaElettronicaHeader><DatiTrasmissione><IdTrasmittente><IdPaese>IT</IdPaese>${dpTagV314('IdCodice',vat)}</IdTrasmittente>${dpTagV314('ProgressivoInvio',progressivo)}<FormatoTrasmissione>FPR12</FormatoTrasmissione>${dpTagV314('CodiceDestinatario',dest.toUpperCase())}${pec&&dest==='0000000'?dpTagV314('PECDestinatario',pec):''}</DatiTrasmissione><CedentePrestatore>${azienda}</CedentePrestatore><CessionarioCommittente>${client}</CessionarioCommittente></FatturaElettronicaHeader><FatturaElettronicaBody><DatiGenerali><DatiGeneraliDocumento><TipoDocumento>${docType}</TipoDocumento><Divisa>EUR</Divisa>${dpTagV314('Data',data)}${dpTagV314('Numero',n)}${dpTagV314('ImportoTotaleDocumento',dpMoneyV314(totale))}</DatiGeneraliDocumento>${documentReferences}</DatiGenerali><DatiBeniServizi><DettaglioLinee><NumeroLinea>1</NumeroLinea>${dpTagV314('Descrizione',label)}<Quantita>1.00</Quantita>${dpTagV314('PrezzoUnitario',dpMoneyV314(imponibile))}${dpTagV314('PrezzoTotale',dpMoneyV314(imponibile))}${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}</DettaglioLinee><DatiRiepilogo>${dpTagV314('AliquotaIVA',dpMoneyV314(aliquota))}${dpTagV314('ImponibileImporto',dpMoneyV314(imponibile))}${dpTagV314('Imposta',dpMoneyV314(iva))}<EsigibilitaIVA>I</EsigibilitaIVA></DatiRiepilogo></DatiBeniServizi>${pagamentoXml}</FatturaElettronicaBody></p:FatturaElettronica>`;
  return {f,xml,filename:`IT${vat}_${progressivo}.xml`};
 }
 
@@ -15742,7 +15756,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
   try{
     const {f,xml,filename}=await dpMakeInvoiceXmlV314(tipo,id);
     const xmlType=(xml.match(/<TipoDocumento>([^<]+)<\/TipoDocumento>/)||[])[1]||'';
-    if(xmlType!=='TD01') throw new Error('Tipo documento non supportato da questo generatore.');
+    if(!['TD01','TD24'].includes(xmlType)) throw new Error('Tipo documento non supportato da questo generatore.');
     // This check is diagnostic, not a full SdI XSD validation.
     const recipientFallback=xml.includes('<CodiceDestinatario>0000000</CodiceDestinatario>')&&!xml.includes('<PECDestinatario>');
     const saved=await get('SELECT file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]).catch(()=>null);
