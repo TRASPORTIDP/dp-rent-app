@@ -14453,29 +14453,65 @@ app.get('/noleggio/fattura/:id/modifica',async(req,res)=>{
 app.post('/noleggio/fattura/:id/modifica',async(req,res)=>{
   try{const f=await get(`SELECT * FROM noleggio_fatture WHERE id=?`,[req.params.id]);if(!f)throw new Error('Fattura non trovata');if(f.stato==='INVIATA_FIC')throw new Error('Fattura gia inviata');const numero=Number(req.body.numero||f.numero),serie=String(req.body.serie||'N').trim().toUpperCase(),display=dpNFattNumero(numero,serie);await run(`UPDATE noleggio_fatture SET numero=?,serie=?,numero_display=?,data_fattura=?,pagamento=?,note=?,updated_at=CURRENT_TIMESTAMP WHERE id=?`,[numero,serie,display,req.body.data_fattura||f.data_fattura,String(req.body.pagamento||f.pagamento).trim(),String(req.body.note||'').trim(),f.id]);await run(`UPDATE prenotazioni SET fattura_numero=?,fattura_metodo=?,fattura_note=? WHERE id=?`,[display,String(req.body.pagamento||f.pagamento).trim(),String(req.body.note||'').trim(),f.prenotazione_id]).catch(()=>{});res.redirect(`/noleggio/fattura/${f.id}`);}catch(e){res.status(400).send(page('Errore',`<div class="box"><h2 class="bad">${esc(e.message)}</h2></div>`));}
 });
+// V377: cestinamento sicuro di un XML RENT di sola prova, tramite Apps Script proprietario.
+// Mai eliminare localmente finche Drive non conferma lo spostamento nel cestino.
+async function dpV377TrashRentXml(exportRow){
+ const url=String(process.env.DRIVE_WEBAPP_URL||'').trim();
+ const token=String(process.env.DP_FATEL_DELETE_TOKEN||'');
+ if(!/^https:\/\/script\.google\.com\//.test(url) || token.length<32)
+   throw new Error('Cancellazione XML non configurata: controllare DRIVE_WEBAPP_URL e DP_FATEL_DELETE_TOKEN su Render');
+ const fileId=String(exportRow?.file_id||'').trim();
+ const expectedName=String(exportRow?.file_name||'').trim();
+ if(!/^[A-Za-z0-9_-]{15,}$/.test(fileId) || !/^IT[0-9]{11}_[A-Za-z0-9]{1,5}\.xml$/.test(expectedName))
+   throw new Error('Identificativo XML su Drive mancante o non valido: cancellazione bloccata');
+ const ctrl=new AbortController();
+ const timeout=setTimeout(()=>ctrl.abort(),20000);
+ try{
+  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},
+   body:JSON.stringify({action:'trashFatelXml',token,fileId,expectedName}),signal:ctrl.signal});
+  const raw=await r.text();let d;
+  try{d=JSON.parse(raw)}catch(_){throw new Error('Risposta Apps Script non JSON: verificare il deployment della funzione trashFatelXml')}
+  if(!r.ok||!d.ok||d.trashed!==true||String(d.fileId||'')!==fileId)
+   throw new Error(String(d.error||'Drive non ha confermato lo spostamento nel cestino'));
+ }finally{clearTimeout(timeout)}
+}
+
 app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
+ let driveTrashed=false;
  try{
   const f=await get('SELECT * FROM noleggio_fatture WHERE id=?',[req.params.id]);
   if(!f)throw new Error('Fattura inesistente');
   if(f.stato!=='PRONTA_FIC')throw new Error('Cancellazione ammessa soltanto per bozze PRONTA_FIC');
-  if(String(req.body.conferma||'')!=='MAI_EMESSA')throw new Error('Manca attestazione di mancata emissione/consegna');
-  await dpInvoiceNoExport('noleggio',f.id);
+  if(String(req.body.conferma||'')!=='MAI_EMESSA')throw new Error('Manca attestazione di mancata emissione/consegna/acquisizione Fatel');
   await dpInvoiceNoCollected('NOLEGGIO',f.id);
   await dpInvoiceReleaseEnsure();
+  // Prima di iniziare la transazione: verificare che il sistema di cancellazione sia disponibile.
+  await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
+  const aliases=['noleggio','NOLEGGIO','N'];
+  const rows=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
+  if(rows.length>1)throw new Error('Più esportazioni XML associate alla fattura: cancellazione bloccata, verifica manuale necessaria');
+  if(rows.length){
+   if(String(process.env.DP_FATEL_DELETE_TOKEN||'').length<32)throw new Error('DP_FATEL_DELETE_TOKEN non configurato su Render: nessun dato cancellato');
+   if(!rows[0].file_id||!rows[0].file_name)throw new Error('XML privo di file ID o nome: nessun dato cancellato');
+  }
   await run('BEGIN IMMEDIATE');
   try{
    const q=await get('SELECT stato FROM noleggio_fatture WHERE id=?',[f.id]);
    if(!q||q.stato!=='PRONTA_FIC')throw new Error('Stato fattura cambiato');
-   await dpInvoiceNoExport('noleggio',f.id);
    await dpInvoiceNoCollected('NOLEGGIO',f.id);
-   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',['noleggio',f.id,f.anno,f.serie,f.numero,JSON.stringify(f),'MAI_EMESSA']);
+   const current=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
+   if(current.length!==rows.length||current.some((x,i)=>x.file_id!==rows[i].file_id||x.file_name!==rows[i].file_name))throw new Error('Esportazione XML cambiata: ripetere la verifica');
+   if(current.length){await dpV377TrashRentXml(current[0]);driveTrashed=true;}
+   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',
+    ['noleggio',f.id,f.anno,f.serie,f.numero,JSON.stringify(f),'MAI_EMESSA']);
+   if(current.length)await run(`DELETE FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
    await run('DELETE FROM noleggio_fatture WHERE id=?',[f.id]);
    await run("DELETE FROM dp_scadenze_incassi WHERE modulo='NOLEGGIO' AND fattura_id=? AND stato<>'INCASSATA'",[f.id]);
    await run("UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=0 WHERE id=?",[f.prenotazione_id]);
    await run('COMMIT');
   }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
   res.redirect('/fatture-da-fare');
- }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/noleggio/fattura/${Number(req.params.id)}">Torna</a></div>`));}
+ }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p>${driveTrashed?'<p><strong>Attenzione: Drive ha confermato il cestino ma il database non ha completato la cancellazione. Non riprovare: serve riconciliazione manuale.</strong></p>':''}<a class="btn" href="/noleggio/fattura/${Number(req.params.id)}">Torna</a></div>`));}
 });
 
 app.post('/noleggio/fattura/:id/inviata-fic',async(req,res)=>{
