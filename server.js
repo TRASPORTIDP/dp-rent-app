@@ -15710,7 +15710,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p><b>Pagamento XML:</b> ${xml.includes('<DatiPagamento>')?'Bonifico (MP05), IBAN presente, importo totale':'Non indicato: metodo non riconosciuto; controllare la fattura'}.</p>
       <p><b>Attenzione:</b> non è ancora una validazione ufficiale XSD/SdI. Verificare
       righe, aliquote, natura IVA e dati fiscali prima di usare il file.</p>
-      <a class="btn btn2" href="/fatturazione/xml/anteprima-scarica/${tipo}/${id}">⬇️ Scarica XML aggiornato (solo verifica)</a>
+      <a class="btn btn2" href="/fatturazione/xml/anteprima-zip/${tipo}/${id}">⬇️ Scarica ZIP per controllo Agenzia (XML con nome corretto)</a>
       ${saved?`<p>⚠️ XML già esportato: ${esc(saved.file_name)}. Puoi scaricare una versione aggiornata senza esportarla.</p>`:
       `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML su Drive</a>`}
       <a class="btn" href="${back}">Torna alle fatture</a></div>`));
@@ -15720,6 +15720,51 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       <p>Nessuna fattura o anagrafica è stata modificata.</p>
       <a class="btn btn2" href="${back}">Torna alle fatture</a></div>`));
   }
+});
+
+// V376: il browser puo rinominare download XML ripetuti (-2.xml, .xml.xml).
+// Lo ZIP isola il nome fiscalmente valido dell'XML in una cartella dedicata.
+// Nessuna modifica a fatture, progressivi, database, Drive o SdI.
+function dpXmlControlZipV376(xml, fiscalFilename){
+  const name='CONTROLLO_XML/'+String(fiscalFilename||'');
+  if(!/^CONTROLLO_XML\/IT[0-9]{11}_[A-Za-z0-9]{1,5}\.xml$/.test(name)) throw new Error('Nome XML non valido');
+  const data=Buffer.from(String(xml),'utf8'), fname=Buffer.from(name,'utf8');
+  let crc=0xFFFFFFFF;
+  for(const b of data){
+    crc^=b;
+    for(let i=0;i<8;i++) crc=(crc>>>1)^((crc&1)?0xEDB88320:0);
+  }
+  crc=(crc^0xFFFFFFFF)>>>0;
+  const local=Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50,0); local.writeUInt16LE(20,4);
+  local.writeUInt16LE(0,6); local.writeUInt16LE(0,8); // no compression
+  local.writeUInt32LE(crc,14); local.writeUInt32LE(data.length,18);
+  local.writeUInt32LE(data.length,22); local.writeUInt16LE(fname.length,26);
+  const central=Buffer.alloc(46);
+  central.writeUInt32LE(0x02014b50,0); central.writeUInt16LE(20,4);
+  central.writeUInt16LE(20,6); central.writeUInt16LE(0,8);
+  central.writeUInt16LE(0,10); central.writeUInt32LE(crc,16);
+  central.writeUInt32LE(data.length,20); central.writeUInt32LE(data.length,24);
+  central.writeUInt16LE(fname.length,28); central.writeUInt32LE(0,42);
+  const localSize=local.length+fname.length+data.length;
+  const centralSize=central.length+fname.length;
+  const end=Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50,0); end.writeUInt16LE(1,8);
+  end.writeUInt16LE(1,10); end.writeUInt32LE(centralSize,12);
+  end.writeUInt32LE(localSize,16);
+  return Buffer.concat([local,fname,data,central,fname,end]);
+}
+app.get('/fatturazione/xml/anteprima-zip/:tipo/:id([0-9]+)',async(req,res)=>{
+  const tipo=String(req.params.tipo||'');
+  if(!['noleggio','trasporti','service'].includes(tipo))return res.status(400).send('Settore non supportato');
+  try{
+    const {xml,filename}=await dpMakeInvoiceXmlV314(tipo,req.params.id);
+    const zip=dpXmlControlZipV376(xml,filename);
+    res.setHeader('Content-Type','application/zip');
+    res.setHeader('Content-Disposition','attachment; filename="CONTROLLO_'+filename.replace(/[^A-Za-z0-9_.-]/g,'')+'.zip"');
+    res.setHeader('Cache-Control','no-store');
+    return res.status(200).end(zip);
+  }catch(err){return res.status(400).send(page('Anteprima XML non disponibile',`<div class="box"><h2>XML non disponibile</h2><p>${esc(err.message)}</p><a class="btn" href="/fatturazione/invii">Registro fatture</a></div>`));}
 });
 
 // V335: Scaricamento diagnostico: nessuna scrittura su DB/Drive o cambio stato fattura.
