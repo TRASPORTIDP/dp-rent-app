@@ -15528,22 +15528,39 @@ async function dpMakeInvoiceXmlV314(tipo,id){
      const found=await all("SELECT * FROM dp_clienti_master WHERE REPLACE(UPPER(TRIM(piva)),'IT','')=? LIMIT 2",[fiscalVat]).catch(()=>[]);
      if(found.length===1)master=found[0];
    }
+   // V373: per persone fisiche il cognome e il nome possono essere invertiti
+   // tra fattura RENT e anagrafica. Solo due parole e UNA corrispondenza univoca.
+   // Non fare mai il fallback su province dedotte dall'indirizzo.
+   const rentNameTokens=invoiceName.split(/\s+/).filter(Boolean);
+   const invertedRentName=rentNameTokens.length===2?rentNameTokens.slice().reverse().join(' '):'';
+   const sameRentHolder=(name)=>{
+     const normalized=dpValV314(name).toUpperCase().replace(/\s+/g,' ');
+     return normalized===invoiceName || (!!invertedRentName && normalized===invertedRentName);
+   };
    if(!master && invoiceName){
-     const found=await all('SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale))=? LIMIT 2',[invoiceName]).catch(()=>[]);
+     const candidates=[invoiceName];
+     if(invertedRentName && invertedRentName!==invoiceName)candidates.push(invertedRentName);
+     const marks=candidates.map(()=>'?').join(',');
+     const found=await all(`SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(ragione_sociale)) IN (${marks}) LIMIT 2`,candidates).catch(()=>[]);
      if(found.length===1)master=found[0];
-     if(found.length>1 && !c)throw new Error('Più anagrafiche con lo stesso nome: collegare il cliente RENT prima di esportare');
+     if(found.length>1)throw new Error('Cliente RENT ambiguo: piu anagrafiche con nominativo compatibile; collegare esplicitamente il cliente prima dell XML');
    }
+   // Protezione: non usare anagrafiche con un CF diverso da quello del contratto.
+   const contractCf=dpValV314(c?.codice_fiscale||c?.cf||p?.codice_fiscale||p?.cf).toUpperCase();
+   const masterCf=dpValV314(master?.codice_fiscale||master?.cf).toUpperCase();
+   if(master && contractCf && masterCf && contractCf!==masterCf)
+     throw new Error('Codice fiscale RENT non corrispondente tra contratto e anagrafica unica');
    // La P.IVA evita di prelevare i dati di un omonimo o cliente diverso.
    const masterVat=dpValV314(master?.piva).replace(/^IT/i,'');
    if(master && fiscalVat && masterVat && fiscalVat!==masterVat)
      throw new Error('P.IVA del cliente RENT non corrisponde all’anagrafica unica: verificare il collegamento');
-   if(master && invoiceName && dpValV314(master.ragione_sociale).toUpperCase()!==invoiceName)
+   if(master && invoiceName && !sameRentHolder(master.ragione_sociale))
      throw new Error('Intestatario RENT differente dall’anagrafica unica: verificare il collegamento');
    const contractName=dpValV314(p?.ragione_sociale||p?.azienda||c?.ragione_sociale||c?.azienda||[p?.nome||c?.nome,p?.cognome||c?.cognome].filter(Boolean).join(' ')).toUpperCase();
-   if(!master && !c && contractName!==invoiceName)throw new Error('Contratto e intestatario fattura RENT differenti');
+   if(!master && !c && !sameRentHolder(contractName))throw new Error('Contratto e intestatario fattura RENT differenti');
    if(!master && c){
      const name=dpValV314(c.ragione_sociale||c.azienda||[c.nome,c.cognome].filter(Boolean).join(' ')).toUpperCase();
-     if(name!==invoiceName)throw new Error('Cliente RENT e intestatario fattura differenti');
+     if(!sameRentHolder(name))throw new Error('Cliente RENT e intestatario fattura differenti');
    }
    const first=(...values)=>values.map(dpValV314).find(Boolean)||'';
    // Un campo provinciale master errato/vuoto non deve oscurare il valore RM valido
@@ -15567,7 +15584,12 @@ async function dpMakeInvoiceXmlV314(tipo,id){
    if(matches.length===1)cliente=matches[0];
    else if(matches.length>1 && !cliente)throw new Error('Più anagrafiche condivise con lo stesso nome: associare il cliente alla fattura');
  }
- if(cliente && invoiceName && dpValV314(cliente.ragione_sociale||cliente.azienda||[cliente.nome,cliente.cognome].filter(Boolean).join(' ')).toUpperCase()!==invoiceName)
+ // V373: mantiene il controllo intestatario, ammettendo solo l'inversione
+ // di due parole per i clienti RENT (non applicarlo ai settori aziendali).
+ const xmlHolder=dpValV314(cliente?.ragione_sociale||cliente?.azienda||[cliente?.nome,cliente?.cognome].filter(Boolean).join(' ')).toUpperCase().replace(/\s+/g,' ');
+ const rentHolderWords=invoiceName.split(/\s+/).filter(Boolean);
+ const reversedRentHolder=(tipo==='noleggio' && rentHolderWords.length===2)?rentHolderWords.slice().reverse().join(' '):'';
+ if(cliente && invoiceName && xmlHolder!==invoiceName && xmlHolder!==reversedRentHolder)
    throw new Error('Il cliente collegato non corrisponde all’intestatario della fattura');
  if(!cliente)throw new Error('Cliente non trovato nelle anagrafiche: associare il cliente alla fattura');
  const cVat=dpValV314(cliente.piva||cliente.partita_iva).replace(/^IT/i,'').replace(/\s/g,'');
