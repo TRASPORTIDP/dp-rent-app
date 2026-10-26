@@ -15545,6 +15545,38 @@ async function dpMakeInvoiceXmlV314(tipo,id){
      if(found.length===1)master=found[0];
      if(found.length>1)throw new Error('Cliente RENT ambiguo: piu anagrafiche con nominativo compatibile; collegare esplicitamente il cliente prima dell XML');
    }
+   // V374: fallback fiscale SOLO su CF certo, senza associazioni per semplice omonimia.
+   // Il CF del conducente si usa solo se il nominativo del conducente coincide
+   // con l'intestatario della fattura (un secondo guidatore non e' il cliente).
+   const normalizedCf=(v)=>dpValV314(v).toUpperCase().replace(/\s/g,'');
+   const prenHolder=dpValV314([p?.nome,p?.cognome].filter(Boolean).join(' ')).toUpperCase();
+   const drivingHolder=dpValV314(p?.conducente1).toUpperCase();
+   const bookingCf=normalizedCf(p?.codice_fiscale||p?.cf||
+     ((sameRentHolder(drivingHolder)||sameRentHolder(prenHolder))?p?.conducente1_cf:''));
+   let matchedRentByCf=false;
+   if(!master && !c && bookingCf && /^[A-Z0-9]{16}$/.test(bookingCf)){
+     const hitsMaster=await all('SELECT * FROM dp_clienti_master WHERE UPPER(TRIM(codice_fiscale))=? LIMIT 2',[bookingCf]).catch(()=>[]);
+     const hitsRent=await all('SELECT * FROM clienti WHERE UPPER(TRIM(codice_fiscale))=? LIMIT 2',[bookingCf]).catch(()=>[]);
+     if(hitsMaster.length>1 || hitsRent.length>1)
+       throw new Error('Codice fiscale RENT presente in piu anagrafiche: collegare manualmente il cliente');
+     const foundMaster=hitsMaster[0]||null;
+     const foundRent=hitsRent[0]||null;
+     const holderOf=(r)=>r?.ragione_sociale||r?.azienda||[r?.nome,r?.cognome].filter(Boolean).join(' ');
+     if(foundMaster && !sameRentHolder(holderOf(foundMaster)))
+       throw new Error('CF RENT corrisponde a un intestatario diverso: collegamento cliente da verificare');
+     if(foundRent && !sameRentHolder(holderOf(foundRent)))
+       throw new Error('CF RENT corrisponde a un intestatario diverso: collegamento cliente da verificare');
+     if(foundMaster){master=foundMaster;matchedRentByCf=true;}
+     if(foundRent){
+       // c e' const: se non esiste master, riprendiamo il record RENT via un contenitore sicuro.
+       // Non assegnare automaticamente l'ID alla prenotazione o alla fattura.
+       if(!master)master={...foundRent,ragione_sociale:holderOf(foundRent),__rentFallback:true};
+       matchedRentByCf=true;
+     }
+   }
+   // Se il destinatario non e' risolvibile, non inventare province dal comune.
+   if(!master && !c && p && !/^[A-Z]{2}$/.test(dpValV314(p.provincia_fatturazione||p.provincia).toUpperCase()))
+     throw new Error('Cliente RENT non collegato: provincia non presente nel contratto. Collegare l’anagrafica del titolare (tramite codice fiscale) prima dell’XML');
    // Protezione: non usare anagrafiche con un CF diverso da quello del contratto.
    const contractCf=dpValV314(c?.codice_fiscale||c?.cf||p?.codice_fiscale||p?.cf).toUpperCase();
    const masterCf=dpValV314(master?.codice_fiscale||master?.cf).toUpperCase();
