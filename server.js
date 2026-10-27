@@ -14595,7 +14595,49 @@ function dpReadServiceInvoices(){
  });
 }
 
-// V321: registro informativo e simulazione selezione massiva (nessuna trasmissione).
+// V385 — Deposito massivo controllato, NON invio allo SdI.
+// Supporta soltanto i settori per cui il generatore XML validato è già disponibile.
+app.post('/fatturazione/invii/deposita-massivo',async(req,res)=>{
+ const chosen=String(req.body.documenti||'').split(',').map(x=>x.trim()).filter(Boolean);
+ const unique=[...new Set(chosen)];
+ const results=[];
+ try{
+  if(!unique.length||unique.length>30)throw new Error('Selezionare da 1 a 30 fatture per operazione');
+  if(!googleDriveConfigured())throw new Error('Google Drive non configurato');
+  const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
+  if(!['TEST','READY'].includes(mode))throw new Error('Modalità Drive non valida');
+  await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
+  for(const key of unique){
+   let tempFile=null;
+   try{
+    const matched=/^(noleggio|trasporti):([1-9][0-9]*)$/.exec(key);
+    if(!matched)throw new Error('Settore non abilitato al deposito massivo');
+    const [,tipo,idText]=matched, id=Number(idText);
+    const existing=await get('SELECT file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]);
+    if(existing){results.push({key,ok:false,message:'Già depositato: '+existing.file_name});continue;}
+    const {xml,filename}=await dpMakeInvoiceXmlV314(tipo,id);
+    const crypto=require('crypto');
+    tempFile=path.join(require('os').tmpdir(),'dp_massivo_'+crypto.randomBytes(12).toString('hex')+'.xml');
+    fs.writeFileSync(tempFile,xml,'utf8');
+    let uploaded;
+    if(mode==='READY') uploaded=await dpFatelAppsScriptUploadV334(tempFile,filename,'application/xml');
+    else{
+     const folder=String(process.env.DP_FATEL_DRIVE_SUBFOLDER||'DP FATTURAZIONE XML - TEST');
+     if(!folder||folder.includes('..')||folder.includes('/')||folder.includes('\\'))throw new Error('Sottocartella non valida');
+     uploaded=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
+    }
+    if(!uploaded)throw new Error('Scrittura Drive non confermata');
+    await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[tipo,id,uploaded.id||'',filename]);
+    results.push({key,ok:true,message:'Depositato: '+filename});
+   }catch(err){results.push({key,ok:false,message:String(err.message||err)});}
+   finally{if(tempFile){try{fs.unlinkSync(tempFile)}catch(_){}}}
+  }
+  const okay=results.filter(x=>x.ok).length;
+  return res.send(page('Esito deposito massivo',`<div class="box"><h2>Deposito massivo XML — ${esc(mode)}</h2><p><b>${okay} completati, ${results.length-okay} non completati.</b></p><p>Deposito su Drive NON significa acquisizione in FATEL o invio allo SdI. Controllare i documenti prima dell'importazione manuale.</p><table><tr><th>Documento</th><th>Esito</th></tr>${results.map(x=>`<tr><td>${esc(x.key)}</td><td>${x.ok?'✅':'⚠️'} ${esc(x.message)}</td></tr>`).join('')}</table><a class="btn" href="/fatturazione/invii">Torna al registro</a></div>`));
+ }catch(err){return res.status(400).send(page('Deposito non avviato',`<div class="box"><h2>Operazione non avviata</h2><p>${esc(err.message)}</p><a class="btn" href="/fatturazione/invii">Torna</a></div>`));}
+});
+
+// V385: registro unico e deposito massivo Drive (nessuna trasmissione SdI).
 app.get('/fatturazione/invii',async(req,res)=>{
  try{
   const [rent,tr,credit,exports,service,libere]=await Promise.all([
@@ -14615,7 +14657,7 @@ app.get('/fatturazione/invii',async(req,res)=>{
   function state(x){
    if(/ANNULLAT|BOZZA|PROVA/i.test(String(x.stato||'')))return 'Non pronta';
    if(x.settore==='credito')return 'Da verificare TD04';
-   if(x.settore==='service')return 'XML SERVICE da integrare';
+   if(x.settore==='service')return 'XML SERVICE: controllo singolo';
    if(x.settore==='libere')return 'XML da validare';
    if(exported.has(x.settore+':'+x.id))return 'XML su Drive';
    if(/INVIATA_FIC/i.test(String(x.stato||'')))return 'Stato esterno da verificare';
@@ -14633,11 +14675,11 @@ app.get('/fatturazione/invii',async(req,res)=>{
     <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
     <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
     <form method="get"><label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option><option value="libere" ${sector==='libere'?'selected':''}>Fatture libere</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
-    <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Le fatture SERVICE sono visibili ma non selezionabili per invio finché non sarà validato il loro XML.</p>
-    <button class="btn btn2" type="button" id="inv-all">Seleziona disponibili</button> <button class="btn btn2" type="button" id="inv-clear">Deseleziona</button> <button class="btn" type="button" id="inv-demo">🧪 Simula preparazione massiva (0)</button>
+    <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Il deposito massivo e disponibile solo per RENT e TRASPORTI; SERVICE e LIBERE mantengono il controllo e deposito singolo. Massimo 30 documenti per operazione.</p>
+    <button class="btn btn2" type="button" id="inv-all">Seleziona disponibili</button> <button class="btn btn2" type="button" id="inv-clear">Deseleziona</button> <button class="btn" type="button" id="inv-demo">🧪 Simula preparazione massiva (0)</button> <button class="btn btn2" type="button" id="inv-deposit">📤 Deposita selezionate su Drive (0)</button>
     <p id="inv-msg" role="status" aria-live="polite"></p><a class="btn btn2" href="/fatturazione">Torna a fatturazione</a></div>
     <div class="box" style="overflow-x:auto"><table><tr><th>✓</th><th>Numero</th><th>Settore</th><th>Cliente</th><th>Data</th><th>Totale</th><th>Stato</th><th>Verifica</th></tr>${rows||'<tr><td colspan="8">Nessuna fattura trovata</td></tr>'}</table></div>
-    <script>(function(){const boxes=Array.from(document.querySelectorAll('.inv-select:not(:disabled)'));const btn=document.getElementById('inv-demo');const msg=document.getElementById('inv-msg');function update(){btn.textContent='🧪 Simula preparazione massiva ('+boxes.filter(x=>x.checked).length+')';}boxes.forEach(x=>x.addEventListener('change',update));document.getElementById('inv-all').onclick=()=>{boxes.forEach(x=>x.checked=true);update();};document.getElementById('inv-clear').onclick=()=>{boxes.forEach(x=>x.checked=false);update();msg.textContent='';};btn.onclick=()=>{const checked=boxes.filter(x=>x.checked);msg.textContent=checked.length?'SIMULAZIONE: '+checked.length+' documento/i selezionati. Nessun XML generato o inviato. Invio reale non ancora configurato: servono API Fatel e lettura esiti SdI.':'Seleziona almeno una fattura.';};update();})();</script>`));
+    <script>(function(){const boxes=Array.from(document.querySelectorAll('.inv-select:not(:disabled)'));const btn=document.getElementById('inv-demo');const deposit=document.getElementById('inv-deposit');const msg=document.getElementById('inv-msg');function update(){const n=boxes.filter(x=>x.checked).length;btn.textContent='🧪 Simula preparazione massiva ('+n+')';deposit.textContent='📤 Deposita selezionate su Drive ('+n+')';}boxes.forEach(x=>x.addEventListener('change',update));document.getElementById('inv-all').onclick=()=>{boxes.forEach(x=>x.checked=true);update();};document.getElementById('inv-clear').onclick=()=>{boxes.forEach(x=>x.checked=false);update();msg.textContent='';};btn.onclick=()=>{const checked=boxes.filter(x=>x.checked);msg.textContent=checked.length?'SIMULAZIONE: '+checked.length+' documento/i selezionati. Nessun XML generato o inviato. Invio reale non ancora configurato: servono API Fatel e lettura esiti SdI.':'Seleziona almeno una fattura.';};deposit.onclick=()=>{const selected=boxes.filter(x=>x.checked).map(x=>x.value);if(!selected.length){msg.textContent='Seleziona almeno una fattura';return;}if(selected.length>30){msg.textContent='Massimo 30 fatture per operazione';return;}if(!confirm('Depositare '+selected.length+' XML su Google Drive? NON saranno inviati a Fatel o SdI.'))return;const form=document.createElement('form');form.method='post';form.action='/fatturazione/invii/deposita-massivo';const hidden=document.createElement('input');hidden.type='hidden';hidden.name='documenti';hidden.value=selected.join(',');form.appendChild(hidden);document.body.appendChild(form);form.submit();};update();})();</script>`));
  }catch(e){res.status(500).send(page('Invii non disponibili',`<div class="box"><h2>Registro non disponibile</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione">Torna</a></div>`));}
 });
 
