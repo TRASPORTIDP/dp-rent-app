@@ -14775,7 +14775,7 @@ app.get('/fatturazione/libere/:id/xml-check-v382',async(req,res)=>{
   <p><b>Attenzione:</b> non significa verifica ufficiale dell'Agenzia delle Entrate, importazione Fatel o invio SdI.</p>
   <a class="btn btn2" href="${u}/xml-controllo-zip">⬇️ SCARICA ZIP PER CONTROLLO AGENZIA</a>
   ${ex?`<a class="btn btn2" href="${u}/drive-apri" target="_blank" rel="noopener">📁 VEDI XML SU DRIVE</a><p>XML già depositato: nessun secondo invio automatico.</p>`:send}
-  ${!registered?'<p>Documento in bozza: il deposito nella cartella READY sarà disponibile soltanto dopo la registrazione autorizzata.</p>':''}
+  ${!registered?'<p>BOZZA: XML per controllo disponibile. Per INVIA A DRIVE occorre REGISTRA con numerazione L; poi è possibile eliminare una prova mai emessa dal dettaglio, incluso XML Drive.</p>':'<p>Fattura registrata: se si tratta di prova MAI emessa o acquisita, puoi eliminarla dal dettaglio insieme al file Drive e recuperare il numero.</p>'}
   <p><a class="btn btn2" href="${u}/dettaglio">TORNA ALLA FATTURA</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p></div>`));
  }catch(e){res.status(400).send(page('XML non pronto',`<div class="box"><h2>🔴 XML non pronto</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
 });
@@ -14837,7 +14837,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
     <a class="btn btn2" href="${u}/xml-check-v382">📨 XML PER FATEL (VERIFICA)</a>
     ${exp?`<span style="font-weight:bold;color:#13824a">✅ XML SU DRIVE (non inviato SdI)</span> <a class="btn btn2" target="_blank" rel="noopener" href="${u}/drive-apri">👁 VEDI XML SU DRIVE</a>`:registered?`<form style="display:inline" method="post" action="${u}/drive-invia" onsubmit="return confirm('Confermi che questa fattura REGISTRATA e stata verificata fiscalmente e non e stata gia importata in Fatel? Inviare XML nella cartella READY?')"><input type="hidden" name="conferma" value="VERIFICATO_PER_DRIVE"><button class="btn" type="submit">📤 INVIA XML A DRIVE</button></form>`:`<span style="color:#775b17">Bozza: prima verifica XML; deposito READY soltanto dopo registrazione fiscale</span>`}
     ${r.stato==='PROVA'?`<form action="${u}/${showArchived?'ripristina-prova':'archivia-prova'}" method="post" style="display:inline" onsubmit="return confirm('${showArchived?'Ripristinare la simulazione nel registro?':'Archiviare questa SIMULAZIONE TEST? Sarà nascosta ma non cancellata.'}')"><button class="btn btn2" type="submit">${showArchived?'RIPRISTINA':'ARCHIVIA TEST'}</button></form>`:''}
-    ${['BOZZA','PROVA'].includes(r.stato)?`<form action="${u}/elimina-bozza" method="post" style="display:inline" onsubmit="return confirm('Confermi che e solo una prova MAI emessa ne consegnata? Rimozione tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn btn2" type="submit">ELIMINA BOZZA</button></form>`:''}
+    ${['BOZZA','PROVA','REGISTRATA'].includes(r.stato)?`<form action="${u}/elimina-bozza" method="post" style="display:inline-block;margin-top:8px" onsubmit="return confirm('ATTENZIONE: confermi che NON e mai stata fiscalmente emessa, consegnata, importata in Fatel o trasmessa a SdI? Il file XML sara spostato nel cestino prima della cancellazione locale.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${registered?`<label style="display:block;font-size:12px;max-width:270px"><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Confermo: mai emessa, inviata o acquisita da Fatel/SdI</label>`:''}<button class="btn btn2" type="submit">🗑 ELIMINA ${registered?'FATTURA E XML DRIVE':'BOZZA'}</button></form>`:''}
     ${r.stato==='BOZZA'?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`:''}
    </td></tr>`;
   }).join('');
@@ -14874,22 +14874,34 @@ app.post('/fatturazione/libere/:id/ripristina-prova',async(req,res)=>{
   res.redirect('/fatturazione/libere?archiviate=1');
  }catch(e){res.status(400).send(page('Ripristino non riuscito',`<div class="box"><h2>Documento non modificato</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
 });
-// V360: cancellazione sicura di bozze e simulazioni, non fatture gia registrate.
+// V383: bozze Fatture Libere, comprese le REGISTRATE di sola prova mai emesse.
+// L'XML e' spostato nel cestino dal proprietario Apps Script prima della cancellazione locale.
 app.post('/fatturazione/libere/:id/elimina-bozza',async(req,res)=>{
+ let driveTrashed=false;
  try{
-  await dpFreeEnsure();await dpInvoiceReleaseEnsure();
+  await dpFreeEnsure();await dpFreeExportEnsureV381();await dpInvoiceReleaseEnsure();
   const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
-  if(!f||!['BOZZA','PROVA'].includes(f.stato)||f.emessa_at)throw new Error('Solo bozze o simulazioni mai registrate possono essere eliminate');
-  if(req.body.conferma!=='MAI_EMESSA')throw new Error('Conferma mancante');
-  await dpInvoiceNoExport('libere',f.id);
+  if(!f||!['BOZZA','PROVA','REGISTRATA'].includes(f.stato))throw new Error('Documento non eliminabile');
+  if(String(req.body?.conferma||'')!=='MAI_EMESSA')throw new Error('Manca conferma di mancata emissione e consegna');
+  if(f.stato==='REGISTRATA' && String(req.body?.attestazione_fatel||'')!=='NON_ACQUISITA')throw new Error('Attestare esplicitamente che Fatel e SdI non hanno acquisito la fattura');
+  const rows=await all("SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN ('libere','LIBERE','L')",[f.id]);
+  if(rows.length>1)throw new Error('Diverse esportazioni associate: verifica manuale necessaria');
+  if(rows.length&&(!rows[0].file_id||!rows[0].file_name))throw new Error('Identificativi Drive incompleti: cancellazione bloccata');
   await run('BEGIN IMMEDIATE');
   try{
-   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',['libere',f.id,f.anno_fattura||null,f.serie_fattura||'',null,JSON.stringify(f),'MAI_EMESSA']);
-   await run("DELETE FROM dp_fatture_libere_bozze WHERE id=? AND stato IN ('BOZZA','PROVA') AND emessa_at IS NULL",[f.id]);
+   const q=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[f.id]);
+   if(!q||q.stato!==f.stato||q.numero_fattura!==f.numero_fattura)throw new Error('Fattura modificata: ripetere');
+   const current=await all("SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN ('libere','LIBERE','L')",[f.id]);
+   if(current.length!==rows.length||current.some((x,i)=>x.file_id!==rows[i].file_id||x.file_name!==rows[i].file_name))throw new Error('Esportazione modificata: ripetere');
+   if(current.length){await dpV377TrashRentXml(current[0]);driveTrashed=true;}
+   await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',
+    ['libere',f.id,f.anno_fattura||null,f.serie_fattura||'',f.numero_fattura||null,JSON.stringify(f),'MAI_EMESSA - NON_ACQUISITA_FATEL_SDI']);
+   if(current.length)await run("DELETE FROM dp_xml_exports WHERE fattura_id=? AND tipo IN ('libere','LIBERE','L')",[f.id]);
+   const del=await run('DELETE FROM dp_fatture_libere_bozze WHERE id=? AND stato=?',[f.id,f.stato]);
    await run('COMMIT');
   }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
-  res.redirect('/fatturazione/libere');
- }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+  return res.redirect('/fatturazione/libere');
+ }catch(e){res.status(400).send(page('Cancellazione non eseguita',`<div class="box"><h2>Operazione bloccata</h2><p>${esc(e.message)}</p>${driveTrashed?'<p><strong>ATTENZIONE: l’XML è stato cestinato su Drive ma il database non ha completato la cancellazione. NON ripetere: riconciliare prima i dati.</strong></p>':''}<a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
 });
 app.get('/fatturazione/libere/nuova',async(req,res)=>{res.send(page('Nuova fattura libera',dpFreeFormV326()));});
 app.post('/fatturazione/libere/nuova',async(req,res)=>{
@@ -14976,7 +14988,9 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
 });
 app.get('/fatturazione/libere/:id/dettaglio',async(req,res)=>{
  try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)throw new Error('Documento inesistente');
- res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf" target="_blank">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-check-v382">📨 XML PER FATEL (VERIFICA)</a> ${f.stato==='BOZZA'?`<a class="btn btn2" href="/fatturazione/libere/${f.id}/modifica">✏️ MODIFICA</a>`:''} <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Importante:</b> la verifica XML e il deposito su Drive non equivalgono a importazione Fatel o invio SdI. Gestisci INVIA / VEDI XML nella schermata di verifica o nell'archivio.</p></div>`));
+ res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf" target="_blank">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-check-v382">📨 XML PER FATEL (VERIFICA)</a> ${f.stato==='BOZZA'?`<a class="btn btn2" href="/fatturazione/libere/${f.id}/modifica">✏️ MODIFICA</a>`:''} <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p>
+ ${['BOZZA','PROVA','REGISTRATA'].includes(f.stato)?`<form method="POST" action="/fatturazione/libere/${f.id}/elimina-bozza" onsubmit="return confirm('Confermi: fattura mai emessa, consegnata o importata Fatel/SdI? Eliminare anche XML Drive se presente?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${f.stato==='REGISTRATA'?'<label><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Confermo che non è stata mai fiscalmente emessa né acquisita da Fatel/SdI</label>':''}<button class="btn" type="submit">🗑 ELIMINA FATTURA DI PROVA E XML SU DRIVE</button></form>`:''}
+ <p><b>Importante:</b> la verifica XML e il deposito su Drive non equivalgono a importazione Fatel o invio SdI. Gestisci INVIA / VEDI XML nella schermata di verifica o nell'archivio.</p></div>`));
  }catch(e){res.status(404).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 // V346: PDF fatture libere allineato al layout RENT, intestazione generale neutra.
