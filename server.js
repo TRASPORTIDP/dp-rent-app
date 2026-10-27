@@ -14637,18 +14637,46 @@ app.post('/fatturazione/invii/deposita-massivo',async(req,res)=>{
  }catch(err){return res.status(400).send(page('Deposito non avviato',`<div class="box"><h2>Operazione non avviata</h2><p>${esc(err.message)}</p><a class="btn" href="/fatturazione/invii">Torna</a></div>`));}
 });
 
+// V386: tracciamento manuale importazione FATEL, senza dichiarare ricezione SdI.
+async function dpFatelManualEnsureV386(){
+ await run(`CREATE TABLE IF NOT EXISTS dp_fatel_manual_imports (
+  tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, imported_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  operator_note TEXT, PRIMARY KEY(tipo,fattura_id))`);
+}
+app.post('/fatturazione/invii/fatel-conferma',async(req,res)=>{
+ try{
+  await dpFatelManualEnsureV386();
+  const key=String(req.body.documento||'');
+  const m=/^(noleggio|trasporti|credito|service|libere):([1-9][0-9]*)$/.exec(key);
+  if(!m)throw new Error('Documento non valido');
+  const tipo=m[1],id=Number(m[2]);
+  const exported=await get('SELECT file_name FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[tipo,id]);
+  if(!exported)throw new Error('Nessun deposito XML documentato per questa fattura');
+  const action=String(req.body.azione||'');
+  if(action==='conferma'){
+   await run('INSERT OR IGNORE INTO dp_fatel_manual_imports(tipo,fattura_id,operator_note) VALUES(?,?,?)',[tipo,id,'Confermato manualmente da operatore, senza ricevuta SdI']);
+  }else if(action==='annulla'){
+   await run('DELETE FROM dp_fatel_manual_imports WHERE tipo=? AND fattura_id=?',[tipo,id]);
+  }else throw new Error('Azione non valida');
+  res.redirect(303,'/fatturazione/invii');
+ }catch(e){res.status(400).send(page('Conferma FATEL non riuscita',`<div class="box"><h2>Operazione non eseguita</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/invii">Torna al registro</a></div>`));}
+});
+
 // V385: registro unico e deposito massivo Drive (nessuna trasmissione SdI).
 app.get('/fatturazione/invii',async(req,res)=>{
  try{
-  const [rent,tr,credit,exports,service,libere]=await Promise.all([
+  await dpFatelManualEnsureV386();
+  const [rent,tr,credit,exports,service,libere,manualImports]=await Promise.all([
    all(`SELECT id,numero_display,cliente,data_fattura,totale,stato,'noleggio' AS settore FROM noleggio_fatture ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
    all(`SELECT id,numero_display,cliente,data_fattura,totale,stato,'trasporti' AS settore FROM trasporti_fatture ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
    all(`SELECT id,numero_display,cliente,data_documento AS data_fattura,totale,stato,'credito' AS settore FROM dp_note_credito ORDER BY id DESC LIMIT 5000`).catch(()=>[]),
    all(`SELECT tipo,fattura_id,file_name,exported_at FROM dp_xml_exports`).catch(()=>[]),
    dpReadServiceInvoices(),
-   (async()=>{await dpFreeEnsure();return all("SELECT id,numero_fattura AS numero_display,cliente,data_documento AS data_fattura,totale,stato,'libere' AS settore FROM dp_fatture_libere_bozze WHERE stato IN ('REGISTRATA','PROVA') AND archiviata_at IS NULL")})()
+   (async()=>{await dpFreeEnsure();return all("SELECT id,numero_fattura AS numero_display,cliente,data_documento AS data_fattura,totale,stato,'libere' AS settore FROM dp_fatture_libere_bozze WHERE stato IN ('REGISTRATA','PROVA') AND archiviata_at IS NULL")})(),
+   all('SELECT tipo,fattura_id,imported_at FROM dp_fatel_manual_imports').catch(()=>[])
   ]);
   const exported=new Set(exports.map(x=>String(x.tipo)+':'+x.fattura_id));
+  const imported=new Set(manualImports.map(x=>String(x.tipo)+':'+x.fattura_id));
   const src=[...rent,...tr,...credit,...service,...libere].sort((a,b)=>String(b.data_fattura||'').localeCompare(String(a.data_fattura||''))||b.id-a.id);
   const qSet=new Set(['noleggio','trasporti','credito','service','libere']);
   const sector=String(req.query.settore||'').toLowerCase();
@@ -14659,20 +14687,22 @@ app.get('/fatturazione/invii',async(req,res)=>{
    if(x.settore==='credito')return 'Da verificare TD04';
    if(x.settore==='service')return 'XML SERVICE: controllo singolo';
    if(x.settore==='libere')return 'XML da validare';
+   if(imported.has(x.settore+':'+x.id))return 'Importato FATEL (conferma manuale)';
    if(exported.has(x.settore+':'+x.id))return 'XML su Drive';
    if(/INVIATA_FIC/i.test(String(x.stato||'')))return 'Stato esterno da verificare';
    return 'Da verificare XML';
   }
-  const c={totale:filtered.length,da_verificare:0,drive:0,esterno:0,nonpronte:0,consegnate:0};
-  for(const x of filtered){let t=state(x);if(t==='XML su Drive')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta')c.nonpronte++;else c.da_verificare++;}
+  const c={totale:filtered.length,da_verificare:0,drive:0,fatel:0,esterno:0,nonpronte:0,consegnate:0};
+  for(const x of filtered){let t=state(x);if(t==='Importato FATEL (conferma manuale)')c.fatel++;else if(t==='XML su Drive')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta')c.nonpronte++;else c.da_verificare++;}
   const visible=filtered.slice(0,300);
   const rows=visible.map(x=>{
    const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
+   const action=exported.has(key)?`<form method="post" action="/fatturazione/invii/fatel-conferma" onsubmit="return confirm('Confermi manualmente lo stato di importazione in FATEL? Non equivale a invio o consegna SdI.')"><input type="hidden" name="documento" value="${esc(key)}"><input type="hidden" name="azione" value="${imported.has(key)?'annulla':'conferma'}"><button type="submit" class="btn btn2">${imported.has(key)?'Annulla conferma FATEL':'Conferma importazione FATEL'}</button></form>`:'';
    const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/fatturazione/xml/check/service/${x.id}`:x.settore==='libere'?`/fatturazione/libere/${x.id}/dettaglio`:`/note-credito/${x.id}`;
-   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Da verificare TD04'||st==='XML SERVICE da integrare'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='XML su Drive'?'<span style="color:#19744a;font-weight:bold">🟢 XML depositato (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a></td></tr>`;
+   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Da verificare TD04'||st==='XML SERVICE: controllo singolo'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='Importato FATEL (conferma manuale)'?'<span style="color:#19744a;font-weight:bold">🟢 Importato FATEL (manuale, non SdI)</span>':st==='XML su Drive'?'<span style="color:#19744a;font-weight:bold">🟢 XML depositato (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a>${action}</td></tr>`;
   }).join('');
-  res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Legenda:</b> 🟢 XML depositato su Drive, NON significa approvato fiscalmente. 🔴 Dati/documento da completare. ⚪ Da verificare. Nessuna validazione XSD/SdI ancora collegata.</p><p><b>Invio disattivato:</b> nessun invio a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
-    <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive: ${c.drive}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
+  res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Legenda:</b> 🟢 XML depositato su Drive, NON significa approvato fiscalmente. 🔴 Dati/documento da completare. ⚪ Da verificare. Nessuna validazione XSD/SdI ancora collegata. La conferma manuale FATEL non costituisce prova di ricezione SdI.</p><p><b>Invio disattivato:</b> nessun invio diretto a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive (non confermati FATEL): ${c.drive}</b></div><div class="box"><b>Importati FATEL confermati manualmente: ${c.fatel}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
     <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
     <form method="get"><label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option><option value="libere" ${sector==='libere'?'selected':''}>Fatture libere</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
     <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Il deposito massivo e disponibile solo per RENT e TRASPORTI; SERVICE e LIBERE mantengono il controllo e deposito singolo. Massimo 30 documenti per operazione.</p>
