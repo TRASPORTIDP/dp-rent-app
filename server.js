@@ -14756,6 +14756,29 @@ app.get('/fatturazione/libere/clienti-ricerca',async(req,res)=>{
 async function dpFreeExportEnsureV381(){
  await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
 }
+// V382 - Pagina di verifica leggibile come DP RENT, senza fingere controlli ufficiali SdI.
+app.get('/fatturazione/libere/:id/xml-check-v382',async(req,res)=>{
+ try{
+  await dpFreeEnsure();await dpFreeExportEnsureV381();
+  const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
+  if(!f)throw new Error('Documento non trovato');
+  const xml=await dpFreePreviewXmlV340(f.id),filename=dpXmlFilenameV356(xml);
+  const ex=await get("SELECT * FROM dp_xml_exports WHERE tipo='libere' AND fattura_id=?",[f.id]);
+  const u='/fatturazione/libere/'+Number(f.id);
+  const registered=f.stato==='REGISTRATA';
+  const send=registered&&!ex&&f.tipo_documento==='TD01'&&f.regime_iva!=='MARGINE_ANALITICO'
+    ?`<form method="post" style="display:inline" action="${u}/drive-invia" onsubmit="return confirm('Documento REGISTRATO: confermi controllo fiscale, mancata acquisizione Fatel e deposito nella cartella READY?')"><input type="hidden" name="conferma" value="VERIFICATO_PER_DRIVE"><button class="btn" type="submit">📤 INVIA XML A DRIVE</button></form>`:'';
+  res.send(page('Verifica XML Fattura Libera',`<div class="box"><h2>🔎 Controllo preliminare XML per Fatel</h2>
+  <p><b>Cliente:</b> ${esc(f.cliente)} · <b>Documento:</b> ${registered?esc(f.numero_fattura):'BOZZA #'+Number(f.id)} · <b>Tipo:</b> ${esc(f.tipo_documento)}</p>
+  <p><b>File previsto:</b> ${esc(filename)}</p>
+  <p style="color:#087b35"><b>✅ Controlli preliminari superati.</b></p>
+  <p><b>Attenzione:</b> non significa verifica ufficiale dell'Agenzia delle Entrate, importazione Fatel o invio SdI.</p>
+  <a class="btn btn2" href="${u}/xml-controllo-zip">⬇️ SCARICA ZIP PER CONTROLLO AGENZIA</a>
+  ${ex?`<a class="btn btn2" href="${u}/drive-apri" target="_blank" rel="noopener">📁 VEDI XML SU DRIVE</a><p>XML già depositato: nessun secondo invio automatico.</p>`:send}
+  ${!registered?'<p>Documento in bozza: il deposito nella cartella READY sarà disponibile soltanto dopo la registrazione autorizzata.</p>':''}
+  <p><a class="btn btn2" href="${u}/dettaglio">TORNA ALLA FATTURA</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p></div>`));
+ }catch(e){res.status(400).send(page('XML non pronto',`<div class="box"><h2>🔴 XML non pronto</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
 app.get('/fatturazione/libere/:id/xml-controllo-zip',async(req,res)=>{
  try{
   const xml=await dpFreePreviewXmlV340(req.params.id),filename=dpXmlFilenameV356(xml);
@@ -14811,7 +14834,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
     <a class="btn" href="${registered?u+'/dettaglio':u+'/modifica'}">APRI</a>
     <a class="btn btn2" href="${u}/pdf" target="_blank" rel="noopener">PDF</a>
     ${r.stato==='BOZZA'?`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`:''}
-    <a class="btn btn2" href="${u}/xml-controllo-zip">📦 XML PER CONTROLLO</a>
+    <a class="btn btn2" href="${u}/xml-check-v382">📨 XML PER FATEL (VERIFICA)</a>
     ${exp?`<span style="font-weight:bold;color:#13824a">✅ XML SU DRIVE (non inviato SdI)</span> <a class="btn btn2" target="_blank" rel="noopener" href="${u}/drive-apri">👁 VEDI XML SU DRIVE</a>`:registered?`<form style="display:inline" method="post" action="${u}/drive-invia" onsubmit="return confirm('Confermi che questa fattura REGISTRATA e stata verificata fiscalmente e non e stata gia importata in Fatel? Inviare XML nella cartella READY?')"><input type="hidden" name="conferma" value="VERIFICATO_PER_DRIVE"><button class="btn" type="submit">📤 INVIA XML A DRIVE</button></form>`:`<span style="color:#775b17">Bozza: prima verifica XML; deposito READY soltanto dopo registrazione fiscale</span>`}
     ${r.stato==='PROVA'?`<form action="${u}/${showArchived?'ripristina-prova':'archivia-prova'}" method="post" style="display:inline" onsubmit="return confirm('${showArchived?'Ripristinare la simulazione nel registro?':'Archiviare questa SIMULAZIONE TEST? Sarà nascosta ma non cancellata.'}')"><button class="btn btn2" type="submit">${showArchived?'RIPRISTINA':'ARCHIVIA TEST'}</button></form>`:''}
     ${['BOZZA','PROVA'].includes(r.stato)?`<form action="${u}/elimina-bozza" method="post" style="display:inline" onsubmit="return confirm('Confermi che e solo una prova MAI emessa ne consegnata? Rimozione tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn btn2" type="submit">ELIMINA BOZZA</button></form>`:''}
@@ -14953,7 +14976,7 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
 });
 app.get('/fatturazione/libere/:id/dettaglio',async(req,res)=>{
  try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)throw new Error('Documento inesistente');
- res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf">PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-verifica">XML PER CONTROLLO</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Importante:</b> la verifica XML e il deposito su Drive non equivalgono a importazione Fatel o invio SdI. Gestisci INVIA / VEDI XML nell'archivio.</p></div>`));
+ res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf" target="_blank">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-check-v382">📨 XML PER FATEL (VERIFICA)</a> ${f.stato==='BOZZA'?`<a class="btn btn2" href="/fatturazione/libere/${f.id}/modifica">✏️ MODIFICA</a>`:''} <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p><p><b>Importante:</b> la verifica XML e il deposito su Drive non equivalgono a importazione Fatel o invio SdI. Gestisci INVIA / VEDI XML nella schermata di verifica o nell'archivio.</p></div>`));
  }catch(e){res.status(404).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
 // V346: PDF fatture libere allineato al layout RENT, intestazione generale neutra.
