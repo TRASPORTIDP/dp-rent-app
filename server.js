@@ -14774,6 +14774,7 @@ app.get('/fatturazione/libere/:id/xml-check-v382',async(req,res)=>{
   <p style="color:#087b35"><b>✅ Controlli preliminari superati.</b></p>
   <p><b>Attenzione:</b> non significa verifica ufficiale dell'Agenzia delle Entrate, importazione Fatel o invio SdI.</p>
   <a class="btn btn2" href="${u}/xml-controllo-zip">⬇️ SCARICA ZIP PER CONTROLLO AGENZIA</a>
+  ${f.stato==='PROVA'&&!ex?`<form method="post" action="${u}/drive-test" style="display:inline" onsubmit="return confirm('Caricare nella cartella Drive TEST separata da Fatel?')"><input type="hidden" name="conferma" value="SOLO_TEST"><button class="btn" type="submit">📤 INVIA XML TEST A DRIVE</button></form>`:''}
   ${ex?`<a class="btn btn2" href="${u}/drive-apri" target="_blank" rel="noopener">📁 VEDI XML SU DRIVE</a><p>XML già depositato: nessun secondo invio automatico.</p>`:send}
   ${!registered?'<p>BOZZA: XML per controllo disponibile. Per INVIA A DRIVE occorre REGISTRA con numerazione L; poi è possibile eliminare una prova mai emessa dal dettaglio, incluso XML Drive.</p>':'<p>Fattura registrata: se si tratta di prova MAI emessa o acquisita, puoi eliminarla dal dettaglio insieme al file Drive e recuperare il numero.</p>'}
   <p><a class="btn btn2" href="${u}/dettaglio">TORNA ALLA FATTURA</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p></div>`));
@@ -14793,6 +14794,30 @@ app.get('/fatturazione/libere/:id/drive-apri',async(req,res)=>{
   if(!ex||!/^[A-Za-z0-9_-]{15,}$/.test(String(ex.file_id||'')))throw new Error('Nessun file Drive verificabile associato a questa fattura');
   return res.redirect('https://drive.google.com/file/d/'+encodeURIComponent(ex.file_id)+'/view');
  }catch(e){res.status(404).send(page('XML non disponibile',`<div class="box"><h2>File Drive non trovato</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
+// V384: prova end-to-end isolata, MAI destinata alla cartella READY/Fatel.
+app.post('/fatturazione/libere/:id/drive-test',async(req,res)=>{
+ try{
+  await dpFreeEnsure();await dpFreeExportEnsureV381();
+  const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);
+  if(!f||f.stato!=='PROVA'||f.serie_fattura!=='TEST-L')throw new Error('Disponibile soltanto per simulazioni TEST-L');
+  if(String(req.body?.conferma||'')!=='SOLO_TEST')throw new Error('Conferma TEST mancante');
+  const existing=await get("SELECT * FROM dp_xml_exports WHERE tipo='libere' AND fattura_id=?",[f.id]);
+  if(existing)throw new Error('XML di prova già presente su Drive: non creare duplicati');
+  const url=String(process.env.DRIVE_WEBAPP_URL||'').trim();
+  if(!/^https:\/\/script\.google\.com\//.test(url))throw new Error('DRIVE_WEBAPP_URL non configurato');
+  const folderId=String(process.env.GOOGLE_DRIVE_FOLDER_ID||'1qoTClqiovhRDpOu5Td1Z85h_xNPIxpYw');
+  if(!/^[A-Za-z0-9_-]{15,}$/.test(folderId))throw new Error('Cartella radice Drive TEST non configurata');
+  const xml=await dpFreePreviewXmlV340(f.id),filename=dpXmlFilenameV356(xml);
+  const result=await fetch(url,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({folderId,folderName:'DP FATTURAZIONE XML - TEST',fileName:filename,mimeType:'application/xml',base64:Buffer.from(xml,'utf8').toString('base64')})});
+  const raw=await result.text();let d;
+  try{d=JSON.parse(raw)}catch(_){throw new Error('Risposta Apps Script non valida')}
+  if(!result.ok||!d.ok||!d.fileId&&!d.id||d.folderName!=='DP FATTURAZIONE XML - TEST')throw new Error(String(d.error||'Drive non ha confermato la cartella TEST'));
+  const id=String(d.fileId||d.id);
+  try{await run("INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES('libere',?,?,?)",[f.id,id,filename]);}
+  catch(e){throw new Error('File creato su Drive TEST ma registro locale non aggiornato: NON ripetere l’invio. ID '+id)}
+  res.send(page('XML test su Drive',`<div class="box"><h2>✅ XML TEST salvato su Drive</h2><p>${esc(filename)}</p><p><b>DP FATTURAZIONE XML - TEST</b>: cartella separata, non importare in Fatel né inviare allo SdI.</p><a class="btn" href="/fatturazione/libere">TORNA ALLE FATTURE LIBERE</a></div>`));
+ }catch(e){res.status(400).send(page('Invio TEST non completato',`<div class="box"><h2>Invio TEST non completato</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
 });
 app.post('/fatturazione/libere/:id/drive-invia',async(req,res)=>{
  let local='';
@@ -14836,8 +14861,10 @@ app.get('/fatturazione/libere',async(req,res)=>{
     ${r.stato==='BOZZA'?`<a class="btn btn2" href="${u}/modifica">MODIFICA</a>`:''}
     <a class="btn btn2" href="${u}/xml-check-v382">📨 XML PER FATEL (VERIFICA)</a>
     ${exp?`<span style="font-weight:bold;color:#13824a">✅ XML SU DRIVE (non inviato SdI)</span> <a class="btn btn2" target="_blank" rel="noopener" href="${u}/drive-apri">👁 VEDI XML SU DRIVE</a>`:registered?`<form style="display:inline" method="post" action="${u}/drive-invia" onsubmit="return confirm('Confermi che questa fattura REGISTRATA e stata verificata fiscalmente e non e stata gia importata in Fatel? Inviare XML nella cartella READY?')"><input type="hidden" name="conferma" value="VERIFICATO_PER_DRIVE"><button class="btn" type="submit">📤 INVIA XML A DRIVE</button></form>`:`<span style="color:#775b17">Bozza: prima verifica XML; deposito READY soltanto dopo registrazione fiscale</span>`}
+    ${r.stato==='PROVA'&&!exp?`<form action="${u}/drive-test" method="post" style="display:inline" onsubmit="return confirm('Inviare XML SOLO nella cartella TEST, NON nella cartella Fatel READY?')"><input type="hidden" name="conferma" value="SOLO_TEST"><button class="btn" type="submit">📤 INVIA XML TEST A DRIVE</button></form>`:''}
     ${r.stato==='PROVA'?`<form action="${u}/${showArchived?'ripristina-prova':'archivia-prova'}" method="post" style="display:inline" onsubmit="return confirm('${showArchived?'Ripristinare la simulazione nel registro?':'Archiviare questa SIMULAZIONE TEST? Sarà nascosta ma non cancellata.'}')"><button class="btn btn2" type="submit">${showArchived?'RIPRISTINA':'ARCHIVIA TEST'}</button></form>`:''}
     ${['BOZZA','PROVA','REGISTRATA'].includes(r.stato)?`<form action="${u}/elimina-bozza" method="post" style="display:inline-block;margin-top:8px" onsubmit="return confirm('ATTENZIONE: confermi che NON e mai stata fiscalmente emessa, consegnata, importata in Fatel o trasmessa a SdI? Il file XML sara spostato nel cestino prima della cancellazione locale.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${registered?`<label style="display:block;font-size:12px;max-width:270px"><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Confermo: mai emessa, inviata o acquisita da Fatel/SdI</label>`:''}<button class="btn btn2" type="submit">🗑 ELIMINA ${registered?'FATTURA E XML DRIVE':'BOZZA'}</button></form>`:''}
+    ${r.stato==='BOZZA'?`<form action="${u}/registra-prova" method="post" style="display:inline" onsubmit="return confirm('Creare solo numerazione TEST-L, senza assegnare numerazione fiscale, senza trasmissione Fatel/SdI?')"><button class="btn" type="submit">🧪 CREA NUMERO TEST</button></form>`:''}
     ${r.stato==='BOZZA'?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`:''}
    </td></tr>`;
   }).join('');
