@@ -1,3 +1,4 @@
+// DP GESTIONALE V395 - patch conservativa FATEL/archiviazione (07-11-2026)
 // V98 documenti separati
 
 require('dotenv').config();
@@ -9136,6 +9137,15 @@ app.post('/contratto/:id/pagato-fattura-da-fare', async (req,res)=>{
   await dpV265MarkFatturaDaFare(req.params.id, 'Manuale/Bonifico').catch(()=>{});
   res.redirect('/fatture-da-fare');
 });
+// V395: migrazione conservativa dello schema esistente, senza azzerare prenotazioni.
+async function dpV395EnsureInvoiceReminderSchema(){
+  const cols=await all('PRAGMA table_info(prenotazioni)');
+  const names=new Set((cols||[]).map(c=>String(c.name||'').toLowerCase()));
+  if(!names.has('updated_at')){
+    try{await run('ALTER TABLE prenotazioni ADD COLUMN updated_at TEXT');}
+    catch(e){if(!/duplicate column name/i.test(String(e.message||'')))throw e;}
+  }
+}
 // V394: la pagina di conferma GET e separata dal POST che modifica i dati.
 // Se Safari viene reindirizzato al login, puo tornare qui senza eseguire modifiche.
 app.get('/fatture-da-fare/:id/archivia', async (req,res)=>{
@@ -9159,13 +9169,22 @@ app.post('/fatture-da-fare/:id/archivia', async (req,res)=>{
   const existing=await get('SELECT id FROM noleggio_fatture WHERE prenotazione_id=?',[id]).catch(()=>null);
   if(existing)return res.status(409).send(page('Promemoria non archiviato','<div class="box"><h2>Esiste una fattura collegata</h2><p>Gestire prima il documento nella sezione storico.</p><a class="btn" href="/fatture-da-fare">Torna</a></div>'));
   if(['emessa','fatturata','pronta_fic'].includes(String(p.fattura_stato||'').toLowerCase()))return res.status(409).send('Stato fatturazione non archiviabile');
-  await run("UPDATE prenotazioni SET fattura_stato='archiviata',fattura_alert_48h_inviato=1,fattura_note=COALESCE(fattura_note,'') || ?,updated_at=CURRENT_TIMESTAMP WHERE id=?",['\nPromemoria fatturazione archiviato (fattura NON attestata come emessa): '+new Date().toISOString(),id]);
-  res.redirect('/fatture-da-fare');
+  try{
+    await dpV395EnsureInvoiceReminderSchema();
+    await run("UPDATE prenotazioni SET fattura_stato='archiviata',fattura_alert_48h_inviato=1,fattura_note=COALESCE(fattura_note,'') || ?,updated_at=CURRENT_TIMESTAMP WHERE id=?",['\nPromemoria fatturazione archiviato (fattura NON attestata come emessa): '+new Date().toISOString(),id]);
+    return res.redirect(303,'/fatture-da-fare');
+  }catch(e){
+    console.error('V395 archivia promemoria:',e);
+    return res.status(500).send(page('Archiviazione non riuscita',`<div class="box"><h2>Promemoria non archiviato</h2><p>${esc(e.message)}</p><a class="btn" href="/fatture-da-fare">Torna alle fatture</a></div>`));
+  }
 });
 app.post('/fatture-da-fare/:id/ripristina', async (req,res)=>{
   const id=Number(req.params.id);
-  await run("UPDATE prenotazioni SET fattura_stato='da_fare',fattura_alert_48h_inviato=1,fattura_note=COALESCE(fattura_note,'') || ?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND fattura_stato='archiviata'",['\nPromemoria fatturazione ripristinato: '+new Date().toISOString(),id]);
-  res.redirect('/fatture-da-fare');
+  try{
+    await dpV395EnsureInvoiceReminderSchema();
+    await run("UPDATE prenotazioni SET fattura_stato='da_fare',fattura_alert_48h_inviato=1,fattura_note=COALESCE(fattura_note,'') || ?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND fattura_stato='archiviata'",['\nPromemoria fatturazione ripristinato: '+new Date().toISOString(),id]);
+    return res.redirect(303,'/fatture-da-fare');
+  }catch(e){console.error('V395 ripristina promemoria:',e);return res.status(500).send(page('Ripristino non riuscito',`<div class="box"><p>${esc(e.message)}</p><a class="btn" href="/fatture-da-fare">Torna</a></div>`));}
 });
 app.post('/fatture-da-fare/:id/emessa', async (req,res)=>{
   await run(`UPDATE prenotazioni SET fattura_stato='emessa', fattura_alert_48h_inviato=1, fattura_note=COALESCE(fattura_note,'') || ? WHERE id=?`, ['\nSegnata fatturata il '+new Date().toLocaleString('it-IT'), req.params.id]).catch(()=>{});
@@ -14711,7 +14730,7 @@ app.get('/fatturazione/fatel-locale',async(req,res)=>{
   await dpFatelLocalEnsureV390();
   const rows=await all('SELECT stato,COUNT(*) AS n FROM dp_fatel_local_queue GROUP BY stato');
   const counts=Object.fromEntries(rows.map(r=>[r.stato,r.n]));
-  res.send(page('FATEL locale',`<div class="box"><h2>FATEL locale - stato consegne</h2><p>Modalita: <b>${dpFatelLocalEnabledV390()?'LOCAL':'DRIVE (precedente)'}</b></p><p>In attesa di scaricamento PC: <b>${counts.PENDING||0}</b></p><p>Scritti sul PC (non significa importati da FATEL): <b>${counts.DELIVERED||0}</b></p><p>Cartella destinataria sul PC: C:\\Zucchetti\\xml_attivi. Se FATEL non importa, verificare la configurazione del programma Zucchetti.</p><a class="btn" href="/fatturazione/invii">Registro invii</a></div>`));
+  res.send(page('FATEL locale',`<div class="box"><h2>FATEL locale - stato consegne</h2><p>Modalita: <b>${dpFatelLocalEnabledV390()?'LOCAL':'DRIVE (precedente)'}</b></p><p>In attesa di scaricamento PC: <b>${counts.PENDING||0}</b></p><p>Scritti sul PC (non significa importati da FATEL): <b>${counts.DELIVERED||0}</b></p><p>Accodamenti annullati: <b>${counts.CANCELLED||0}</b></p><p>Cartella destinataria sul PC: C:\\Zucchetti\\xml_attivi. Se FATEL non importa, verificare la configurazione del programma Zucchetti.</p><a class="btn" href="/fatturazione/invii">Registro invii</a></div>`));
  }catch(e){res.status(500).send(esc(e.message));}
 });
 
@@ -14723,7 +14742,7 @@ app.post('/fatturazione/invii/deposita-massivo',async(req,res)=>{
  const results=[];
  try{
   if(!unique.length||unique.length>30)throw new Error('Selezionare da 1 a 30 fatture per operazione');
-  if(!dpFatelLocalReadyV390()&&!googleDriveConfigured())throw new Error('Google Drive non configurato');
+  if(!dpFatelLocalReadyV390()&&!googleDriveConfigured())throw new Error('Destinazione XML non configurata');
   const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
   if(!['TEST','READY'].includes(mode))throw new Error('Modalità Drive non valida');
   await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
@@ -14746,14 +14765,14 @@ app.post('/fatturazione/invii/deposita-massivo',async(req,res)=>{
      if(!folder||folder.includes('..')||folder.includes('/')||folder.includes('\\'))throw new Error('Sottocartella non valida');
      uploaded=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
     }
-    if(!uploaded)throw new Error('Scrittura Drive non confermata');
+    if(!uploaded)throw new Error('Deposito XML non confermato');
     await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[tipo,id,uploaded.id||'',filename]);
     results.push({key,ok:true,message:'Depositato: '+filename});
    }catch(err){results.push({key,ok:false,message:String(err.message||err)});}
    finally{if(tempFile){try{fs.unlinkSync(tempFile)}catch(_){}}}
   }
   const okay=results.filter(x=>x.ok).length;
-  return res.send(page('Esito deposito massivo',`<div class="box"><h2>Deposito massivo XML — ${esc(mode)}</h2><p><b>${okay} completati, ${results.length-okay} non completati.</b></p><p>Deposito su Drive NON significa acquisizione in FATEL o invio allo SdI. Controllare i documenti prima dell'importazione manuale.</p><table><tr><th>Documento</th><th>Esito</th></tr>${results.map(x=>`<tr><td>${esc(x.key)}</td><td>${x.ok?'✅':'⚠️'} ${esc(x.message)}</td></tr>`).join('')}</table><a class="btn" href="/fatturazione/invii">Torna al registro</a></div>`));
+  return res.send(page('Esito deposito massivo',`<div class="box"><h2>Deposito massivo XML — ${esc(mode)}</h2><p><b>${okay} completati, ${results.length-okay} non completati.</b></p><p>Deposito XML NON significa acquisizione in FATEL o invio allo SdI. Controllare i documenti prima dell'importazione manuale.</p><table><tr><th>Documento</th><th>Esito</th></tr>${results.map(x=>`<tr><td>${esc(x.key)}</td><td>${x.ok?'✅':'⚠️'} ${esc(x.message)}</td></tr>`).join('')}</table><a class="btn" href="/fatturazione/invii">Torna al registro</a></div>`));
  }catch(err){return res.status(400).send(page('Deposito non avviato',`<div class="box"><h2>Operazione non avviata</h2><p>${esc(err.message)}</p><a class="btn" href="/fatturazione/invii">Torna</a></div>`));}
 });
 
@@ -14797,6 +14816,8 @@ app.get('/fatturazione/invii',async(req,res)=>{
   ]);
   const exported=new Set(exports.map(x=>String(x.tipo)+':'+x.fattura_id));
   const imported=new Set(manualImports.map(x=>String(x.tipo)+':'+x.fattura_id));
+  const localQueueRows=dpFatelLocalEnabledV390()?await (async()=>{await dpFatelLocalEnsureV390();return all('SELECT tipo,fattura_id,stato FROM dp_fatel_local_queue');})():[];
+  const localQueue=new Map(localQueueRows.map(x=>[String(x.tipo)+':'+x.fattura_id,String(x.stato)]));
   const src=[...rent,...tr,...credit,...service,...libere].sort((a,b)=>String(b.data_fattura||'').localeCompare(String(a.data_fattura||''))||b.id-a.id);
   const qSet=new Set(['noleggio','trasporti','credito','service','libere']);
   const sector=String(req.query.settore||'').toLowerCase();
@@ -14805,24 +14826,24 @@ app.get('/fatturazione/invii',async(req,res)=>{
   function state(x){
    if(/ANNULLAT|BOZZA|PROVA/i.test(String(x.stato||'')))return 'Non pronta';
    if(x.settore==='credito')return 'Da verificare TD04';
+   if(imported.has(x.settore+':'+x.id))return 'Importato FATEL (conferma manuale)';
+   if(exported.has(x.settore+':'+x.id)){if(dpFatelLocalEnabledV390()){const st=localQueue.get(x.settore+':'+x.id);return st==='PENDING'?'XML in attesa del PC':st==='DELIVERED'?'XML scaricato dal PC':st==='CANCELLED'?'XML annullato':'XML registrato, coda da verificare';}return 'XML su Drive';}
+   if(/INVIATA_FIC/i.test(String(x.stato||'')))return 'Stato esterno da verificare';
    if(x.settore==='service')return 'XML SERVICE: controllo singolo';
    if(x.settore==='libere')return 'XML da validare';
-   if(imported.has(x.settore+':'+x.id))return 'Importato FATEL (conferma manuale)';
-   if(exported.has(x.settore+':'+x.id))return 'XML su Drive';
-   if(/INVIATA_FIC/i.test(String(x.stato||'')))return 'Stato esterno da verificare';
    return 'Da verificare XML';
   }
   const c={totale:filtered.length,da_verificare:0,drive:0,fatel:0,esterno:0,nonpronte:0,consegnate:0};
-  for(const x of filtered){let t=state(x);if(t==='Importato FATEL (conferma manuale)')c.fatel++;else if(t==='XML su Drive')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta')c.nonpronte++;else c.da_verificare++;}
+  for(const x of filtered){let t=state(x);if(t==='Importato FATEL (conferma manuale)')c.fatel++;else if(t==='XML su Drive'||t==='XML in attesa del PC'||t==='XML scaricato dal PC'||t==='XML annullato'||t==='XML registrato, coda da verificare')c.drive++;else if(t==='Stato esterno da verificare')c.esterno++;else if(t==='Non pronta')c.nonpronte++;else c.da_verificare++;}
   const visible=filtered.slice(0,300);
   const rows=visible.map(x=>{
    const st=state(x),key=x.settore+':'+x.id,eligible=st==='Da verificare XML';
    const action=exported.has(key)?`<form method="post" action="/fatturazione/invii/fatel-conferma" onsubmit="return confirm('Confermi manualmente lo stato di importazione in FATEL? Non equivale a invio o consegna SdI.')"><input type="hidden" name="documento" value="${esc(key)}"><input type="hidden" name="azione" value="${imported.has(key)?'annulla':'conferma'}"><button type="submit" class="btn btn2">${imported.has(key)?'Annulla conferma FATEL':'Conferma importazione FATEL'}</button></form>`:'';
    const dest=x.settore==='noleggio'?`/fatturazione/xml/check/noleggio/${x.id}`:x.settore==='trasporti'?`/fatturazione/xml/check/trasporti/${x.id}`:x.settore==='service'?`/fatturazione/xml/check/service/${x.id}`:x.settore==='libere'?`/fatturazione/libere/${x.id}/dettaglio`:`/note-credito/${x.id}`;
-   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Da verificare TD04'||st==='XML SERVICE: controllo singolo'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='Importato FATEL (conferma manuale)'?'<span style="color:#19744a;font-weight:bold">🟢 Importato FATEL (manuale, non SdI)</span>':st==='XML su Drive'?'<span style="color:#19744a;font-weight:bold">🟢 XML depositato (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a>${action}</td></tr>`;
+   return `<tr><td><input aria-label="Seleziona ${esc(x.numero_display||x.id)}" type="checkbox" class="inv-select" value="${esc(key)}" ${eligible?'':'disabled'}></td><td>${esc(x.numero_display||'#'+x.id)}</td><td>${esc(x.settore.toUpperCase())}</td><td>${esc(x.cliente||'')}</td><td>${esc(x.data_fattura||'')}</td><td>€ ${euro(Number(x.totale)||0)}</td><td>${st==='Non pronta'||st==='Da verificare TD04'||st==='XML SERVICE: controllo singolo'?'<span style="color:#b42318;font-weight:bold">🔴 '+esc(st)+'</span>':st==='Importato FATEL (conferma manuale)'?'<span style="color:#19744a;font-weight:bold">🟢 Importato FATEL (manuale, non SdI)</span>':['XML su Drive','XML in attesa del PC','XML scaricato dal PC','XML annullato','XML registrato, coda da verificare'].includes(st)?'<span style="color:#19744a;font-weight:bold">🟢 '+esc(st)+' (non validato XSD)</span>':'<span style="color:#686868;font-weight:bold">⚪ '+esc(st)+'</span>'}</td><td><a href="${dest}">Apri controllo</a>${action}</td></tr>`;
   }).join('');
-  res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Legenda:</b> 🟢 XML depositato su Drive, NON significa approvato fiscalmente. 🔴 Dati/documento da completare. ⚪ Da verificare. Nessuna validazione XSD/SdI ancora collegata. La conferma manuale FATEL non costituisce prova di ricezione SdI.</p><p><b>Invio disattivato:</b> nessun invio diretto a Fatel/SdI è configurato. I conteggi rappresentano dati nel gestionale e XML su Drive, <b>non ricevute ufficiali di consegna</b>.</p>
-    <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML su Drive (non confermati FATEL): ${c.drive}</b></div><div class="box"><b>Importati FATEL confermati manualmente: ${c.fatel}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
+  res.send(page('Registro invii elettronici',`<div class="box"><h2>📤 Registro fatture elettroniche — preparazione invii</h2><p><b>Legenda:</b> 🟢 XML depositato verso FATEL (locale quando attivo), NON significa approvato fiscalmente. 🔴 Dati/documento da completare. ⚪ Da verificare. Nessuna validazione XSD/SdI ancora collegata. La conferma manuale FATEL non costituisce prova di ricezione SdI.</p><p><b>Invio disattivato:</b> nessun invio automatico a SdI è configurato. Il collegamento locale deposita soltanto XML sul PC. I conteggi rappresentano dati nel gestionale e XML predisposti per FATEL, <b>non ricevute ufficiali di consegna</b>.</p>
+    <div style="display:flex;gap:12px;flex-wrap:wrap"><div class="box"><b>Totale: ${c.totale}</b></div><div class="box"><b>Da verificare: ${c.da_verificare}</b></div><div class="box"><b>XML depositati (non confermati FATEL): ${c.drive}</b></div><div class="box"><b>Importati FATEL confermati manualmente: ${c.fatel}</b></div><div class="box"><b>Stato esterno ignoto: ${c.esterno}</b></div><div class="box"><b>Non pronte: ${c.nonpronte}</b></div><div class="box"><b>Consegnate confermate SdI: 0*</b></div></div>
     <p><small>* Non sono ancora collegati i flussi esiti SdI. Zero significa nessuna consegna verificabile dall'app, non che non siano state consegnate.</small></p>
     <form method="get"><label>Categoria descrittiva (non modifica l'intestazione)</label><select name="settore"><option value="">Tutti</option><option value="noleggio" ${sector==='noleggio'?'selected':''}>DP RENT</option><option value="trasporti" ${sector==='trasporti'?'selected':''}>TRASPORTI</option><option value="credito" ${sector==='credito'?'selected':''}>Note di credito</option><option value="service" ${sector==='service'?'selected':''}>DP SERVICE</option><option value="libere" ${sector==='libere'?'selected':''}>Fatture libere</option></select><label>Cerca cliente o numero</label><input name="cerca" value="${esc(req.query.cerca||'')}"><button class="btn">Filtra</button></form>
     <p>Mostrate ${visible.length} fatture (massimo 300 per schermata). Il deposito massivo e disponibile solo per RENT e TRASPORTI; SERVICE e LIBERE mantengono il controllo e deposito singolo. Massimo 30 documenti per operazione.</p>
@@ -15021,15 +15042,15 @@ app.post('/fatturazione/libere/:id/drive-invia',async(req,res)=>{
   if(f.regime_iva==='MARGINE_ANALITICO'||f.tipo_documento!=='TD01')throw new Error('Deposito disponibile soltanto per TD01 ordinaria verificata');
   const already=await get("SELECT * FROM dp_xml_exports WHERE tipo='libere' AND fattura_id=?",[f.id]);
   if(already)throw new Error('XML già esportato: per evitare duplicati non inviamo nuovamente');
-  if(String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase()!=='READY')throw new Error('La modalità Drive deve essere READY; in TEST non è consentito depositare fatture fiscali qui');
+  if(String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase()!=='READY')throw new Error('La modalità XML deve essere READY; in TEST non è consentito depositare fatture fiscali qui');
   const xml=await dpFreePreviewXmlV340(f.id), filename=dpXmlFilenameV356(xml);
   const crypto=require('crypto'); local=path.join(require('os').tmpdir(),'dp_l_v381_'+crypto.randomBytes(10).toString('hex')+'.xml');
   fs.writeFileSync(local,xml,'utf8');
   const r=dpFatelLocalReadyV390()?await dpFatelLocalQueueV390('libere',f.id,xml,filename):await dpFatelAppsScriptUploadV334(local,filename,'application/xml');
-  if(!r?.id)throw new Error('Drive non ha confermato ID file');
+  if(!r?.id)throw new Error('Deposito XML non confermato');
   await run("INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES('libere',?,?,?)",[f.id,r.id,filename]);
-  res.send(page('XML Fattura Libera',`<div class="box"><h2>✅ XML accodato per FATEL</h2><p>${esc(filename)}</p><p>${dpFatelLocalReadyV390()?'Coda FATEL locale (in attesa del PC)':'READY / DP FATTURAZIONE XML - FATEL'}. <b>Non equivale a importazione Fatel o invio SdI.</b></p><a class="btn" href="/fatturazione/libere/${f.id}/drive-apri" target="_blank">VEDI XML SU DRIVE</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO</a></div>`));
- }catch(e){res.status(400).send(page('Deposito non eseguito',`<div class="box"><h2>XML non depositato / stato da verificare</h2><p>${esc(e.message)}</p><p>Se il deposito su Drive è riuscito ma il salvataggio del registro locale è fallito, verificare Drive prima di riprovare: evitare duplicati.</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+  res.send(page('XML Fattura Libera',`<div class="box"><h2>✅ XML accodato per FATEL</h2><p>${esc(filename)}</p><p>${dpFatelLocalReadyV390()?'Coda FATEL locale (in attesa del PC)':'READY / DP FATTURAZIONE XML - FATEL'}. <b>Non equivale a importazione Fatel o invio SdI.</b></p>${dpFatelLocalReadyV390()?`<a class="btn" href="/fatturazione/fatel-locale">STATO FATEL LOCALE</a>`:`<a class="btn" href="/fatturazione/libere/${f.id}/drive-apri" target="_blank">VEDI XML SU DRIVE</a>`} <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO</a></div>`));
+ }catch(e){res.status(400).send(page('Deposito non eseguito',`<div class="box"><h2>XML non depositato / stato da verificare</h2><p>${esc(e.message)}</p><p>Se il deposito XML è riuscito ma il salvataggio nel registro è fallito, verificare la coda FATEL o Drive (se usato) prima di riprovare: evitare duplicati.</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
  finally{if(local){try{fs.unlinkSync(local)}catch(_){}}}
 });
 // V342: unico archivio operativo, stesso schema azioni degli altri settori.
@@ -15355,6 +15376,7 @@ app.post('/fatturazione/drive-fatel/test-scrittura',async(req,res)=>{
 });
 
 app.get('/fatturazione/drive-fatel',async(req,res)=>{
+ if(dpFatelLocalEnabledV390())return res.redirect(302,'/fatturazione/fatel-locale');
  const id=String(process.env.DP_FATEL_FOLDER_ID||'').trim();
  const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
  const link=id?`https://drive.google.com/drive/folders/${encodeURIComponent(id)}`:'';
@@ -15426,9 +15448,9 @@ app.get('/fatturazione', async(req,res)=>{
    <p class="dp-fatt-section-note">REGISTRO E COLLEGAMENTO</p>
    <section class="dp-fatt-tools">
     <a class="dp-fatt-register" href="/fatturazione/invii"><span style="font-size:34px">📤</span><span><strong>Registro fatture elettroniche</strong><small>Tutti i settori · Contatori · Verifica XML · Preparazione invii</small></span></a>
-    <a class="dp-fatt-folder" href="/fatturazione/drive-fatel">📁 Cartella XML Fatel</a>
+    <a class="dp-fatt-folder" href="/fatturazione/fatel-locale">📁 Stato XML FATEL locale</a>
    </section>
-   <p class="dp-fatt-warning">Invio Fatel/SdI non ancora attivo: nessun documento viene trasmesso da questa pagina.</p>
+   <p class="dp-fatt-warning">Trasferimento XML verso FATEL locale disponibile se configurato; l'invio allo SdI e l'esito fiscale restano gestiti separatamente.</p>
    <div style="text-align:center;margin-top:16px"><a class="btn btn2" href="/">🏠 Torna a DP Gestionale</a></div>
   </div>`));
 });
@@ -16170,9 +16192,9 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
      if(!process.env.DRIVE_WEBAPP_URL||!process.env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('Apps Script Drive non configurato per test');
      result=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
    }
-   if(!result)throw new Error('Caricamento Google Drive non confermato');
+   if(!result)throw new Error('Deposito XML non confermato');
    await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[req.params.tipo,f.id,result.id||'',filename]);
-   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML accodato per FATEL</h2><p>${esc(filename)}</p><p>Destinazione: ${dpFatelLocalReadyV390()?'Coda FATEL locale (in attesa del PC)':('Google Drive '+mode+' / '+folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
+   res.send(page('XML per FATEL',`<div class="box"><h2>✅ XML accodato per FATEL</h2><p>${esc(filename)}</p><p>Destinazione: ${dpFatelLocalReadyV390()?'Coda FATEL locale (in attesa del PC)':('Google Drive '+mode+' / '+folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
   }finally{try{fs.unlinkSync(tempFile);}catch(_){}}
  }catch(e){res.status(400).send(page('Export XML non riuscito',`<div class="box"><h2>XML non esportato</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione">Torna</a></div>`));}
 });
