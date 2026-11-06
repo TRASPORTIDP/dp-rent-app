@@ -14595,6 +14595,67 @@ function dpReadServiceInvoices(){
  });
 }
 
+// V390 FATEL LOCALE: coda XML persistente, scaricata dal PC dell'ufficio via HTTPS in uscita.
+// Non esponiamo SMB/Windows su Internet. Il deposito qui NON equivale a import FATEL o invio SdI.
+async function dpFatelLocalEnsureV390(){
+ await run(`CREATE TABLE IF NOT EXISTS dp_fatel_local_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL,
+  file_name TEXT NOT NULL, xml_text TEXT NOT NULL, sha256 TEXT NOT NULL,
+  stato TEXT NOT NULL DEFAULT 'PENDING', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  delivered_at TEXT, UNIQUE(tipo,fattura_id))`);
+}
+function dpFatelLocalEnabledV390(){return String(process.env.DP_FATEL_TARGET||'DRIVE').toUpperCase()==='LOCAL';}
+function dpFatelLocalReadyV390(){return dpFatelLocalEnabledV390() && String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase()==='READY';}
+async function dpFatelLocalQueueV390(tipo,id,xml,filename){
+ if(!dpFatelLocalReadyV390())throw new Error('FATEL locale non attivo: impostare DP_FATEL_TARGET=LOCAL e DP_FATEL_DRIVE_MODE=READY su Render');
+ const clean=String(filename||'');
+ if(!/^[A-Za-z0-9_.-]{1,150}\.xml$/i.test(clean)||clean.includes('..'))throw new Error('Nome XML non sicuro');
+ if(!String(xml).trim().startsWith('<?xml')&&!String(xml).trim().startsWith('<'))throw new Error('Contenuto XML non valido');
+ await dpFatelLocalEnsureV390();
+ const hash=crypto.createHash('sha256').update(xml,'utf8').digest('hex');
+ await run('INSERT INTO dp_fatel_local_queue(tipo,fattura_id,file_name,xml_text,sha256) VALUES(?,?,?,?,?)',[tipo,id,clean,xml,hash]);
+ return {id:'LOCAL:'+tipo+':'+id, file_name:clean};
+}
+function dpFatelLocalAuthorizeV390(req,res,next){
+ const expected=String(process.env.DP_FATEL_LOCAL_TOKEN||'');
+ const given=String(req.headers.authorization||'').replace(/^Bearer\s+/i,'');
+ const a=Buffer.from(given),b=Buffer.from(expected);
+ if(expected.length<32||a.length!==b.length||!crypto.timingSafeEqual(a,b))return res.status(401).json({ok:false,error:'Non autorizzato'});
+ next();
+}
+app.get('/api/fatel-local/pending',dpFatelLocalAuthorizeV390,async(req,res)=>{
+ try{
+  if(!dpFatelLocalEnabledV390())return res.status(503).json({ok:false,error:'FATEL locale non attivo'});
+  await dpFatelLocalEnsureV390();
+  const rows=await all("SELECT id,file_name,sha256 FROM dp_fatel_local_queue WHERE stato='PENDING' ORDER BY id ASC LIMIT 25");
+  res.set('Cache-Control','no-store').json({ok:true,items:rows});
+ }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/api/fatel-local/file/:id([0-9]+)',dpFatelLocalAuthorizeV390,async(req,res)=>{
+ try{
+  const row=await get("SELECT file_name,xml_text,sha256 FROM dp_fatel_local_queue WHERE id=? AND stato='PENDING'",[req.params.id]);
+  if(!row)return res.status(404).json({ok:false,error:'XML non disponibile'});
+  res.set('Cache-Control','no-store').json({ok:true,file_name:row.file_name,sha256:row.sha256,base64:Buffer.from(row.xml_text,'utf8').toString('base64')});
+ }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/fatel-local/ack/:id([0-9]+)',dpFatelLocalAuthorizeV390,async(req,res)=>{
+ try{
+  const hash=String(req.body?.sha256||'');
+  const row=await get('SELECT sha256,stato FROM dp_fatel_local_queue WHERE id=?',[req.params.id]);
+  if(!row||row.sha256!==hash)return res.status(409).json({ok:false,error:'Hash non corrispondente'});
+  if(row.stato==='PENDING')await run("UPDATE dp_fatel_local_queue SET stato='DELIVERED',delivered_at=CURRENT_TIMESTAMP WHERE id=? AND stato='PENDING'",[req.params.id]);
+  res.json({ok:true,status:'DELIVERED_LOCAL_NOT_IMPORTED'});
+ }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.get('/fatturazione/fatel-locale',async(req,res)=>{
+ try{
+  await dpFatelLocalEnsureV390();
+  const rows=await all('SELECT stato,COUNT(*) AS n FROM dp_fatel_local_queue GROUP BY stato');
+  const counts=Object.fromEntries(rows.map(r=>[r.stato,r.n]));
+  res.send(page('FATEL locale',`<div class="box"><h2>FATEL locale - stato consegne</h2><p>Modalita: <b>${dpFatelLocalEnabledV390()?'LOCAL':'DRIVE (precedente)'}</b></p><p>In attesa di scaricamento PC: <b>${counts.PENDING||0}</b></p><p>Scritti sul PC (non significa importati da FATEL): <b>${counts.DELIVERED||0}</b></p><p>Cartella destinataria sul PC: C:\\Zucchetti\\xml_attivi. Se FATEL non importa, verificare la configurazione del programma Zucchetti.</p><a class="btn" href="/fatturazione/invii">Registro invii</a></div>`));
+ }catch(e){res.status(500).send(esc(e.message));}
+});
+
 // V385 — Deposito massivo controllato, NON invio allo SdI.
 // Supporta soltanto i settori per cui il generatore XML validato è già disponibile.
 app.post('/fatturazione/invii/deposita-massivo',async(req,res)=>{
@@ -14603,7 +14664,7 @@ app.post('/fatturazione/invii/deposita-massivo',async(req,res)=>{
  const results=[];
  try{
   if(!unique.length||unique.length>30)throw new Error('Selezionare da 1 a 30 fatture per operazione');
-  if(!googleDriveConfigured())throw new Error('Google Drive non configurato');
+  if(!dpFatelLocalReadyV390()&&!googleDriveConfigured())throw new Error('Google Drive non configurato');
   const mode=String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase();
   if(!['TEST','READY'].includes(mode))throw new Error('Modalità Drive non valida');
   await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
@@ -14620,7 +14681,7 @@ app.post('/fatturazione/invii/deposita-massivo',async(req,res)=>{
     tempFile=path.join(require('os').tmpdir(),'dp_massivo_'+crypto.randomBytes(12).toString('hex')+'.xml');
     fs.writeFileSync(tempFile,xml,'utf8');
     let uploaded;
-    if(mode==='READY') uploaded=await dpFatelAppsScriptUploadV334(tempFile,filename,'application/xml');
+    if(mode==='READY') uploaded=dpFatelLocalReadyV390()?await dpFatelLocalQueueV390(tipo,id,xml,filename):await dpFatelAppsScriptUploadV334(tempFile,filename,'application/xml');
     else{
      const folder=String(process.env.DP_FATEL_DRIVE_SUBFOLDER||'DP FATTURAZIONE XML - TEST');
      if(!folder||folder.includes('..')||folder.includes('/')||folder.includes('\\'))throw new Error('Sottocartella non valida');
@@ -14905,10 +14966,10 @@ app.post('/fatturazione/libere/:id/drive-invia',async(req,res)=>{
   const xml=await dpFreePreviewXmlV340(f.id), filename=dpXmlFilenameV356(xml);
   const crypto=require('crypto'); local=path.join(require('os').tmpdir(),'dp_l_v381_'+crypto.randomBytes(10).toString('hex')+'.xml');
   fs.writeFileSync(local,xml,'utf8');
-  const r=await dpFatelAppsScriptUploadV334(local,filename,'application/xml');
+  const r=dpFatelLocalReadyV390()?await dpFatelLocalQueueV390('libere',f.id,xml,filename):await dpFatelAppsScriptUploadV334(local,filename,'application/xml');
   if(!r?.id)throw new Error('Drive non ha confermato ID file');
   await run("INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES('libere',?,?,?)",[f.id,r.id,filename]);
-  res.send(page('XML Fattura Libera',`<div class="box"><h2>✅ XML depositato su Google Drive</h2><p>${esc(filename)}</p><p>READY / DP FATTURAZIONE XML - FATEL. <b>Non equivale a importazione Fatel o invio SdI.</b></p><a class="btn" href="/fatturazione/libere/${f.id}/drive-apri" target="_blank">VEDI XML SU DRIVE</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO</a></div>`));
+  res.send(page('XML Fattura Libera',`<div class="box"><h2>✅ XML accodato per FATEL</h2><p>${esc(filename)}</p><p>${dpFatelLocalReadyV390()?'Coda FATEL locale (in attesa del PC)':'READY / DP FATTURAZIONE XML - FATEL'}. <b>Non equivale a importazione Fatel o invio SdI.</b></p><a class="btn" href="/fatturazione/libere/${f.id}/drive-apri" target="_blank">VEDI XML SU DRIVE</a> <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO</a></div>`));
  }catch(e){res.status(400).send(page('Deposito non eseguito',`<div class="box"><h2>XML non depositato / stato da verificare</h2><p>${esc(e.message)}</p><p>Se il deposito su Drive è riuscito ma il salvataggio del registro locale è fallito, verificare Drive prima di riprovare: evitare duplicati.</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
  finally{if(local){try{fs.unlinkSync(local)}catch(_){}}}
 });
@@ -16032,7 +16093,7 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
   await run(`CREATE TABLE IF NOT EXISTS dp_xml_exports (tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL, file_id TEXT, file_name TEXT, exported_at TEXT DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(tipo,fattura_id))`);
   const existing=await get('SELECT * FROM dp_xml_exports WHERE tipo=? AND fattura_id=?',[req.params.tipo,f.id]);
   if(existing)return res.status(409).send(page('XML già esportato',`<div class="box"><h2>XML già esportato</h2><p>File: ${esc(existing.file_name)}. Per evitare doppie importazioni non viene creato un secondo XML.</p><a href="/fatturazione" class="btn">Torna</a></div>`));
-  if(!googleDriveConfigured())throw new Error('Google Drive non configurato: verificare credenziali o Apps Script');
+  if(!dpFatelLocalReadyV390()&&!googleDriveConfigured())throw new Error('Google Drive non configurato: verificare credenziali o Apps Script');
   const crypto=require('crypto');
   const tempFile=path.join(require('os').tmpdir(),`dp_xml_${crypto.randomBytes(12).toString('hex')}.xml`);
   try{
@@ -16045,14 +16106,14 @@ app.get('/fatturazione/xml/:tipo/:id([0-9]+)',async(req,res)=>{
    if(mode==='READY'){
      // Con READY l'XML viene depositato esattamente nella cartella Fatel tramite Apps Script.
      // Verificare correttezza XML e procedura Zucchetti prima di attivare READY.
-     result=await dpFatelAppsScriptUploadV334(tempFile,filename,'application/xml');
+     result=dpFatelLocalReadyV390()?await dpFatelLocalQueueV390(req.params.tipo,f.id,xml,filename):await dpFatelAppsScriptUploadV334(tempFile,filename,'application/xml');
    }else{
      if(!process.env.DRIVE_WEBAPP_URL||!process.env.GOOGLE_DRIVE_FOLDER_ID)throw new Error('Apps Script Drive non configurato per test');
      result=await uploadFileToDrive(tempFile,filename,'application/xml',folder);
    }
    if(!result)throw new Error('Caricamento Google Drive non confermato');
    await run('INSERT INTO dp_xml_exports(tipo,fattura_id,file_id,file_name) VALUES(?,?,?,?)',[req.params.tipo,f.id,result.id||'',filename]);
-   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML salvato su Google Drive</h2><p>${esc(filename)}</p><p>Deposito Google Drive: ${esc(mode)} / ${esc(mode==='READY'?'DP FATTURAZIONE XML - FATEL':folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
+   res.send(page('XML su Drive',`<div class="box"><h2>✅ XML accodato per FATEL</h2><p>${esc(filename)}</p><p>Destinazione: ${dpFatelLocalReadyV390()?'Coda FATEL locale (in attesa del PC)':('Google Drive '+mode+' / '+folder)}. Non significa ancora che Fatel lo abbia importato o inviato allo SDI.</p>${result.webViewLink?`<a class="btn" href="${esc(result.webViewLink)}" target="_blank">Apri in Drive</a>`:''}<a class="btn btn2" href="/fatturazione">Torna</a></div>`));
   }finally{try{fs.unlinkSync(tempFile);}catch(_){}}
  }catch(e){res.status(400).send(page('Export XML non riuscito',`<div class="box"><h2>XML non esportato</h2><p>${esc(e.message)}</p><a class="btn btn2" href="/fatturazione">Torna</a></div>`));}
 });
