@@ -13884,7 +13884,7 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
       <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">NOTA DI CREDITO</a>
       ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">MODIFICA</a>
       <form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che questa fattura e soltanto una bozza MAI emessa, consegnata, acquisita da Fatel o inviata allo SdI? L XML su Drive verra spostato nel cestino prima della cancellazione.')">
-        <input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn" style="background:#8b0000">ELIMINA BOZZA</button>
+        <input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn" style="background:#8b0000">ELIMINA BOZZA</button>
       </form>`:''}
     </td>
   </tr>`;
@@ -13962,7 +13962,7 @@ app.get('/trasporti/fattura/:id([0-9]+)',async(req,res)=>{
     <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/trasporti/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">✏️ MODIFICA FATTURA</a>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che questa fattura è stata emessa/inviata in Fatture in Cloud?')"><button class="btn dp-green">☁️ SEGNA INVIATA FATTURE IN CLOUD</button></form>`:''}
-    ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn btn2">Elimina bozza non emessa</button></form>`:''}
+    ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn btn2">Elimina bozza non emessa</button></form>`:''}
     </div><div class="box" style="overflow:auto"><table><tr><th>DDT</th><th>Auto</th><th>Tratta</th><th>Imponibile</th><th>IVA</th></tr>${rows}</table>
     <h3>Imponibile € ${euro(f.imponibile)}<br>IVA € ${euro(f.iva)}<br>Totale € ${euro(f.totale)}</h3></div>`));
 });
@@ -14039,7 +14039,7 @@ app.post('/trasporti/fattura/:id/annulla',async(req,res)=>{
   const rows=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
   if(rows.length>1)throw new Error('Piu XML associati alla fattura: verifica manuale necessaria, nessuna cancellazione');
   if(rows.length&&(!rows[0].file_id||!rows[0].file_name))throw new Error('XML privo di file ID o nome: nessuna cancellazione');
-  if(rows.length&&String(process.env.DP_FATEL_DELETE_TOKEN||'').length<32)throw new Error('DP_FATEL_DELETE_TOKEN non configurato: nessuna cancellazione');
+  if(rows.length&&!String(rows[0].file_id||'').startsWith('LOCAL:')&&String(process.env.DP_FATEL_DELETE_TOKEN||'').length<32)throw new Error('DP_FATEL_DELETE_TOKEN non configurato: nessuna cancellazione');
   const links=await all('SELECT * FROM trasporti_fattura_ordini WHERE fattura_id=?',[f.id]);
   await run('BEGIN IMMEDIATE');
   try{
@@ -14048,7 +14048,7 @@ app.post('/trasporti/fattura/:id/annulla',async(req,res)=>{
    await dpInvoiceNoCollected('TRASPORTI',f.id);
    const current=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
    if(current.length!==rows.length||current.some((x,i)=>x.file_id!==rows[i].file_id||x.file_name!==rows[i].file_name))throw new Error('XML cambiato nel frattempo: riprovare');
-   if(current.length){await dpV377TrashRentXml(current[0]);driveTrashed=true;}
+   if(current.length){if(String(current[0].file_id||'').startsWith('LOCAL:'))await dpV392CancelLocalXml(current[0],'trasporti',f.id,req.body);else{await dpV377TrashRentXml(current[0]);driveTrashed=true;}}
    await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',
      ['trasporti',f.id,f.anno,f.serie,f.numero,JSON.stringify({fattura:f,ordini:links}),'MAI_EMESSA']);
    if(current.length)await run(`DELETE FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
@@ -14437,7 +14437,7 @@ app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const correctionHtml=showCorrection?`<div style="border:1px solid #d99;border-radius:10px;padding:12px;margin:12px 0"><b>Intestatario differente dal contratto aggiornato</b><p>In fattura: <b>${esc(f.cliente)}</b><br>Nel contratto: <b>${esc(correctedName)}</b></p><form method="POST" action="/noleggio/fattura/${f.id}/aggiorna-intestatario" onsubmit="return confirm('Aggiornare l’intestatario della fattura non inviata con quello del contratto?')"><input type="hidden" name="conferma" value="SI"><button type="submit">🔄 Allinea intestatario dalla pratica</button></form><small>Non modifica il contratto, i dati fiscali, i totali o le fatture gia inviate. Non usare se questa fattura e gia stata consegnata/inviata.</small></div>`:'';
   res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>${correctionHtml}
     <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/noleggio/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
-    ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn" style="background:#8b0000">ELIMINA BOZZA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
+    ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn" style="background:#8b0000">ELIMINA BOZZA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
 });
 
@@ -14493,6 +14493,30 @@ async function dpV377TrashRentXml(exportRow){
  }finally{clearTimeout(timeout)}
 }
 
+
+// V392 - annullamento controllato di XML FATEL locali mai importati/inviati.
+// La coda non puo cancellare file gia scaricati sul PC: l'operatore deve
+// fermare l'agente e rimuovere il file locale prima di attestare la pulizia.
+async function dpV392CancelLocalXml(exportRow, settore, fatturaId, requestBody){
+ const fileId=String(exportRow?.file_id||'');
+ if(!fileId.startsWith('LOCAL:'))throw new Error('Esportazione non locale: annullamento non consentito da questa procedura');
+ const expectedId='LOCAL:'+settore+':'+fatturaId;
+ if(fileId!==expectedId)throw new Error('Riferimento coda FATEL diverso dal documento: cancellazione bloccata');
+ if(String(requestBody?.conferma_xml_locale||'')!=='FILE_RIMOSSO_NON_IMPORTATO')
+  throw new Error('Prima arrestare il programma FATEL Windows, eliminare il file XML locale e confermare che non e stato importato in FATEL o inviato allo SdI');
+ await dpFatelLocalEnsureV390();
+ await dpFatelManualEnsureV386();
+ const imported=await get('SELECT 1 AS ok FROM dp_fatel_manual_imports WHERE tipo=? AND fattura_id=?',[settore,fatturaId]);
+ if(imported)throw new Error('Importazione FATEL gia confermata nel registro: cancellazione bloccata');
+ const found=await all('SELECT id,stato,file_name FROM dp_fatel_local_queue WHERE tipo=? AND fattura_id=?',[settore,fatturaId]);
+ if(found.length!==1)throw new Error('Coda FATEL mancante o duplicata: verifica manuale obbligatoria');
+ const row=found[0];
+ if(row.file_name!==exportRow.file_name||!['PENDING','DELIVERED'].includes(row.stato))
+  throw new Error('Coda FATEL non coerente o gia annullata: verifica manuale obbligatoria');
+ const result=await run("UPDATE dp_fatel_local_queue SET stato='CANCELLED' WHERE id=? AND stato=?",[row.id,row.stato]);
+ if(result?.changes!==1)throw new Error('Stato coda modificato: ripetere la verifica');
+}
+
 app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
  let driveTrashed=false;
  try{
@@ -14507,7 +14531,7 @@ app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
   const aliases=['noleggio','NOLEGGIO','N'];
   const rows=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
   if(rows.length>1)throw new Error('Più esportazioni XML associate alla fattura: cancellazione bloccata, verifica manuale necessaria');
-  if(rows.length){
+  if(rows.length && !String(rows[0].file_id||'').startsWith('LOCAL:')){
    if(String(process.env.DP_FATEL_DELETE_TOKEN||'').length<32)throw new Error('DP_FATEL_DELETE_TOKEN non configurato su Render: nessun dato cancellato');
    if(!rows[0].file_id||!rows[0].file_name)throw new Error('XML privo di file ID o nome: nessun dato cancellato');
   }
@@ -14518,7 +14542,7 @@ app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
    await dpInvoiceNoCollected('NOLEGGIO',f.id);
    const current=await all(`SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
    if(current.length!==rows.length||current.some((x,i)=>x.file_id!==rows[i].file_id||x.file_name!==rows[i].file_name))throw new Error('Esportazione XML cambiata: ripetere la verifica');
-   if(current.length){await dpV377TrashRentXml(current[0]);driveTrashed=true;}
+   if(current.length){if(String(current[0].file_id||'').startsWith('LOCAL:'))await dpV392CancelLocalXml(current[0],'noleggio',f.id,req.body);else{await dpV377TrashRentXml(current[0]);driveTrashed=true;}}
    await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',
     ['noleggio',f.id,f.anno,f.serie,f.numero,JSON.stringify(f),'MAI_EMESSA']);
    if(current.length)await run(`DELETE FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
@@ -14999,7 +15023,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
     ${exp?`<span style="font-weight:bold;color:#13824a">✅ XML SU DRIVE (non inviato SdI)</span> <a class="btn btn2" target="_blank" rel="noopener" href="${u}/drive-apri">👁 VEDI XML SU DRIVE</a>`:registered?`<form style="display:inline" method="post" action="${u}/drive-invia" onsubmit="return confirm('Confermi che questa fattura REGISTRATA e stata verificata fiscalmente e non e stata gia importata in Fatel? Inviare XML nella cartella READY?')"><input type="hidden" name="conferma" value="VERIFICATO_PER_DRIVE"><button class="btn" type="submit">📤 INVIA XML A DRIVE</button></form>`:`<span style="color:#775b17">Bozza: prima verifica XML; deposito READY soltanto dopo registrazione fiscale</span>`}
     ${r.stato==='PROVA'&&!exp?`<form action="${u}/drive-test" method="post" style="display:inline" onsubmit="return confirm('Inviare XML SOLO nella cartella TEST, NON nella cartella Fatel READY?')"><input type="hidden" name="conferma" value="SOLO_TEST"><button class="btn" type="submit">📤 INVIA XML TEST A DRIVE</button></form>`:''}
     ${r.stato==='PROVA'?`<form action="${u}/${showArchived?'ripristina-prova':'archivia-prova'}" method="post" style="display:inline" onsubmit="return confirm('${showArchived?'Ripristinare la simulazione nel registro?':'Archiviare questa SIMULAZIONE TEST? Sarà nascosta ma non cancellata.'}')"><button class="btn btn2" type="submit">${showArchived?'RIPRISTINA':'ARCHIVIA TEST'}</button></form>`:''}
-    ${['BOZZA','PROVA','REGISTRATA'].includes(r.stato)?`<form action="${u}/elimina-bozza" method="post" style="display:inline-block;margin-top:8px" onsubmit="return confirm('ATTENZIONE: confermi che NON e mai stata fiscalmente emessa, consegnata, importata in Fatel o trasmessa a SdI? Il file XML sara spostato nel cestino prima della cancellazione locale.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${registered?`<label style="display:block;font-size:12px;max-width:270px"><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Confermo: mai emessa, inviata o acquisita da Fatel/SdI</label>`:''}<button class="btn btn2" type="submit">🗑 ELIMINA ${registered?'FATTURA E XML DRIVE':'BOZZA'}</button></form>`:''}
+    ${['BOZZA','PROVA','REGISTRATA'].includes(r.stato)?`<form action="${u}/elimina-bozza" method="post" style="display:inline-block;margin-top:8px" onsubmit="return confirm('ATTENZIONE: confermi che NON e mai stata fiscalmente emessa, consegnata, importata in Fatel o trasmessa a SdI? Il file XML sara spostato nel cestino prima della cancellazione locale.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}${registered?`<label style="display:block;font-size:12px;max-width:270px"><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Confermo: mai emessa, inviata o acquisita da Fatel/SdI</label>`:''}<button class="btn btn2" type="submit">🗑 ELIMINA ${registered?'FATTURA E XML DRIVE':'BOZZA'}</button></form>`:''}
     ${r.stato==='BOZZA'?`<form action="${u}/registra-prova" method="post" style="display:inline" onsubmit="return confirm('Creare solo numerazione TEST-L, senza assegnare numerazione fiscale, senza trasmissione Fatel/SdI?')"><button class="btn" type="submit">🧪 CREA NUMERO TEST</button></form>`:''}
     ${r.stato==='BOZZA'?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: assegna un numero fiscale alla serie L e blocca la bozza. Procedere solo con sezionale autorizzato e DP_FREE_ISSUE_ENABLED=YES?')"><button class="btn" type="submit">REGISTRA</button></form>`:''}
    </td></tr>`;
@@ -15056,7 +15080,7 @@ app.post('/fatturazione/libere/:id/elimina-bozza',async(req,res)=>{
    if(!q||q.stato!==f.stato||q.numero_fattura!==f.numero_fattura)throw new Error('Fattura modificata: ripetere');
    const current=await all("SELECT * FROM dp_xml_exports WHERE fattura_id=? AND tipo IN ('libere','LIBERE','L')",[f.id]);
    if(current.length!==rows.length||current.some((x,i)=>x.file_id!==rows[i].file_id||x.file_name!==rows[i].file_name))throw new Error('Esportazione modificata: ripetere');
-   if(current.length){await dpV377TrashRentXml(current[0]);driveTrashed=true;}
+   if(current.length){if(String(current[0].file_id||'').startsWith('LOCAL:'))await dpV392CancelLocalXml(current[0],'libere',f.id,req.body);else{await dpV377TrashRentXml(current[0]);driveTrashed=true;}}
    await run('INSERT INTO dp_invoice_draft_cancellations(settore,fattura_id,anno,serie,numero,documento_json,attestazione) VALUES(?,?,?,?,?,?,?)',
     ['libere',f.id,f.anno_fattura||null,f.serie_fattura||'',f.numero_fattura||null,JSON.stringify(f),'MAI_EMESSA - NON_ACQUISITA_FATEL_SDI']);
    if(current.length)await run("DELETE FROM dp_xml_exports WHERE fattura_id=? AND tipo IN ('libere','LIBERE','L')",[f.id]);
@@ -15152,7 +15176,7 @@ app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
 app.get('/fatturazione/libere/:id/dettaglio',async(req,res)=>{
  try{await dpFreeEnsure();const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[req.params.id]);if(!f)throw new Error('Documento inesistente');
  res.send(page('Fattura libera',`<div class="box"><h2>${f.stato==='REGISTRATA'?'Fattura registrata '+esc(f.numero_fattura):f.stato==='PROVA'?'SIMULAZIONE '+esc(f.numero_fattura):'Bozza n. '+f.id}</h2><p>Cliente: ${esc(f.cliente)} · € ${euro(f.totale)} · ${esc(f.data_documento)}</p><p>Settore: ${esc(f.settore)} · Tipo: ${esc(f.tipo_documento)}</p><p><a class="btn" href="/fatturazione/libere/${f.id}/pdf" target="_blank">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/libere/${f.id}/xml-check-v382">📨 XML PER FATEL (VERIFICA)</a> ${f.stato==='BOZZA'?`<a class="btn btn2" href="/fatturazione/libere/${f.id}/modifica">✏️ MODIFICA</a>`:''} <a class="btn btn2" href="/fatturazione/libere">ARCHIVIO FATTURE</a></p>
- ${['BOZZA','PROVA','REGISTRATA'].includes(f.stato)?`<form method="POST" action="/fatturazione/libere/${f.id}/elimina-bozza" onsubmit="return confirm('Confermi: fattura mai emessa, consegnata o importata Fatel/SdI? Eliminare anche XML Drive se presente?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${f.stato==='REGISTRATA'?'<label><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Confermo che non è stata mai fiscalmente emessa né acquisita da Fatel/SdI</label>':''}<button class="btn" type="submit">🗑 ELIMINA FATTURA DI PROVA E XML SU DRIVE</button></form>`:''}
+ ${['BOZZA','PROVA','REGISTRATA'].includes(f.stato)?`<form method="POST" action="/fatturazione/libere/${f.id}/elimina-bozza" onsubmit="return confirm('Confermi: fattura mai emessa, consegnata o importata Fatel/SdI? Eliminare anche XML Drive se presente?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}${f.stato==='REGISTRATA'?'<label><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Confermo che non è stata mai fiscalmente emessa né acquisita da Fatel/SdI</label>':''}<button class="btn" type="submit">🗑 ELIMINA FATTURA DI PROVA E XML SU DRIVE</button></form>`:''}
  <p><b>Importante:</b> la verifica XML e il deposito su Drive non equivalgono a importazione Fatel o invio SdI. Gestisci INVIA / VEDI XML nella schermata di verifica o nell'archivio.</p></div>`));
  }catch(e){res.status(404).send(page('Errore',`<div class="box">${esc(e.message)}</div>`));}
 });
@@ -16022,7 +16046,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       ${saved.file_id && /^[A-Za-z0-9_-]{15,}$/.test(String(saved.file_id)) ? `<a class="btn btn2" target="_blank" rel="noopener noreferrer" href="https://drive.google.com/file/d/${encodeURIComponent(saved.file_id)}/view">📂 APRI XML SU DRIVE</a>`:''}`:
       `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML su Drive</a>`}
       ${tipo==='trasporti'?`<a class="btn btn2" href="/trasporti/fattura/${Number(id)}">🧾 APRI FATTURA ${esc(f.numero_display||f.numero||'')}</a>
-      ${String(f.stato||'').toUpperCase()==='PRONTA_FIC'?`<form method="POST" action="/trasporti/fattura/${Number(id)}/annulla" style="display:inline" onsubmit="return confirm('Solo per una BOZZA MAI EMESSA, CONSEGNATA, IMPORTATA in Fatel o INVIATA a SdI. Confermi la richiesta di eliminazione e lo spostamento dell XML nel cestino Drive?')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn" style="background:#8b0000" type="submit">🗑️ ELIMINA BOZZA E XML DRIVE</button></form>`:''}`:''}
+      ${String(f.stato||'').toUpperCase()==='PRONTA_FIC'?`<form method="POST" action="/trasporti/fattura/${Number(id)}/annulla" style="display:inline" onsubmit="return confirm('Solo per una BOZZA MAI EMESSA, CONSEGNATA, IMPORTATA in Fatel o INVIATA a SdI. Confermi la richiesta di eliminazione e lo spostamento dell XML nel cestino Drive?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn" style="background:#8b0000" type="submit">🗑️ ELIMINA BOZZA E XML</button></form>`:''}`:''}
       <a class="btn" href="${back}">Torna alle fatture</a></div>`));
   }catch(e){
     res.status(400).send(page('Controllo XML',`<div class="box">
