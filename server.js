@@ -701,6 +701,9 @@ function dpIsPublicRoute(req) {
   const method = String(req.method || 'GET').toUpperCase();
   const p = String(req.path || '/');
 
+  // V391: agente FATEL locale; queste tre rotte verificano sempre il token Bearer.
+  if ((method === 'GET' && (p === '/api/fatel-local/pending' || /^\/api\/fatel-local\/file\/[0-9]+$/.test(p))) ||
+      (method === 'POST' && /^\/api\/fatel-local\/ack\/[0-9]+$/.test(p))) return true;
   if (p === '/accesso-dp' || p === '/esci-dp') return true;
   if (p === '/privacy' || p === '/condizioni' || p === '/condizioni-noleggio' || p === '/termini-noleggio' || p === '/cookie-policy') return true;
   if (p === '/privacy.pdf' || p === '/clausole.pdf' || p === '/privacy_file.pdf' || p === '/terms_file.pdf') return true;
