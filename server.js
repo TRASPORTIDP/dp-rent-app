@@ -2830,7 +2830,7 @@ async function dpV265MarkFatturaDaFare(id, metodo){
   try{
     const p = await get(`SELECT * FROM prenotazioni WHERE id=?`, [id]).catch(()=>null);
     if(!p || !p.id) return {ok:false, error:'prenotazione non trovata'};
-    if(String(p.fattura_stato || '').toLowerCase() === 'emessa') return {ok:true, skipped:'gia fatturata'};
+    if(['emessa','archiviata'].includes(String(p.fattura_stato || '').toLowerCase())) return {ok:true, skipped:'gia fatturata o promemoria archiviato'};
     const now = dpV265NowIso();
     await run(`UPDATE prenotazioni SET fattura_stato='da_fare', fattura_metodo=?, fattura_pagamento_data=COALESCE(fattura_pagamento_data, ?), pagamento_stato=COALESCE(pagamento_stato,'pagato'), pagamento_metodo=COALESCE(pagamento_metodo, ?) WHERE id=?`, [metodo || p.pagamento_metodo || 'pagamento', now, metodo || p.pagamento_metodo || 'pagamento', id]);
     return {ok:true};
@@ -2838,7 +2838,7 @@ async function dpV265MarkFatturaDaFare(id, metodo){
 }
 function dpV265InvoiceMessage(p){
   const code = p.codice || codicePratica(p.id);
-  return `DP RENT - FATTURA DA EMETTERE\n\nContratto: ${code}\nCliente: ${(p.nome||'')+' '+(p.cognome||'')}\nTelefono: ${p.telefono || ''}\nMetodo pagamento: ${p.fattura_metodo || p.pagamento_metodo || p.nexi_stato || ''}\nImporto: EUR ${euro(p.totale || 0)}\nData pagamento: ${p.fattura_pagamento_data ? dpV223DateIt(String(p.fattura_pagamento_data).slice(0,10)) : ''}\n\nApri: ${dpV265BaseUrl()}/contratto/${p.id}/gestisci\nFatture: ${dpV265BaseUrl()}/fatture-da-fare`;
+  return `DP RENT - FATTURA DA EMETTERE\n\nContratto: ${code}\nCliente: ${(p.nome||'')+' '+(p.cognome||'')}\nTelefono: ${p.telefono || ''}\nMetodo pagamento: ${p.fattura_metodo || p.pagamento_metodo || p.nexi_stato || ''}\nImporto contratto (totale fatturabile IVA inclusa): EUR ${euro(dpNRentGross(p))}\nData pagamento: ${p.fattura_pagamento_data ? dpV223DateIt(String(p.fattura_pagamento_data).slice(0,10)) : ''}\n\nApri: ${dpV265BaseUrl()}/contratto/${p.id}/gestisci\nFatture: ${dpV265BaseUrl()}/fatture-da-fare`;
 }
 async function dpV265SendInvoiceAlert(p){
   const msg = dpV265InvoiceMessage(p);
@@ -4736,7 +4736,7 @@ setTimeout(()=>dpMasterEnsure().catch(e=>console.log('V308 clienti master:',e.me
 
 app.get('/', async (req, res) => {
   try {
-    const rentFatt = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
+    const rentFatt = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata','pronta_fic','archiviata'))) AND COALESCE(fattura_stato,'')<>'archiviata'`).catch(()=>({tot:0}));
     const trOrd = await get(`SELECT COUNT(*) as tot FROM trasporti_ordini`).catch(()=>({tot:0}));
     const trDaFatt = await get(`SELECT COUNT(*) as tot FROM trasporti_ordini WHERE COALESCE(stato,'') IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0}));
     res.send(page('DP Gestionale', `
@@ -4768,7 +4768,7 @@ app.get('/noleggio', async (req, res) => {
     const atteseRowsV137 = await v137AtteseRows().catch(()=>[]);
     const allMezzi = await all(`SELECT * FROM mezzi`).catch(()=>[]);
     const alertsCount = (allMezzi||[]).map(m => alertMezzo(m)).filter(Boolean).length;
-    const fattureCountRow = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
+    const fattureCountRow = await get(`SELECT COUNT(*) as tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata','pronta_fic','archiviata'))) AND COALESCE(fattura_stato,'')<>'archiviata'`).catch(()=>({tot:0}));
     res.send(page('DP RENT', `
       <div class="dp-one-page">
         <section class="dp-home-hero"><h2>DP RENT</h2><p>Gestionale noleggio</p></section>
@@ -9122,17 +9122,34 @@ app.get('/nexi-ko/:id', async (req, res) => {
 
 // V265 - pagina fatture da emettere
 app.get('/fatture-da-fare', async (req,res)=>{
-  await dpV265CheckInvoiceAlerts().catch(()=>{});
-  const rows = await all(`SELECT * FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata','pronta_fic'))) ORDER BY COALESCE(fattura_pagamento_data,data_inizio) DESC, id DESC`).catch(()=>[]);
+  const rows = await all(`SELECT * FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata','pronta_fic','archiviata'))) AND COALESCE(fattura_stato,'') <> 'archiviata' ORDER BY COALESCE(fattura_pagamento_data,data_inizio) DESC, id DESC`).catch(()=>[]);
+  const archived=await all(`SELECT * FROM prenotazioni WHERE fattura_stato='archiviata' ORDER BY id DESC LIMIT 100`).catch(()=>[]);
   const history=await all(`SELECT * FROM noleggio_fatture ORDER BY data_fattura DESC,id DESC LIMIT 100`).catch(()=>[]);
-  const cards=(rows||[]).map(p=>{const code=p.codice||codicePratica(p.id);const age=p.fattura_pagamento_data?Math.floor((Date.now()-new Date(p.fattura_pagamento_data).getTime())/3600000):'';const red=age!==''&&age>=48&&!Number(p.fattura_alert_48h_inviato||0);return `<div class="box" style="border-left:10px solid ${red?'#d70000':'#ffb000'};margin-bottom:14px"><h2>${red?'🔴':'🟡'} ${esc(code)}</h2><p><b>Cliente:</b> ${esc((p.ragione_sociale||((p.nome||'')+' '+(p.cognome||''))))}</p><p><b>Importo:</b> € ${euro(dpNRentGross(p))} &nbsp; <b>Metodo:</b> ${esc(p.fattura_metodo||p.pagamento_metodo||p.nexi_stato||'')}</p><a class="btn" href="/noleggio/fattura/crea/${p.id}">🧾 CREA FATTURA N</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">Apri contratto</a><a class="btn btn3" href="/pdf-view/${p.id}">Contratto PDF</a></div>`;}).join('')||'<div class="box"><h2 class="ok">✅ Nessun noleggio da fatturare</h2></div>';
+  const cards=(rows||[]).map(p=>{const code=p.codice||codicePratica(p.id);const age=p.fattura_pagamento_data?Math.floor((Date.now()-new Date(p.fattura_pagamento_data).getTime())/3600000):'';const red=age!==''&&age>=48&&!Number(p.fattura_alert_48h_inviato||0);return `<div class="box" style="border-left:10px solid ${red?'#d70000':'#ffb000'};margin-bottom:14px"><h2>${red?'🔴':'🟡'} ${esc(code)}</h2><p><b>Cliente:</b> ${esc((p.ragione_sociale||((p.nome||'')+' '+(p.cognome||''))))}</p><p><b>Importo:</b> € ${euro(dpNRentGross(p))} &nbsp; <b>Metodo:</b> ${esc(p.fattura_metodo||p.pagamento_metodo||p.nexi_stato||'')}</p><a class="btn" href="/noleggio/fattura/crea/${p.id}">🧾 CREA FATTURA N</a><a class="btn btn2" href="/contratto/${p.id}/gestisci">Apri contratto</a><a class="btn btn3" href="/pdf-view/${p.id}">Contratto PDF</a><form method="POST" action="/fatture-da-fare/${p.id}/archivia" style="display:inline" onsubmit="return confirm('Archiviare SOLO il promemoria di fatturazione per questo contratto? Il contratto e i dati di pagamento restano invariati, e NON viene registrata nessuna fattura emessa.')"><button type="submit" class="btn btn2">🔕 ARCHIVIA PROMEMORIA</button></form></div>`;}).join('')||'<div class="box"><h2 class="ok">✅ Nessun noleggio da fatturare</h2></div>';
   const hist=history.length?`<div class="box" style="overflow:auto"><h2>📚 Storico fatture DP RENT</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${history.map(f=>`<tr><td><b>${esc(f.numero_display)}</b></td><td>${esc(dpTItDate(f.data_fattura))}</td><td>${esc(f.cliente)}</td><td>€ ${euro(f.totale||0)}</td><td>${esc(f.stato)}</td><td><a class="btn" href="/noleggio/fattura/${f.id}">APRI</a><a class="btn btn2" target="_blank" href="/noleggio/fattura/${f.id}.pdf">PDF</a></td></tr>`).join('')}</table></div>`:'';
-  res.send(page('Fatture DP RENT',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURE DP RENT</h2><p>Numerazione separata: serie N</p></section>${cards}${hist}<a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div>`));
+  const archivedCards=archived.length?`<div class="box"><details><summary><b>🔕 Promemoria archiviati (${archived.length})</b></summary><p>Questi contratti non sono indicati come fatturati: hai soltanto disattivato il promemoria automatico.</p>${archived.map(p=>`<div style="padding:10px 0;border-bottom:1px solid #ddd"><b>${esc(p.codice||codicePratica(p.id))}</b> — ${esc(p.ragione_sociale||((p.nome||'')+' '+(p.cognome||'')))} <a class="btn btn2" href="/contratto/${p.id}/gestisci">Apri contratto</a><form method="POST" action="/fatture-da-fare/${p.id}/ripristina" style="display:inline"><button class="btn" type="submit">Riattiva promemoria</button></form></div>`).join('')}</details></div>`:'';
+  res.send(page('Fatture DP RENT',`<div class="dp-one-page"><section class="dp-home-hero"><h2>🧾 FATTURE DP RENT</h2><p>Numerazione separata: serie N</p></section><p><b>Nota:</b> Archivia promemoria non emette una fattura e non elimina il contratto.</p>${cards}${archivedCards}${hist}<a class="btn btn2" href="/fatturazione">Fatturazione DP</a></div>`));
 });
 
 app.post('/contratto/:id/pagato-fattura-da-fare', async (req,res)=>{
   await run(`UPDATE prenotazioni SET pagamento_stato='pagato', stato=COALESCE(stato,'pagato') WHERE id=?`, [req.params.id]).catch(()=>{});
   await dpV265MarkFatturaDaFare(req.params.id, 'Manuale/Bonifico').catch(()=>{});
+  res.redirect('/fatture-da-fare');
+});
+// V393: silenzia solo il promemoria interno, senza alterare contratti, pagamenti o stato fiscale.
+app.post('/fatture-da-fare/:id/archivia', async (req,res)=>{
+  const id=Number(req.params.id);
+  const p=await get('SELECT id,fattura_stato FROM prenotazioni WHERE id=?',[id]).catch(()=>null);
+  if(!p)return res.status(404).send('Contratto non trovato');
+  const existing=await get('SELECT id FROM noleggio_fatture WHERE prenotazione_id=?',[id]).catch(()=>null);
+  if(existing)return res.status(409).send(page('Promemoria non archiviato','<div class="box"><h2>Esiste una fattura collegata</h2><p>Gestire prima il documento nella sezione storico.</p><a class="btn" href="/fatture-da-fare">Torna</a></div>'));
+  if(['emessa','fatturata','pronta_fic'].includes(String(p.fattura_stato||'').toLowerCase()))return res.status(409).send('Stato fatturazione non archiviabile');
+  await run("UPDATE prenotazioni SET fattura_stato='archiviata',fattura_alert_48h_inviato=1,fattura_note=COALESCE(fattura_note,'') || ?,updated_at=CURRENT_TIMESTAMP WHERE id=?",['\nPromemoria fatturazione archiviato (fattura NON attestata come emessa): '+new Date().toISOString(),id]);
+  res.redirect('/fatture-da-fare');
+});
+app.post('/fatture-da-fare/:id/ripristina', async (req,res)=>{
+  const id=Number(req.params.id);
+  await run("UPDATE prenotazioni SET fattura_stato='da_fare',fattura_alert_48h_inviato=1,fattura_note=COALESCE(fattura_note,'') || ?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND fattura_stato='archiviata'",['\nPromemoria fatturazione ripristinato: '+new Date().toISOString(),id]);
   res.redirect('/fatture-da-fare');
 });
 app.post('/fatture-da-fare/:id/emessa', async (req,res)=>{
@@ -14548,7 +14565,7 @@ app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
    if(current.length)await run(`DELETE FROM dp_xml_exports WHERE fattura_id=? AND tipo IN (?,?,?)`,[f.id,...aliases]);
    await run('DELETE FROM noleggio_fatture WHERE id=?',[f.id]);
    await run("DELETE FROM dp_scadenze_incassi WHERE modulo='NOLEGGIO' AND fattura_id=? AND stato<>'INCASSATA'",[f.id]);
-   await run("UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=0 WHERE id=?",[f.prenotazione_id]);
+   await run("UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=1 WHERE id=?",[f.prenotazione_id]);
    await run('COMMIT');
   }catch(e){await run('ROLLBACK').catch(()=>{});throw e;}
   res.redirect('/fatture-da-fare');
@@ -14596,7 +14613,7 @@ app.post('/admin/pulisci-fatture-test',async(req,res)=>{
     await run(`DELETE FROM trasporti_fattura_ordini WHERE fattura_id IN (SELECT id FROM trasporti_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC')`);
     await run(`DELETE FROM trasporti_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`);
     const nr=await all(`SELECT * FROM noleggio_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`).catch(()=>[]);
-    for(const f of nr)await run(`UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=0 WHERE id=?`,[f.prenotazione_id]).catch(()=>{});
+    for(const f of nr)await run(`UPDATE prenotazioni SET fattura_stato='da_fare',fattura_numero='',fattura_alert_48h_inviato=1 WHERE id=?`,[f.prenotazione_id]).catch(()=>{});
     await run(`DELETE FROM noleggio_fatture WHERE COALESCE(stato,'')<>'INVIATA_FIC'`);
     await run(`DELETE FROM sqlite_sequence WHERE name IN ('trasporti_fatture','noleggio_fatture')`).catch(()=>{});
     await run('COMMIT');res.send(page('Pulizia completata',`<div class="box"><h2 class="ok">✅ Fatture di prova pulite</h2><p>Gli ordini/contratti collegati sono tornati da fatturare. Le fatture storiche importate non sono state toccate.</p><a class="btn" href="/fatturazione">Vai a fatturazione</a></div>`));
@@ -15352,7 +15369,7 @@ app.get('/fatturazione/drive-fatel',async(req,res)=>{
 });
 
 app.get('/fatturazione', async(req,res)=>{
-  const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata')))`).catch(()=>({tot:0}));
+  const rent=await get(`SELECT COUNT(*) tot FROM prenotazioni WHERE (COALESCE(fattura_stato,'')='da_fare' OR (COALESCE(nexi_stato,'')='pagato' AND COALESCE(fattura_stato,'') NOT IN ('emessa','fatturata','pronta_fic','archiviata'))) AND COALESCE(fattura_stato,'')<>'archiviata'`).catch(()=>({tot:0}));
   const serviceCount=(await dpReadServiceInvoices().catch(()=>[])).length;
   const tr=await get(`SELECT COUNT(*) tot,COALESCE(SUM(prezzo),0) totale FROM trasporti_ordini WHERE stato IN ('CONSEGNATO','DA_FATTURARE') AND (COALESCE(num_fattura,'')='' OR COALESCE(num_fattura,'0')='0')`).catch(()=>({tot:0,totale:0}));
   res.send(page('Fatturazione DP',`
