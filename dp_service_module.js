@@ -1594,6 +1594,33 @@ async function dpServiceTrashExportedXmlV370(ex){
  return {fileId,name:expectedName};
 }
 
+// V397 - annullamento FATEL locale, senza dipendenze da Google Drive.
+// L'agente Windows NON cancella file gia scaricati: operatore conferma rimozione
+// fisica e mancata importazione FATEL/SDI prima di cancellare la bozza.
+async function dpServiceCancelLocalXmlV397(ex,fatturaId,body){
+ const id=Number(fatturaId);
+ if(!Number.isSafeInteger(id)||id<1)throw new Error('Identificativo fattura non valido');
+ if(String(ex.file_id||'')!=='LOCAL:service:'+id)
+  throw new Error('Riferimento FATEL locale diverso dalla fattura: cancellazione bloccata');
+ if(String(body?.conferma_xml_locale||'')!=='FILE_RIMOSSO_NON_IMPORTATO')
+  throw new Error('Prima fermare AVVIA_FATEL_LOCALE, rimuovere il file da C:\\Zucchetti\\xml_attivi e confermare che FATEL non lo ha importato o inviato allo SdI');
+ await mainRun(`CREATE TABLE IF NOT EXISTS dp_fatel_local_queue (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, tipo TEXT NOT NULL, fattura_id INTEGER NOT NULL,
+  file_name TEXT NOT NULL, xml_text TEXT NOT NULL, sha256 TEXT NOT NULL,
+  stato TEXT NOT NULL DEFAULT 'PENDING', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+  delivered_at TEXT, UNIQUE(tipo,fattura_id))`);
+ const imported=await mainGet("SELECT 1 ok FROM dp_fatel_manual_imports WHERE tipo='service' AND fattura_id=?",[id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
+ if(imported)throw new Error('Importazione FATEL gia confermata: cancellazione bloccata');
+ const rows=await mainAll("SELECT id,stato,file_name FROM dp_fatel_local_queue WHERE tipo='service' AND fattura_id=?",[id]);
+ if(rows.length!==1)throw new Error('Coda locale assente o duplicata: occorre verifica manuale');
+ const q=rows[0];
+ if(String(q.file_name)!==String(ex.file_name)||!['PENDING','DELIVERED'].includes(q.stato))
+  throw new Error('Coda XML locale non coerente: cancellazione bloccata');
+ const upd=await mainRun("UPDATE dp_fatel_local_queue SET stato='CANCELLED' WHERE id=? AND stato=?",[q.id,q.stato]);
+ if(upd.changes!==1)throw new Error('La coda FATEL e cambiata durante la cancellazione');
+ return {fileId:ex.file_id,name:ex.file_name,mode:'LOCAL',queueId:q.id};
+}
+
 async function dpServiceNumeroLiberato(anno){
  await dpServiceCancelEnsure();
  const r=await get(`SELECT x.numero FROM dp_service_cancellazioni_bozze x WHERE x.anno=? AND x.serie='S' AND x.numero_riutilizzato_at IS NULL AND NOT EXISTS (SELECT 1 FROM fatture_service f WHERE f.anno=x.anno AND f.serie='S' AND f.numero=x.numero) ORDER BY x.numero LIMIT 1`,[anno]);
@@ -1608,16 +1635,27 @@ router.post('/fatture/:id([0-9]+)/elimina-bozza',async(req,res)=>{
   const ex=await mainGet("SELECT tipo,fattura_id,file_id,file_name FROM dp_xml_exports WHERE fattura_id=? AND LOWER(tipo) IN ('service','s') LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
   const paid=await mainGet("SELECT 1 ok FROM dp_scadenze_incassi WHERE modulo='SERVICE' AND fattura_id=? AND (stato='INCASSATA' OR incassata_at IS NOT NULL) LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
   if(paid)throw new Error('Fattura associata a un incasso: cancellazione bloccata');
-  // Non cancellare file gia importati da Zucchetti/Fatel o inviati a SdI.
-  // La conferma dell'operatore attesta che e solo una PROVA MAI EMESSA.
+  // Non cancellare file importati da FATEL o inviati a SdI.
+  // La conferma dell'operatore attesta che si tratta di una prova mai emessa.
   let removedXml=null;
-  if(ex) removedXml=await dpServiceTrashExportedXmlV370(ex);
+  if(ex){
+   if(String(ex.file_id||'').startsWith('LOCAL:')){
+    removedXml=await dpServiceCancelLocalXmlV397(ex,f.id,req.body);
+   }else{
+    if(String(process.env.DP_FATEL_TARGET||'').toUpperCase()==='LOCAL')
+     throw new Error('Esportazione Drive storica: non posso cancellarla usando la procedura FATEL locale');
+    removedXml=await dpServiceTrashExportedXmlV370(ex);
+   }
+  }else if(String(process.env.DP_FATEL_TARGET||'').toUpperCase()==='LOCAL'){
+   const dangling=await mainGet("SELECT 1 ok FROM dp_fatel_local_queue WHERE tipo='service' AND fattura_id=? LIMIT 1",[f.id]).catch(e=>{if(/no such table/i.test(e.message))return null;throw e;});
+   if(dangling)throw new Error('XML presente in coda ma manca il registro export: verifica manuale obbligatoria');
+  }
   await dpServiceCancelEnsure();
   await run('BEGIN IMMEDIATE');
   try{
    const current=await get('SELECT stato FROM fatture_service WHERE id=?',[f.id]);
    if(!current||current.stato!=='BOZZA')throw new Error('Stato cambiato');
-   await run('INSERT INTO dp_service_cancellazioni_bozze(fattura_id,anno,serie,numero,snapshot_json,attestazione) VALUES(?,?,?,?,?,?)',[f.id,f.anno,f.serie,f.numero,JSON.stringify({...f,xmlRimossoDaDrive:removedXml}),'MAI_EMESSA']);
+   await run('INSERT INTO dp_service_cancellazioni_bozze(fattura_id,anno,serie,numero,snapshot_json,attestazione) VALUES(?,?,?,?,?,?)',[f.id,f.anno,f.serie,f.numero,JSON.stringify({...f,xmlAnnullato:removedXml}),'MAI_EMESSA']);
    await run("DELETE FROM fatture_service WHERE id=? AND stato='BOZZA'",[f.id]);
    await run('UPDATE ordini_lavoro SET fatturato=0 WHERE id=?',[f.ordine_id]);
    await run('COMMIT');
@@ -1643,7 +1681,7 @@ router.get('/fatture/:id([0-9]+)', async (req,res)=>{
   const ph=dpPhone(d.o.telefono); const pdfUrl=dpServiceUrl(req,`/fatture/${f.id}.pdf`);
   const scad=dpServiceSchedule(f.codice_pagamento||f.pagamento,f.data,f.totale);
   const msg=encodeURIComponent(`Buongiorno ${d.o.ragione_sociale||''}, le inviamo la fattura DP SERVICE n. ${f.numero}/S per la vettura ${d.o.targa||''}. Totale ${dpEuro(f.totale)}. PDF: ${pdfUrl}`);
-  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>Stato: ${esc(f.stato||"NON DEFINITO")}</b> — ${f.stato==="BOZZA"?"Bozza: può essere annullata solo se mai emessa, consegnata o esportata":"Documento protetto: eliminazione non disponibile da questa schermata"}</p><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${f.id}">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}${f.stato==='BOZZA'?`<form method="post" action="/fatture/${f.id}/elimina-bozza" style="display:inline" onsubmit="return confirm('Solo PROVA mai emessa/importata/inviata. Se XML presente verra spostato nel CESTINO Drive prima della cancellazione della bozza e il numero fattura verra liberato. Confermi?')"><input type="hidden" name="conferma" value="MAI_EMESSA"><button class="btn dark" type="submit">ELIMINA BOZZA</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
+  res.send(page(`Fattura ${f.numero}/S`,`<div class="box"><h1>💶 FATTURA ${f.numero}/S</h1><p><b>Stato: ${esc(f.stato||"NON DEFINITO")}</b> — ${f.stato==="BOZZA"?"Bozza: eliminabile soltanto se mai emessa, importata in FATEL o inviata allo SdI":"Documento protetto: eliminazione non disponibile da questa schermata"}</p><p><b>${esc(d.o.ragione_sociale)}</b> - ${esc(d.o.targa)} - ${esc(d.o.marca)} ${esc(d.o.modello)}</p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpServicePayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento)}</p><p><b>Scadenze:</b><br>${scad.map(r=>`${dpItDate(r.data)} — ${dpEuro(r.importo)}`).join('<br>')}</p><p><b>IBAN:</b> ${esc(DP_SERVICE_AZIENDA.iban)}</p><h2>Totale ${dpEuro(f.totale)}</h2><div class="actions"><a class="btn" target="_blank" href="/fatture/${f.id}.pdf">📄 PDF</a><a class="btn dark" href="/fatturazione/xml/check/service/${f.id}">🔎 XML per Fatel (verifica)</a>${ph?`<a class="btn green" target="_blank" href="https://wa.me/${ph}?text=${msg}">📲 INVIA WHATSAPP</a>`:''}${d.o.email?`<form method="post" action="/fatture/${f.id}/email"><button class="btn">✉️ INVIA EMAIL + PDF</button></form>`:''}${f.stato==='BOZZA'?`<form method="post" action="/fatture/${f.id}/elimina-bozza" style="display:inline" onsubmit="return confirm('Confermi che e una bozza MAI emessa, importata in FATEL o inviata allo SdI? Se XML locale, il file deve essere gia stato eliminato dal PC.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${String(process.env.DP_FATEL_TARGET||'').toUpperCase()==='LOCAL'?`<label style="display:block;max-width:490px;margin:8px 0;font-size:12px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato l'agente Windows, rimosso il file XML dalla cartella FATEL e confermo che NON e stato importato o inviato allo SdI.</label>`:''}<button class="btn dark" type="submit">ELIMINA BOZZA</button></form>`:''}<a class="btn dark" href="/fatture">📚 Torna alle fatture SERVICE</a><a class="btn dark" href="/ordini/${f.ordine_id}">Torna all'ordine</a></div></div>`));
 });
 
 
