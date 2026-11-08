@@ -704,7 +704,9 @@ function dpIsPublicRoute(req) {
 
   // V391: agente FATEL locale; queste tre rotte verificano sempre il token Bearer.
   if ((method === 'GET' && (p === '/api/fatel-local/pending' || /^\/api\/fatel-local\/file\/[0-9]+$/.test(p))) ||
-      (method === 'POST' && /^\/api\/fatel-local\/ack\/[0-9]+$/.test(p))) return true;
+      (method === 'POST' && /^\/api\/fatel-local\/ack\/[0-9]+$/.test(p)) ||
+      (method === 'GET' && p === '/api/fatel-local/cancellations') ||
+      (method === 'POST' && /^\/api\/fatel-local\/cancel-ack\/[0-9]+$/.test(p))) return true;
   if (p === '/accesso-dp' || p === '/esci-dp') return true;
   if (p === '/privacy' || p === '/condizioni' || p === '/condizioni-noleggio' || p === '/termini-noleggio' || p === '/cookie-policy') return true;
   if (p === '/privacy.pdf' || p === '/clausole.pdf' || p === '/privacy_file.pdf' || p === '/terms_file.pdf') return true;
@@ -13935,7 +13937,7 @@ app.get('/trasporti/fatturazione', async (req,res)=>{
       <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">NOTA DI CREDITO</a>
       ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">MODIFICA</a>
       <form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che questa fattura e soltanto una bozza MAI emessa, consegnata, acquisita da Fatel o inviata allo SdI? L XML su Drive verra spostato nel cestino prima della cancellazione.')">
-        <input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn" style="background:#8b0000">ELIMINA BOZZA</button>
+        <input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="NON_IMPORTATO_AUTOMATICO" required> Confermo che l'XML NON e stato importato in FATEL o inviato allo SdI. L'agente spostera automaticamente il file in quarantena.</label>`:``}<button class="btn" style="background:#8b0000">ELIMINA BOZZA</button>
       </form>`:''}
     </td>
   </tr>`;
@@ -14013,7 +14015,7 @@ app.get('/trasporti/fattura/:id([0-9]+)',async(req,res)=>{
     <a class="btn" target="_blank" href="/trasporti/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/trasporti/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=TRASPORTI&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
     ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/trasporti/fattura/${f.id}/modifica">✏️ MODIFICA FATTURA</a>`:''}
     ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che questa fattura è stata emessa/inviata in Fatture in Cloud?')"><button class="btn dp-green">☁️ SEGNA INVIATA FATTURE IN CLOUD</button></form>`:''}
-    ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn btn2">Elimina bozza non emessa</button></form>`:''}
+    ${f.stato!=='INVIATA_FIC'?`<form method="POST" action="/trasporti/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="NON_IMPORTATO_AUTOMATICO" required> Confermo che l'XML NON e stato importato in FATEL o inviato allo SdI. L'agente spostera automaticamente il file in quarantena.</label>`:``}<button class="btn btn2">Elimina bozza non emessa</button></form>`:''}
     </div><div class="box" style="overflow:auto"><table><tr><th>DDT</th><th>Auto</th><th>Tratta</th><th>Imponibile</th><th>IVA</th></tr>${rows}</table>
     <h3>Imponibile € ${euro(f.imponibile)}<br>IVA € ${euro(f.iva)}<br>Totale € ${euro(f.totale)}</h3></div>`));
 });
@@ -14092,6 +14094,7 @@ app.post('/trasporti/fattura/:id/annulla',async(req,res)=>{
   if(rows.length&&(!rows[0].file_id||!rows[0].file_name))throw new Error('XML privo di file ID o nome: nessuna cancellazione');
   if(rows.length&&!String(rows[0].file_id||'').startsWith('LOCAL:')&&String(process.env.DP_FATEL_DELETE_TOKEN||'').length<32)throw new Error('DP_FATEL_DELETE_TOKEN non configurato: nessuna cancellazione');
   const links=await all('SELECT * FROM trasporti_fattura_ordini WHERE fattura_id=?',[f.id]);
+  await dpFatelLocalEnsureV390();
   await run('BEGIN IMMEDIATE');
   try{
    const q=await get('SELECT stato FROM trasporti_fatture WHERE id=?',[f.id]);
@@ -14488,7 +14491,7 @@ app.get('/noleggio/fattura/:id([0-9]+)',async(req,res)=>{
   const correctionHtml=showCorrection?`<div style="border:1px solid #d99;border-radius:10px;padding:12px;margin:12px 0"><b>Intestatario differente dal contratto aggiornato</b><p>In fattura: <b>${esc(f.cliente)}</b><br>Nel contratto: <b>${esc(correctedName)}</b></p><form method="POST" action="/noleggio/fattura/${f.id}/aggiorna-intestatario" onsubmit="return confirm('Aggiornare l’intestatario della fattura non inviata con quello del contratto?')"><input type="hidden" name="conferma" value="SI"><button type="submit">🔄 Allinea intestatario dalla pratica</button></form><small>Non modifica il contratto, i dati fiscali, i totali o le fatture gia inviate. Non usare se questa fattura e gia stata consegnata/inviata.</small></div>`:'';
   res.send(page('Fattura DP RENT '+f.numero_display,`<div class="box"><h2>🧾 Fattura DP RENT ${esc(f.numero_display)}</h2><p><b>${esc(f.cliente)}</b><br>Contratto: ${esc(p?.codice||codicePratica(f.prenotazione_id))}<br>Data: ${esc(dpTItDate(f.data_fattura))}<br>Stato: <b>${esc(f.stato)}</b></p><p><b>Pagamento:</b> ${esc(f.codice_pagamento||dpPayCode(f.pagamento))} - ${esc(f.pagamento_descrizione||f.pagamento||'')}<br><b>Scadenze:</b><br>${dpScheduleHtml(scad)}</p>${correctionHtml}
     <a class="btn" target="_blank" href="/noleggio/fattura/${f.id}.pdf">📄 APRI PDF</a> <a class="btn btn2" href="/fatturazione/xml/check/noleggio/${f.id}">📤 XML per Fatel</a> <a class="btn btn2" href="/note-credito/nuova?settore=NOLEGGIO&fattura_id=${f.id}">↩️ NOTA DI CREDITO</a>
-    ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn" style="background:#8b0000">ELIMINA BOZZA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
+    ${f.stato!=='INVIATA_FIC'?`<a class="btn btn2" href="/noleggio/fattura/${f.id}/modifica">✏️ MODIFICA</a><form method="POST" action="/noleggio/fattura/${f.id}/annulla" style="display:inline" onsubmit="return confirm('Attesti che il documento non e MAI stato emesso, consegnato, acquisito da Fatel o trasmesso allo SdI? La cancellazione e tracciata.')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="NON_IMPORTATO_AUTOMATICO" required> Confermo che l'XML NON e stato importato in FATEL o inviato allo SdI. L'agente spostera automaticamente il file in quarantena.</label>`:``}<button class="btn" style="background:#8b0000">ELIMINA BOZZA</button></form><form method="POST" action="/noleggio/fattura/${f.id}/inviata-fic" style="display:inline" onsubmit="return confirm('Confermi che la fattura e stata emessa/inviata fiscalmente?')"><button class="btn dp-green">☁️ SEGNA INVIATA</button></form>`:''}
     <a class="btn btn2" href="/contratto/${f.prenotazione_id}/gestisci">Apri contratto</a></div>`));
 });
 
@@ -14546,15 +14549,14 @@ async function dpV377TrashRentXml(exportRow){
 
 
 // V392 - annullamento controllato di XML FATEL locali mai importati/inviati.
-// La coda non puo cancellare file gia scaricati sul PC: l'operatore deve
-// fermare l'agente e rimuovere il file locale prima di attestare la pulizia.
+// L'agente puo spostare in quarantena solo file scaricati, verificati e non importati (attestazione operatore).
 async function dpV392CancelLocalXml(exportRow, settore, fatturaId, requestBody){
  const fileId=String(exportRow?.file_id||'');
  if(!fileId.startsWith('LOCAL:'))throw new Error('Esportazione non locale: annullamento non consentito da questa procedura');
  const expectedId='LOCAL:'+settore+':'+fatturaId;
  if(fileId!==expectedId)throw new Error('Riferimento coda FATEL diverso dal documento: cancellazione bloccata');
- if(String(requestBody?.conferma_xml_locale||'')!=='FILE_RIMOSSO_NON_IMPORTATO')
-  throw new Error('Prima arrestare il programma FATEL Windows, eliminare il file XML locale e confermare che non e stato importato in FATEL o inviato allo SdI');
+ if(String(requestBody?.conferma_xml_locale||'')!=='NON_IMPORTATO_AUTOMATICO')
+  throw new Error('Confermare che l XML non sia stato importato in FATEL ne inviato allo SdI');
  await dpFatelLocalEnsureV390();
  await dpFatelManualEnsureV386();
  const imported=await get('SELECT 1 AS ok FROM dp_fatel_manual_imports WHERE tipo=? AND fattura_id=?',[settore,fatturaId]);
@@ -14564,7 +14566,7 @@ async function dpV392CancelLocalXml(exportRow, settore, fatturaId, requestBody){
  const row=found[0];
  if(row.file_name!==exportRow.file_name||!['PENDING','DELIVERED'].includes(row.stato))
   throw new Error('Coda FATEL non coerente o gia annullata: verifica manuale obbligatoria');
- const result=await run("UPDATE dp_fatel_local_queue SET stato='CANCELLED' WHERE id=? AND stato=?",[row.id,row.stato]);
+ const result=await run("UPDATE dp_fatel_local_queue SET stato='CANCELLED',local_delete_requested=1 WHERE id=? AND stato=?",[row.id,row.stato]);
  if(result?.changes!==1)throw new Error('Stato coda modificato: ripetere la verifica');
 }
 
@@ -14586,6 +14588,7 @@ app.post('/noleggio/fattura/:id/annulla',async(req,res)=>{
    if(String(process.env.DP_FATEL_DELETE_TOKEN||'').length<32)throw new Error('DP_FATEL_DELETE_TOKEN non configurato su Render: nessun dato cancellato');
    if(!rows[0].file_id||!rows[0].file_name)throw new Error('XML privo di file ID o nome: nessun dato cancellato');
   }
+  await dpFatelLocalEnsureV390();
   await run('BEGIN IMMEDIATE');
   try{
    const q=await get('SELECT stato FROM noleggio_fatture WHERE id=?',[f.id]);
@@ -14681,6 +14684,9 @@ async function dpFatelLocalEnsureV390(){
   file_name TEXT NOT NULL, xml_text TEXT NOT NULL, sha256 TEXT NOT NULL,
   stato TEXT NOT NULL DEFAULT 'PENDING', created_at TEXT DEFAULT CURRENT_TIMESTAMP,
   delivered_at TEXT, UNIQUE(tipo,fattura_id))`);
+ const columns=await all('PRAGMA table_info(dp_fatel_local_queue)');
+ if(!columns.some(c=>c.name==='local_delete_requested'))await run('ALTER TABLE dp_fatel_local_queue ADD COLUMN local_delete_requested INTEGER NOT NULL DEFAULT 0');
+ if(!columns.some(c=>c.name==='local_deleted_at'))await run('ALTER TABLE dp_fatel_local_queue ADD COLUMN local_deleted_at TEXT');
 }
 function dpFatelLocalEnabledV390(){return String(process.env.DP_FATEL_TARGET||'DRIVE').toUpperCase()==='LOCAL';}
 function dpFatelLocalReadyV390(){return dpFatelLocalEnabledV390() && String(process.env.DP_FATEL_DRIVE_MODE||'TEST').toUpperCase()==='READY';}
@@ -14721,8 +14727,29 @@ app.post('/api/fatel-local/ack/:id([0-9]+)',dpFatelLocalAuthorizeV390,async(req,
   const hash=String(req.body?.sha256||'');
   const row=await get('SELECT sha256,stato FROM dp_fatel_local_queue WHERE id=?',[req.params.id]);
   if(!row||row.sha256!==hash)return res.status(409).json({ok:false,error:'Hash non corrispondente'});
+  if(row.stato!=='PENDING'&&row.stato!=='DELIVERED')return res.status(409).json({ok:false,error:'XML annullato, non confermabile'});
   if(row.stato==='PENDING')await run("UPDATE dp_fatel_local_queue SET stato='DELIVERED',delivered_at=CURRENT_TIMESTAMP WHERE id=? AND stato='PENDING'",[req.params.id]);
   res.json({ok:true,status:'DELIVERED_LOCAL_NOT_IMPORTED'});
+ }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+// V400 - elenco minimo degli XML annullati da spostare in quarantena.
+// Solo cancellazioni esplicitamente attestate; nessuna eliminazione forzata.
+app.get('/api/fatel-local/cancellations',dpFatelLocalAuthorizeV390,async(req,res)=>{
+ try{
+  if(!dpFatelLocalEnabledV390())return res.status(503).json({ok:false,error:'FATEL locale non attivo'});
+  await dpFatelLocalEnsureV390();
+  const rows=await all("SELECT id,file_name,sha256 FROM dp_fatel_local_queue WHERE stato='CANCELLED' AND local_delete_requested=1 AND local_deleted_at IS NULL ORDER BY id ASC LIMIT 25");
+  res.set('Cache-Control','no-store').json({ok:true,items:rows});
+ }catch(e){res.status(500).json({ok:false,error:e.message});}
+});
+app.post('/api/fatel-local/cancel-ack/:id([0-9]+)',dpFatelLocalAuthorizeV390,async(req,res)=>{
+ try{
+  const hash=String(req.body?.sha256||''),result=String(req.body?.result||'');
+  if(!['QUARANTINED','NOT_FOUND'].includes(result))return res.status(400).json({ok:false,error:'Esito non valido'});
+  await dpFatelLocalEnsureV390();
+  const r=await run("UPDATE dp_fatel_local_queue SET local_deleted_at=CURRENT_TIMESTAMP WHERE id=? AND sha256=? AND stato='CANCELLED' AND local_delete_requested=1 AND local_deleted_at IS NULL",[req.params.id,hash]);
+  if(r.changes!==1)return res.status(409).json({ok:false,error:'Accodamento modificato oppure gia confermato'});
+  res.json({ok:true,status:result});
  }catch(e){res.status(500).json({ok:false,error:e.message});}
 });
 app.get('/fatturazione/fatel-locale',async(req,res)=>{
@@ -15066,7 +15093,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
    const create=(draft||r.stato==='PROVA')?`<form action="${u}/${draft?'registra':'registra-da-test'}" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: CREA FATTURA trasforma il documento in una fattura fiscale, assegna un numero effettivo alla serie L e NON invia allo SdI. Procedere soltanto se vuoi davvero registrarla?')"><button class="btn" type="submit">🧾 CREA FATTURA</button></form>`:'';
    const check=`<a class="btn btn2" href="${u}/xml-check-v382">🔎 CONTROLLA XML</a>`;
    const send=registered&&!exp?`<form method="post" action="${u}/drive-invia" style="display:inline" onsubmit="return confirm('Esportare questo XML registrato nella coda FATEL locale? Verificare prima i dati fiscali. Non equivale a invio SdI.')"><input type="hidden" name="conferma" value="VERIFICATO_PER_DRIVE"><button class="btn" type="submit">📤 INVIA XML A FATEL</button></form>`:exp?'<span style="color:#087b35;font-weight:bold">XML già depositato (non equivale a invio SdI)</span>':`<span style="color:#775b17">Invio disponibile dopo CREA FATTURA</span>`;
-   const cancel=`<form method="post" action="${u}/elimina-bozza" style="display:inline-block;margin-top:8px" onsubmit="return confirm('Confermi che il documento NON e stato importato in FATEL, inviato allo SdI o fiscalmente emesso?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:6px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Confermo che l'eventuale XML locale e' stato rimosso dal PC (sincronizzatore fermo) e non e' stato importato in FATEL o inviato allo SdI.</label>`:''}${registered?`<label style="display:block;font-size:13px"><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Fattura mai emessa ne' acquisita da FATEL/SdI</label>`:''}<button class="btn btn2" type="submit">🗑 ELIMINA</button></form>`;
+   const cancel=`<form method="post" action="${u}/elimina-bozza" style="display:inline-block;margin-top:8px" onsubmit="return confirm('Confermi che il documento NON e stato importato in FATEL, inviato allo SdI o fiscalmente emesso?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:6px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="NON_IMPORTATO_AUTOMATICO" required> Confermo che l'XML NON e' stato importato in FATEL o inviato allo SdI. L'agente spostera il file locale in quarantena.</label>`:''}${registered?`<label style="display:block;font-size:13px"><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Fattura mai emessa ne' acquisita da FATEL/SdI</label>`:''}<button class="btn btn2" type="submit">🗑 ELIMINA</button></form>`;
    return `<tr><td>${registered?esc(r.numero_fattura):draft?'BOZZA #'+id:esc(r.numero_fattura||'TEST '+id)}</td><td>${esc(r.data_documento||'')}</td><td>${esc(r.cliente||'')}</td><td>${esc(r.settore||'')}</td><td>€ ${euro(r.totale||0)}</td><td>${state}</td><td style="min-width:310px">${create} ${check} ${send} ${cancel}</td></tr>`;
   }).join('');
   res.send(page('Fatture libere',`<div class="box"><h2>🧾 FATTURE LIBERE</h2><p>CREA FATTURA → CONTROLLA XML → INVIA A FATEL. Per documenti mai emessi e mai acquisiti: ELIMINA.</p><p>La creazione del numero fiscale avviene solo con esplicita conferma. Il deposito XML non significa invio allo SdI.</p><a class="btn" href="/fatturazione/libere/nuova">＋ NUOVA FATTURA</a> <a class="btn btn2" href="/fatturazione">TORNA ALLA FATTURAZIONE</a></div><div class="box" style="overflow-x:auto"><h2>ARCHIVIO FATTURE LIBERE</h2><table><tr><th>N.</th><th>Data</th><th>Cliente</th><th>Settore</th><th>Totale</th><th>Stato</th><th>Azioni</th></tr>${out||'<tr><td colspan="7">Nessun documento</td></tr>'}</table></div>`));
@@ -15107,6 +15134,7 @@ app.post('/fatturazione/libere/:id/elimina-bozza',async(req,res)=>{
   if(rows.length>1)throw new Error('Diverse esportazioni associate: verifica manuale necessaria');
   if(rows.length&&(!rows[0].file_id||!rows[0].file_name))throw new Error('Riferimento XML incompleto: cancellazione bloccata');
   if(rows.length&&String(rows[0].file_id).startsWith('LOCAL:')&& !/^IT[0-9]{11}_[A-Za-z0-9]{1,5}\.xml$/.test(String(rows[0].file_name)))throw new Error('Nome XML locale non valido: verifica manuale necessaria');
+  await dpFatelLocalEnsureV390();
   await run('BEGIN IMMEDIATE');
   try{
    const q=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[f.id]);
@@ -16108,7 +16136,7 @@ app.get('/fatturazione/xml/check/:tipo/:id([0-9]+)',async(req,res)=>{
       ${saved.file_id && /^[A-Za-z0-9_-]{15,}$/.test(String(saved.file_id)) ? `<a class="btn btn2" target="_blank" rel="noopener noreferrer" href="https://drive.google.com/file/d/${encodeURIComponent(saved.file_id)}/view">📂 APRI XML SU DRIVE</a>`:''}`:
       `<a class="btn btn2" href="/fatturazione/xml/${tipo}/${id}">📤 Conferma esportazione XML a FATEL</a>`}
       ${tipo==='trasporti'?`<a class="btn btn2" href="/trasporti/fattura/${Number(id)}">🧾 APRI FATTURA ${esc(f.numero_display||f.numero||'')}</a>
-      ${String(f.stato||'').toUpperCase()==='PRONTA_FIC'?`<form method="POST" action="/trasporti/fattura/${Number(id)}/annulla" style="display:inline" onsubmit="return confirm('Solo per una BOZZA MAI EMESSA, CONSEGNATA, IMPORTATA in Fatel o INVIATA a SdI. Confermi la richiesta di eliminazione e lo spostamento dell XML nel cestino Drive?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Se XML locale: ho fermato AVVIA_FATEL_LOCALE, rimosso il file da C:\\Zucchetti\\xml_attivi e confermo che NON e stato importato in FATEL o inviato allo SdI.</label>`:``}<button class="btn" style="background:#8b0000" type="submit">🗑️ ELIMINA BOZZA E XML</button></form>`:''}`:''}
+      ${String(f.stato||'').toUpperCase()==='PRONTA_FIC'?`<form method="POST" action="/trasporti/fattura/${Number(id)}/annulla" style="display:inline" onsubmit="return confirm('Solo per una BOZZA MAI EMESSA, CONSEGNATA, IMPORTATA in Fatel o INVIATA a SdI. Confermi la cancellazione della bozza e lo spostamento dell XML locale in quarantena?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:8px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="NON_IMPORTATO_AUTOMATICO" required> Confermo che l'XML NON e stato importato in FATEL o inviato allo SdI. L'agente spostera automaticamente il file in quarantena.</label>`:``}<button class="btn" style="background:#8b0000" type="submit">🗑️ ELIMINA BOZZA E XML</button></form>`:''}`:''}
       <a class="btn" href="${back}">Torna alle fatture</a></div>`));
   }catch(e){
     res.status(400).send(page('Controllo XML',`<div class="box">
