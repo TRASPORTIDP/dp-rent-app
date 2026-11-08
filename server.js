@@ -15063,7 +15063,7 @@ app.get('/fatturazione/libere',async(req,res)=>{
    const id=Number(r.id),registered=r.stato==='REGISTRATA',draft=r.stato==='BOZZA';
    const u='/fatturazione/libere/'+id,exp=exportById.get(id);
    const state=registered?'REGISTRATA':draft?'BOZZA':'TEST PRECEDENTE';
-   const create=draft?`<form action="${u}/registra" method="post" style="display:inline" onsubmit="return confirm('CREA FATTURA assegna un numero fiscale alla serie L. Confermi la creazione effettiva?')"><button class="btn" type="submit">🧾 CREA FATTURA</button></form>`:'';
+   const create=(draft||r.stato==='PROVA')?`<form action="${u}/${draft?'registra':'registra-da-test'}" method="post" style="display:inline" onsubmit="return confirm('ATTENZIONE: CREA FATTURA trasforma il documento in una fattura fiscale, assegna un numero effettivo alla serie L e NON invia allo SdI. Procedere soltanto se vuoi davvero registrarla?')"><button class="btn" type="submit">🧾 CREA FATTURA</button></form>`:'';
    const check=`<a class="btn btn2" href="${u}/xml-check-v382">🔎 CONTROLLA XML</a>`;
    const send=registered&&!exp?`<form method="post" action="${u}/drive-invia" style="display:inline" onsubmit="return confirm('Esportare questo XML registrato nella coda FATEL locale? Verificare prima i dati fiscali. Non equivale a invio SdI.')"><input type="hidden" name="conferma" value="VERIFICATO_PER_DRIVE"><button class="btn" type="submit">📤 INVIA XML A FATEL</button></form>`:exp?'<span style="color:#087b35;font-weight:bold">XML già depositato (non equivale a invio SdI)</span>':`<span style="color:#775b17">Invio disponibile dopo CREA FATTURA</span>`;
    const cancel=`<form method="post" action="${u}/elimina-bozza" style="display:inline-block;margin-top:8px" onsubmit="return confirm('Confermi che il documento NON e stato importato in FATEL, inviato allo SdI o fiscalmente emesso?')"><input type="hidden" name="conferma" value="MAI_EMESSA">${dpFatelLocalEnabledV390()?`<label style="display:block;max-width:510px;margin:6px 0;font-size:13px"><input type="checkbox" name="conferma_xml_locale" value="FILE_RIMOSSO_NON_IMPORTATO" required> Confermo che l'eventuale XML locale e' stato rimosso dal PC (sincronizzatore fermo) e non e' stato importato in FATEL o inviato allo SdI.</label>`:''}${registered?`<label style="display:block;font-size:13px"><input type="checkbox" required name="attestazione_fatel" value="NON_ACQUISITA"> Fattura mai emessa ne' acquisita da FATEL/SdI</label>`:''}<button class="btn btn2" type="submit">🗑 ELIMINA</button></form>`;
@@ -15185,6 +15185,31 @@ app.post('/fatturazione/libere/:id/registra-prova',async(req,res)=>{
   await run("UPDATE dp_fatture_libere_bozze SET stato='PROVA', numero_fattura=?,anno_fattura=?,serie_fattura='TEST-L',emessa_at=CURRENT_TIMESTAMP WHERE id=? AND stato='BOZZA'",[numero,Number(f.data_documento.slice(0,4)),f.id]);
   res.redirect('/fatturazione/libere/'+f.id+'/dettaglio');
  }catch(e){res.status(400).send(page('Registrazione di prova',`<div class="box"><h2>Prova non registrata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">Torna</a></div>`));}
+});
+// V399: i vecchi TEST-L rimangono visibili e possono essere trasformati in fattura
+// solo con azione esplicita, applicando gli stessi controlli della registrazione ordinaria.
+app.post('/fatturazione/libere/:id/registra-da-test',async(req,res)=>{
+ try{
+  await dpFreeEnsure();await dpMasterEnsure();await dpFreeExportEnsureV381();
+  const id=Number(req.params.id);
+  if(!Number.isSafeInteger(id)||id<1)throw new Error('Documento non valido');
+  const f=await get('SELECT * FROM dp_fatture_libere_bozze WHERE id=?',[id]);
+  if(!f||f.stato!=='PROVA'||f.serie_fattura!=='TEST-L'||f.archiviata_at)throw new Error('Il documento non e una simulazione TEST disponibile');
+  const exported=await get("SELECT 1 AS found FROM dp_xml_exports WHERE fattura_id=? AND tipo IN ('libere','LIBERE','L') LIMIT 1",[id]);
+  if(exported)throw new Error('Esiste gia un XML depositato: conversione bloccata');
+  if(f.tipo_documento!=='TD01'||f.regime_iva==='MARGINE_ANALITICO')throw new Error('Registrazione libera attualmente ammessa solo per TD01 ordinaria, non per regime del margine');
+  const lines=dpFreeLinesV339({righe_json:f.righe_json||JSON.stringify([{descrizione:f.descrizione,quantita:f.quantita,prezzo:f.prezzo_unitario,sconto:0,iva:f.aliquota_iva}])});
+  if(lines.some(l=>l.iva!==22))throw new Error('Aliquote speciali: registrazione non ammessa senza verifica fiscale');
+  await dpFreePreviewXmlV340(f.id);
+  if(String(process.env.DP_FREE_ISSUE_ENABLED||'')!=='YES')throw new Error('Creazione fattura non abilitata: DP_FREE_ISSUE_ENABLED deve essere YES; nessuna numerazione modificata');
+  const year=Number(String(f.data_documento||'').slice(0,4));
+  if(!Number.isSafeInteger(year)||year<2000)throw new Error('Data documento non valida');
+  const mx=await get(`SELECT MAX(CAST(SUBSTR(numero_fattura,1,INSTR(numero_fattura,'/')-1) AS INTEGER)) AS n FROM dp_fatture_libere_bozze WHERE anno_fattura=? AND serie_fattura='L'`,[year]);
+  const next=(Number(mx?.n)||0)+1, numero=`${next}/L`;
+  const r=await run(`UPDATE dp_fatture_libere_bozze SET stato='REGISTRATA',numero_fattura=?,anno_fattura=?,serie_fattura='L',emessa_at=CURRENT_TIMESTAMP WHERE id=? AND stato='PROVA' AND serie_fattura='TEST-L' AND archiviata_at IS NULL`,[numero,year,id]);
+  if(r?.changes!==1)throw new Error('Il documento e stato modificato: operazione annullata');
+  res.redirect('/fatturazione/libere/'+id+'/dettaglio');
+ }catch(e){res.status(400).send(page('Creazione fattura non effettuata',`<div class="box"><h2>Fattura non creata</h2><p>${esc(e.message)}</p><a class="btn" href="/fatturazione/libere">TORNA ALL'ARCHIVIO</a></div>`));}
 });
 app.post('/fatturazione/libere/:id/registra',async(req,res)=>{
  try{
